@@ -1,12 +1,13 @@
 import { CONFIG } from './config.js';
 import { 
   getStoredData, supabase, getBuddyGroupMembers, spendCurrency,
-  getActiveTambaySession, validateApplicantTambay 
+  getActiveTambaySession, validateApplicantTambay,
+  checkIfRAComm, getGlobalSettings, updateGlobalSettings,
+  addSignatoryRequirement, createEvent
 } from './storage.js';
 import { getSignatories, toggleSignatoryTask } from './signatories.js';
 import { getTambayHours, resetTambayHours } from './tambay.js';
 import { getEvents, checkInToEvent } from './events.js';
-import { switchRole, handleAddSignatoryRequirement, handleCreateEvent } from './admin.js';
 import { signInWithGoogle, signOutUser, getCurrentUser, getUserProfileData, createApplicantProfile } from './auth.js';
 
 let currentUser = null;
@@ -74,7 +75,6 @@ async function calculateProgress() {
 }
 
 export async function render() {
-  const { userRole } = getStoredData();
   const stats = await calculateProgress();
 
   const progressBar = document.getElementById('progressBar');
@@ -104,6 +104,23 @@ export async function render() {
     } else if (activeBanner) {
       activeBanner.style.display = 'none';
       stopLiveTimer();
+    }
+
+    // Toggle RAComm Command Center
+    const isRAComm = await checkIfRAComm(currentUser.email);
+    const racommPanel = document.getElementById('racommPanel');
+
+    if (racommPanel) {
+      racommPanel.style.display = isRAComm ? 'block' : 'none';
+    }
+
+    if (isRAComm) {
+      const settings = await getGlobalSettings();
+      const multText = document.getElementById('currentMultiplierText');
+      const capText = document.getElementById('currentCapText');
+
+      if (multText) multText.textContent = `${settings.multiplier}x`;
+      if (capText) capText.textContent = settings.dailyCapEnabled ? 'Active (3.0 hrs/day)' : 'Disabled (No Limit)';
     }
   }
 
@@ -150,11 +167,6 @@ export async function render() {
       `;
       eventList.appendChild(li);
     });
-  }
-
-  const adminPanel = document.getElementById('adminPanel');
-  if (adminPanel) {
-    adminPanel.style.display = userRole === 'admin' ? 'block' : 'none';
   }
 }
 
@@ -247,6 +259,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // QR Display Generator
   document.getElementById('showQrBtn')?.addEventListener('click', () => {
     if (!currentUser) return;
 
@@ -304,11 +317,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  document.getElementById('resetHoursBtn')?.addEventListener('click', async () => {
-    await resetTambayHours();
-    await render();
-  });
-
   document.getElementById('signatoryList')?.addEventListener('change', async (e) => {
     if (e.target.classList.contains('sig-checkbox')) {
       const taskId = e.target.dataset.id;
@@ -328,10 +336,39 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  // RAComm Admin Control Buttons
+  document.getElementById('set1xBtn')?.addEventListener('click', async () => {
+    if (await updateGlobalSettings('hourly_multiplier', '1.0')) {
+      alert("Multiplier set to 1.0x (Standard)");
+      await render();
+    }
+  });
+
+  document.getElementById('set2xBtn')?.addEventListener('click', async () => {
+    if (await updateGlobalSettings('hourly_multiplier', '2.0')) {
+      alert("⚡ Double Hours Activated! (2.0x)");
+      await render();
+    }
+  });
+
+  document.getElementById('enableCapBtn')?.addEventListener('click', async () => {
+    if (await updateGlobalSettings('daily_cap_enabled', 'true')) {
+      alert("Daily Cap Enabled (3.0 Hours Max)");
+      await render();
+    }
+  });
+
+  document.getElementById('disableCapBtn')?.addEventListener('click', async () => {
+    if (await updateGlobalSettings('daily_cap_enabled', 'false')) {
+      alert("Daily Cap Removed! (Unlimited Hours)");
+      await render();
+    }
+  });
+
   document.getElementById('addRequirementBtn')?.addEventListener('click', async () => {
     const roleInput = document.getElementById('adminRoleInput');
     const taskInput = document.getElementById('adminTaskInput');
-    if (roleInput && taskInput && await handleAddSignatoryRequirement(roleInput.value, taskInput.value)) {
+    if (roleInput && taskInput && await addSignatoryRequirement(roleInput.value, taskInput.value)) {
       roleInput.value = '';
       taskInput.value = '';
       await render();
@@ -341,20 +378,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('addEventBtn')?.addEventListener('click', async () => {
     const nameInput = document.getElementById('adminEventNameInput');
     const passkeyInput = document.getElementById('adminEventPasskeyInput');
-    if (nameInput && await handleCreateEvent(nameInput.value, passkeyInput ? passkeyInput.value : '')) {
+    if (nameInput && await createEvent(nameInput.value, passkeyInput ? passkeyInput.value : '')) {
       nameInput.value = '';
       if (passkeyInput) passkeyInput.value = '';
       await render();
     }
-  });
-
-  document.getElementById('btnRoleApplicant')?.addEventListener('click', async () => {
-    switchRole('applicant');
-    await render();
-  });
-
-  document.getElementById('btnRoleAdmin')?.addEventListener('click', async () => {
-    switchRole('admin');
-    await render();
   });
 });
