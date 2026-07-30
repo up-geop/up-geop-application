@@ -3,7 +3,8 @@ import {
   supabase, getBuddyGroupMembers, spendCurrency,
   getActiveTambaySession, validateApplicantTambay,
   checkIfResidentMember, checkIfRAComm, getGlobalSettings, updateGlobalSettings,
-  createEvent, COMMITTEES_LIST, generateApplicantShortCode, getApplicantIdByShortCode
+  createEvent, COMMITTEES_LIST, generateApplicantShortCode, getApplicantIdByShortCode,
+  getAllApplicantsProgress
 } from './storage.js';
 import { getSignatories, toggleSignatoryTask } from './signatories.js';
 import { getTambayHours } from './tambay.js';
@@ -100,6 +101,67 @@ async function calculateProgress() {
     signatoriesList: signatories,
     eventsList: events
   };
+}
+
+// DYNAMIC RACOMM ROSTER RENDERER
+async function renderApplicantRosterTable() {
+  const tbody = document.getElementById('applicantRosterTbody');
+  const totalApplicantsElem = document.getElementById('statTotalApplicants');
+  const avgProgressElem = document.getElementById('statAvgProgress');
+  const totalTambayElem = document.getElementById('statTotalTambay');
+  const activeTambayElem = document.getElementById('statActiveTambay');
+
+  if (!tbody) return;
+
+  const applicants = await getAllApplicantsProgress();
+
+  if (totalApplicantsElem) totalApplicantsElem.textContent = applicants.length;
+  
+  if (applicants.length > 0) {
+    const avgProg = Math.round(applicants.reduce((sum, a) => sum + a.overallPercent, 0) / applicants.length);
+    const sumTambay = applicants.reduce((sum, a) => sum + Number(a.tambayHours), 0);
+    const activeCount = applicants.filter(a => a.isTimedIn).length;
+
+    if (avgProgressElem) avgProgressElem.textContent = `${avgProg}%`;
+    if (totalTambayElem) totalTambayElem.textContent = `${sumTambay.toFixed(1)} hrs`;
+    if (activeTambayElem) activeTambayElem.textContent = activeCount;
+  }
+
+  tbody.innerHTML = '';
+
+  if (applicants.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="7" style="text-align: center; padding: 16px; color: var(--text-muted);">
+          No applicants registered yet.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  applicants.forEach(app => {
+    const tr = document.createElement('tr');
+    tr.style.borderBottom = '1px solid var(--border-subtle)';
+    tr.innerHTML = `
+      <td style="padding: 10px 14px;"><strong>${app.fullName}</strong> ("${app.nickname}")</td>
+      <td style="padding: 10px 14px;">${app.buddyGroup}</td>
+      <td style="padding: 10px 14px; font-family: monospace;">${app.completedSigs} / ${app.totalSigs}</td>
+      <td style="padding: 10px 14px; font-family: monospace;">${app.tambayHours} hrs</td>
+      <td style="padding: 10px 14px;">0 Attended</td>
+      <td style="padding: 10px 14px; font-family: monospace;">
+        <strong style="color: var(--brand-forest);">${app.overallPercent}%</strong>
+      </td>
+      <td style="padding: 10px 14px;">
+        ${app.isTimedIn ? `
+          <span class="badge" style="background: #e8f5e9; color: #1b5e20; border: 1px solid #2e7d32;">🟢 Timed In</span>
+        ` : `
+          <span class="badge">Offline</span>
+        `}
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
 }
 
 export async function render() {
@@ -266,6 +328,9 @@ async function handleAuthState() {
 
         if (multText) multText.textContent = `${settings.multiplier}x`;
         if (capText) capText.textContent = settings.dailyCapEnabled ? 'Active (3.0 hrs/day)' : 'Disabled (No Limit)';
+
+        // RENDER LIVE APPLICANT ROSTER TABLE
+        await renderApplicantRosterTable();
       }
     } else {
       if (memberDashboard) memberDashboard.style.display = 'none';
@@ -395,7 +460,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('closeModalBtn')?.addEventListener('click', closeModal);
   document.getElementById('cancelManualCodeBtn')?.addEventListener('click', closeModal);
 
-  // Submit Short Code with Believable Friction Delay (350ms - Trend #2)
+  // Submit Short Code with Believable Friction Delay (350ms)
   document.getElementById('submitManualCodeBtn')?.addEventListener('click', async () => {
     const input = document.getElementById('manualCodeInput');
     const submitBtn = document.getElementById('submitManualCodeBtn');
@@ -413,7 +478,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       submitBtn.textContent = 'Verifying Code...';
     }
 
-    // 350ms deliberate friction delay for trust architecture
     await new Promise(resolve => setTimeout(resolve, 350));
 
     const applicantId = await getApplicantIdByShortCode(cleanInput);
@@ -427,6 +491,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       closeModal();
       const res = await validateApplicantTambay(applicantId, currentUser.email);
       showToast(res.message, res.success ? 'success' : 'error');
+      await handleAuthState();
     } else {
       showToast('Invalid or expired code. Please ask the applicant to regenerate their code.', 'error');
     }
