@@ -1,18 +1,14 @@
 import { 
-  getSignatories as fetchSignatoriesFromDB, 
-  toggleSignatoryTask as updateSignatoryInDB, 
-  addSignatoryRequirement 
+  getSignatories as fetchSignatories, 
+  toggleSignatoryTask as updateSignatoryTask 
 } from './storage.js';
 
+// Retrieve signatories list
 export async function getSignatories() {
-  return await fetchSignatoriesFromDB();
+  return await fetchSignatories();
 }
 
+// Toggle signatory completion status
 export async function toggleSignatoryTask(taskId, currentStatus) {
-  return await updateSignatoryInDB(taskId, currentStatus);
-}
-
-export async function addSignatoryTask(role, taskDescription) {
-  if (!role || !role.trim() || !taskDescription || !taskDescription.trim()) return false;
-  return await addSignatoryRequirement(role.trim(), taskDescription.trim());
+  return await updateSignatoryTask(taskId, currentStatus);
 }
