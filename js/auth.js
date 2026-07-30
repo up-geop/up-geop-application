@@ -1,121 +1,74 @@
 import { supabase } from './storage.js';
 
-// Allowed University Domains
-const ALLOWED_DOMAINS = ['up.edu.ph', 'upd.edu.ph'];
+// Allowed test bypass emails
+const TEST_BYPASS_EMAILS = ['ejhayignacio889@gmail.com'];
 
-// Trigger Google OAuth Login Flow
 export async function signInWithGoogle() {
   if (!supabase) return;
-
   const { error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: window.location.href
+      redirectTo: window.location.origin + window.location.pathname
     }
   });
-
-  if (error) {
-    console.error('Error logging in with Google:', error.message);
-    alert('Failed to initiate Google login. Please try again.');
-  }
+  if (error) console.error('Error signing in:', error.message);
 }
 
-// Sign Out Current User
 export async function signOutUser() {
   if (!supabase) return;
-
-  const { error } = await supabase.auth.signOut();
-  if (!error) {
-    window.location.reload();
-  } else {
-    console.error('Error signing out:', error.message);
-  }
+  await supabase.auth.signOut();
+  window.location.reload();
 }
 
-// Seed default tasks for new applicants on first login
-export async function initializeApplicantData(userId) {
-  if (!supabase || !userId) return;
+export async function getCurrentUser() {
+  if (!supabase) return null;
+  const { data: { session } } = await supabase.auth.getSession();
+  const user = session?.user || null;
 
-  try {
-    const { data: existingSignatories } = await supabase
-      .from('signatories')
-      .select('id')
-      .eq('user_id', userId);
+  if (user) {
+    const email = user.email || '';
+    const isUpEmail = email.endsWith('@up.edu.ph') || email.endsWith('@upd.edu.ph');
+    const isBypassEmail = TEST_BYPASS_EMAILS.includes(email.toLowerCase());
 
-    if (!existingSignatories || existingSignatories.length === 0) {
-      await supabase.from('signatories').insert([
-        { role: 'Executive Board Member', task: 'Get signature during EB tambay', completed: false, user_id: userId },
-        { role: 'Academics Committee Member', task: 'Attend 1 acad consultation', completed: false, user_id: userId },
-        { role: 'Events Committee Member', task: 'Help setup for 1 org event', completed: false, user_id: userId }
-      ]);
-
-      await supabase.from('events').insert([
-        { name: 'General Assembly & Orientation', passkey: 'GA2026', attended: false, user_id: userId },
-        { name: 'Recruitment Workshop', passkey: 'WORKSHOP101', attended: false, user_id: userId }
-      ]);
+    if (!isUpEmail && !isBypassEmail) {
+      alert(`Access Restricted: ${email} is not a valid @up.edu.ph address.`);
+      await signOutUser();
+      return null;
     }
-  } catch (err) {
-    console.warn('Initial data seeding skipped or failed:', err.message);
   }
+
+  return user;
 }
 
-// Check if user profile exists in database
 export async function getUserProfileData(userId) {
   if (!supabase || !userId) return null;
-
-  const { data: profile } = await supabase
+  const { data } = await supabase
     .from('profiles')
     .select('*')
     .eq('id', userId)
     .maybeSingle();
-
-  return profile;
+  return data;
 }
 
-// Create new profile from inline onboarding submission
 export async function createApplicantProfile(userId, fullName, nickname) {
-  if (!supabase || !userId) return null;
+  if (!supabase || !userId) return false;
+  
+  const buddyGroups = ['Alpha Geods', 'Beta Mapping', 'Gamma Surveyors', 'Delta Spatial'];
+  const randomGroup = buddyGroups[Math.floor(Math.random() * buddyGroups.length)];
 
-  const { data: newProfile, error } = await supabase
+  const { error } = await supabase
     .from('profiles')
     .insert([{
       id: userId,
-      full_name: fullName.trim(),
-      nickname: nickname.trim(),
-      currency: 100, // Starting applicant tokens
-      buddy_group_name: 'Alpha Geods' // Default placeholder group
-    }])
-    .select()
-    .single();
+      full_name: fullName,
+      nickname: nickname,
+      buddy_group_name: randomGroup,
+      currency: 100
+    }]);
 
   if (error) {
-    console.error("Error creating profile:", error.message);
-    return null;
+    console.error('Error creating profile:', error.message);
+    return false;
   }
-
-  return newProfile;
-}
-
-// Retrieve Logged-in User & Enforce Domain Check
-export async function getCurrentUser() {
-  if (!supabase) return null;
-
-  const { data: { session }, error } = await supabase.auth.getSession();
-
-  if (error || !session) return null;
-
-  const user = session.user;
-  const userEmail = user.email || '';
-
-  const isAllowedDomain = ALLOWED_DOMAINS.some(domain => userEmail.endsWith(`@${domain}`));
-
-  if (!isAllowedDomain) {
-    alert(`Access Denied: You logged in as ${userEmail}.\nOnly official @up.edu.ph or @upd.edu.ph email addresses are allowed.`);
-    await supabase.auth.signOut();
-    return null;
-  }
-
-  await initializeApplicantData(user.id);
-
-  return user;
+  return true;
 }
