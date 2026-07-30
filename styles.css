@@ -1,398 +1,258 @@
 /* ==========================================
-   UP GEOP DESIGN SYSTEM & BRAND TOKENS
+   UP GEOP APPLICANT PROGRESS PORTAL
+   2026 GEODETIC ENGINEERING SYSTEM STYLES
    ========================================== */
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 
 :root {
-  /* Brand Palette */
   --brand-forest: #0d2e20;
-  --brand-deep: #123d2b;
-  --brand-emerald: #1e5a3f;
-  --brand-mint: #2e7d57;
-  --brand-mint-light: #e8f2ec;
-  --brand-mint-glow: rgba(46, 125, 87, 0.15);
-
-  /* Modern Neutral Palette */
-  --bg-page: #f6f8f7;
-  --surface-card: #ffffff;
-  --surface-subtle: #f8faf9;
-  --border-subtle: #e2ece7;
-  --border-strong: #c8dad1;
-
-  /* Typography Colors */
-  --text-heading: #091a12;
-  --text-body: #2d3b34;
-  --text-muted: #64786e;
-  --text-on-dark: #f0f7f3;
-
-  /* Functional Indicators */
-  --success-bg: #dcfce7;
-  --success-text: #15803d;
-  --danger-bg: #fee2e2;
-  --danger-text: #b91c1c;
-
-  /* Elevations & Structural Details */
-  --shadow-xs: 0 1px 2px rgba(13, 46, 32, 0.04);
-  --shadow-sm: 0 4px 12px rgba(13, 46, 32, 0.05);
-  --shadow-md: 0 12px 28px -4px rgba(13, 46, 32, 0.08);
-  --radius-sm: 8px;
-  --radius-md: 14px;
-  --radius-lg: 20px;
-  --transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  --brand-mint: #2e7d32;
+  --brand-mint-light: #e8f5e9;
+  --text-heading: #0d2e20;
+  --text-body: #333333;
+  --text-muted: #666666;
+  --surface-subtle: #f8f9fa;
+  --border-subtle: #e0e0e0;
+  --radius-sm: 6px;
+  --radius-md: 10px;
 }
 
-/* ==========================================
-   GLOBAL RESET & TYPOGRAPHY LEADING
-   ========================================== */
-*, *::before, *::after {
+* {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
 body {
-  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-  background-color: var(--bg-page);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background-color: #f4f6f5;
   color: var(--text-body);
-  line-height: 1.6;
-  letter-spacing: -0.011em;
-  min-height: 100vh;
-  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
 }
 
-h1, h2, h3, h4 {
-  color: var(--text-heading);
-  line-height: 1.25;
-  letter-spacing: -0.022em;
-}
-
-/* ==========================================
-   HEADER & BRAND HERO
-   ========================================== */
 .header {
-  background: radial-gradient(circle at 50% 0%, #1e5a3f 0%, var(--brand-forest) 100%);
-  color: var(--text-on-dark);
+  background: var(--brand-forest);
+  color: white;
+  padding: 24px 16px;
   text-align: center;
-  padding: 56px 24px 64px;
-  position: relative;
-  box-shadow: 0 10px 30px rgba(9, 26, 18, 0.2);
 }
 
-.header::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px);
-  background-size: 24px 24px;
-  pointer-events: none;
-  opacity: 0.6;
-}
-
+/* 1. Fluid Typography Rules (Trend #5) */
 .header h1 {
-  font-size: 2.25rem;
+  font-size: clamp(1.4rem, 4vw + 0.5rem, 2.2rem);
+  letter-spacing: -0.5px;
   font-weight: 700;
-  color: #ffffff;
-  margin-bottom: 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  margin-bottom: 4px;
 }
 
 .header p {
-  font-size: 0.98rem;
-  color: #a3caa0;
-  font-weight: 400;
-  max-width: 480px;
-  margin: 0 auto;
+  font-size: 0.9rem;
+  opacity: 0.85;
 }
 
-/* ==========================================
-   MAIN CONTAINER & CARD STRUCTURE
-   ========================================== */
 .container {
-  max-width: 680px;
-  margin: -32px auto 60px;
-  padding: 0 20px;
-  position: relative;
-  z-index: 10;
+  max-width: 800px;
+  margin: 20px auto;
+  padding: 0 16px 40px;
 }
 
 .card {
-  background: var(--surface-card);
+  background: white;
   border-radius: var(--radius-md);
-  padding: 28px;
-  margin-bottom: 24px;
+  padding: 20px;
+  margin-bottom: 16px;
   border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-sm);
-  transition: var(--transition);
-}
-
-.card:hover {
-  box-shadow: var(--shadow-md);
-  border-color: var(--border-strong);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
 }
 
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 6px;
+  margin-bottom: 12px;
 }
 
-.card h2 {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: var(--brand-forest);
+.card-header h2 {
+  font-size: 1.15rem;
+  color: var(--text-heading);
 }
 
 .subtext {
-  font-size: 0.88rem;
+  font-size: 0.85rem;
   color: var(--text-muted);
-  margin-bottom: 20px;
-  line-height: 1.5;
+  margin-bottom: 16px;
 }
 
-/* Section Dividers */
-hr {
-  border: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--border-subtle), transparent);
-  margin: 24px 0;
+/* Raw Monospaced Engineering Typography (Trend #3) */
+#applicantShortCodeText,
+#manualCodeInput {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: clamp(1.4rem, 5vw, 2.0rem);
+  letter-spacing: 6px;
 }
 
-/* ==========================================
-   BADGES & PROGRESS BAR
-   ========================================== */
-.badge {
-  background-color: var(--brand-mint-light);
-  color: var(--brand-forest);
+#liveTimerDisplay,
+#userCurrencyText,
+#statTotalApplicants,
+#statAvgProgress,
+#statTotalTambay,
+#statActiveTambay,
+#currentMultiplierText {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.btn {
+  background: var(--brand-forest);
+  color: white;
+  border: none;
+  padding: 10px 18px;
+  border-radius: var(--radius-sm);
   font-weight: 600;
-  font-size: 0.8rem;
-  padding: 5px 14px;
-  border-radius: 100px;
-  border: 1px solid rgba(46, 125, 87, 0.15);
-  letter-spacing: -0.01em;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: opacity 0.2s ease;
 }
 
-.progress-container {
-  background-color: var(--brand-mint-light);
-  border-radius: 100px;
-  height: 20px;
-  overflow: hidden;
-  margin: 20px 0 12px;
-  padding: 3px;
+.btn:hover {
+  opacity: 0.9;
+}
+
+.btn-secondary {
+  background: white;
+  color: var(--text-body);
   border: 1px solid var(--border-subtle);
 }
 
+.btn-checkin {
+  background: var(--brand-mint);
+  color: white;
+}
+
+.badge {
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-subtle);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.progress-container {
+  background: #e0e0e0;
+  border-radius: var(--radius-sm);
+  height: 20px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
 .progress-bar {
+  background: var(--brand-forest);
   height: 100%;
-  background: linear-gradient(90deg, var(--brand-mint) 0%, var(--brand-forest) 100%);
-  border-radius: 100px;
   width: 0%;
   color: white;
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
-  box-shadow: 0 2px 6px rgba(18, 61, 43, 0.2);
+  transition: width 0.4s ease;
 }
 
-.status-text {
-  font-size: 0.88rem;
-  color: var(--text-muted);
-  text-align: center;
-  font-weight: 500;
-}
-
-/* ==========================================
-   ORGANIZED TASK LISTS
-   ========================================== */
 .task-list {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .task-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 14px 18px;
-  background-color: var(--surface-subtle);
+  padding: 10px 14px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
-  transition: var(--transition);
-}
-
-.task-item:hover {
-  background-color: #ffffff;
-  border-color: var(--brand-mint);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-xs);
+  background: white;
 }
 
 .task-info strong {
   display: block;
-  font-size: 0.94rem;
-  color: var(--text-heading);
-  font-weight: 600;
-  margin-bottom: 2px;
+  font-size: 0.9rem;
 }
 
 .task-info small {
+  font-size: 0.78rem;
   color: var(--text-muted);
-  font-size: 0.82rem;
 }
 
-/* Modern Checkbox */
-.sig-checkbox {
-  appearance: none;
-  width: 22px;
-  height: 22px;
-  border: 2px solid var(--border-strong);
-  border-radius: 6px;
-  outline: none;
-  cursor: pointer;
-  background-color: #ffffff;
-  transition: var(--transition);
-  position: relative;
-}
-
-.sig-checkbox:checked {
-  background-color: var(--brand-mint);
-  border-color: var(--brand-mint);
-}
-
-.sig-checkbox:checked::after {
-  content: "";
-  position: absolute;
-  left: 6px;
-  top: 2px;
-  width: 5px;
-  height: 10px;
-  border: solid white;
-  border-width: 0 2.5px 2.5px 0;
-  transform: rotate(45deg);
-}
-
-/* ==========================================
-   BUTTONS & FORM CONTROLS
-   ========================================== */
-.tambay-input-group {
-  display: flex;
-  gap: 10px;
-  margin-top: 16px;
-}
-
-input[type="text"],
-input[type="number"] {
-  width: 100%;
-  padding: 12px 16px;
-  border: 1.5px solid var(--border-subtle);
+input[type="text"] {
+  padding: 8px 12px;
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
-  font-size: 0.92rem;
-  font-family: inherit;
-  background-color: var(--surface-subtle);
-  color: var(--text-heading);
-  outline: none;
-  transition: var(--transition);
-}
-
-input[type="text"]:focus,
-input[type="number"]:focus {
-  background-color: #ffffff;
-  border-color: var(--brand-mint);
-  box-shadow: 0 0 0 4px var(--brand-mint-glow);
-}
-
-.btn {
-  background-color: var(--brand-forest);
-  color: #ffffff;
-  border: none;
-  padding: 12px 22px;
-  border-radius: var(--radius-sm);
-  font-weight: 600;
   font-size: 0.9rem;
-  font-family: inherit;
-  cursor: pointer;
-  transition: var(--transition);
-  display: inline-flex;
+}
+
+/* 2. Non-Blocking Toast Notification Container (Trend #1) */
+#toastContainer {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 360px;
+  width: calc(100% - 40px);
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  background: #ffffff;
+  color: var(--text-heading);
+  border: 1px solid var(--border-subtle);
+  border-left: 5px solid var(--brand-forest);
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  font-size: 0.88rem;
+  font-weight: 600;
+  display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  box-shadow: 0 2px 8px rgba(13, 46, 32, 0.12);
+  justify-content: space-between;
+  gap: 10px;
+  animation: toastSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
-.btn:hover {
-  background-color: var(--brand-emerald);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(13, 46, 32, 0.2);
+.toast.toast-success {
+  border-left-color: #2e7d32;
 }
 
-.btn:active {
-  transform: translateY(0);
+.toast.toast-error {
+  border-left-color: #d32f2f;
 }
 
-.btn-secondary {
-  background-color: transparent;
-  color: var(--text-body);
-  border: 1.5px solid var(--border-subtle);
-  box-shadow: none;
+.toast.toast-info {
+  border-left-color: #0288d1;
 }
 
-.btn-secondary:hover {
-  background-color: var(--brand-mint-light);
-  border-color: var(--border-strong);
-  color: var(--brand-forest);
-}
-
-.btn-checkin {
-  padding: 8px 16px;
-  font-size: 0.84rem;
-  background-color: var(--brand-mint);
-}
-
-.btn-checkin:hover {
-  background-color: var(--brand-forest);
-}
-
-/* ==========================================
-   ADMIN & PROFILE BAR CONTROLS
-   ========================================== */
-#userProfileBar {
-  background: var(--surface-card);
-  border-left: 4px solid var(--brand-mint);
-}
-
-#adminPanel {
-  border: 2px dashed var(--brand-mint);
-  background: linear-gradient(180deg, var(--brand-mint-light) 0%, #ffffff 100%);
-  border-radius: var(--radius-md);
-}
-
-#adminPanel h3 {
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: var(--brand-forest);
-  margin-bottom: 12px;
-}
-
-/* ==========================================
-   RESPONSIVE DESIGN
-   ========================================== */
-@media (max-width: 640px) {
-  .header {
-    padding: 40px 16px 52px;
+@keyframes toastSlideIn {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
   }
-  .header h1 {
-    font-size: 1.75rem;
+  to {
+    transform: translateY(0);
+    opacity: 1;
   }
-  .card {
-    padding: 20px;
-  }
-  .tambay-input-group {
-    flex-direction: column;
+}
+
+/* 3. Accessible Motion Respect Rules (Trend #4) */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
