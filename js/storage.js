@@ -29,29 +29,31 @@ export function getStoredData() {
 // 1. MEMBER & RACOMM PERMISSIONS API
 // ------------------------------------------
 
-// Check if user is an authorized Resident Member or RAComm member
+// Check if email belongs to an authorized resident member or RAComm officer
 export async function checkIfResidentMember(email) {
   if (!supabase || !email) return false;
   const { data } = await supabase
     .from('members')
-    .select('id, role')
+    .select('id')
     .eq('email', email)
     .maybeSingle();
+  
   return !!data;
 }
 
-// Check specifically if user is in RAComm
+// Check if user is specifically an RAComm committee member
 export async function checkIfRAComm(email) {
   if (!supabase || !email) return false;
   const { data } = await supabase
     .from('members')
-    .select('role')
+    .select('racomm')
     .eq('email', email)
     .maybeSingle();
-  return data?.role === 'RACOMM';
+  
+  return data?.racomm === true;
 }
 
-// Get global settings (Cap & Multipliers)
+// Get global settings (Cap & Multipliers) set by RAComm
 export async function getGlobalSettings() {
   if (!supabase) return { dailyCapEnabled: true, multiplier: 1.0 };
   const { data } = await supabase.from('global_settings').select('*');
@@ -65,12 +67,13 @@ export async function getGlobalSettings() {
   };
 }
 
-// RAComm: Update Global Settings
+// RAComm Control: Update Global Settings
 export async function updateGlobalSettings(key, value) {
   if (!supabase) return false;
   const { error } = await supabase
     .from('global_settings')
     .upsert({ key, value: String(value) });
+
   if (error) {
     console.error('Error updating setting:', error.message);
     return false;
@@ -79,8 +82,9 @@ export async function updateGlobalSettings(key, value) {
 }
 
 // ------------------------------------------
-// 2. TAMBAY SESSION VALIDATION
+// 2. TAMBAY SESSION VALIDATION API
 // ------------------------------------------
+
 export async function getActiveTambaySession(applicantId) {
   const targetId = applicantId || await getCurrentUserId();
   if (!supabase || !targetId) return null;
@@ -100,7 +104,7 @@ export async function validateApplicantTambay(applicantId, memberEmail) {
     return { success: false, message: 'Invalid validation request.' };
   }
 
-  // ALLOW both Resident Members AND RAComm officers
+  // Allow both Resident Members and RAComm officers to validate
   const isMember = await checkIfResidentMember(memberEmail);
   if (!isMember) {
     return { 
@@ -113,7 +117,7 @@ export async function validateApplicantTambay(applicantId, memberEmail) {
   const settings = await getGlobalSettings();
 
   if (!activeSession) {
-    // TIME IN
+    // TIME IN ACTION
     const { error } = await supabase
       .from('tambay_sessions')
       .insert([{
@@ -126,7 +130,7 @@ export async function validateApplicantTambay(applicantId, memberEmail) {
     if (error) return { success: false, message: error.message };
     return { success: true, action: 'TIME_IN', message: 'Applicant Timed IN successfully!' };
   } else {
-    // TIME OUT
+    // TIME OUT ACTION
     const timeIn = new Date(activeSession.time_in);
     const timeOut = new Date();
     const diffMs = timeOut - timeIn;
@@ -134,7 +138,7 @@ export async function validateApplicantTambay(applicantId, memberEmail) {
     let rawHours = Math.max(0.1, parseFloat((diffMs / (1000 * 60 * 60)).toFixed(2)));
     let calculatedHours = rawHours * settings.multiplier;
 
-    // Apply Daily Cap if enabled
+    // Apply 3.0-hour Daily Cap if enabled
     if (settings.dailyCapEnabled) {
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
@@ -170,6 +174,7 @@ export async function validateApplicantTambay(applicantId, memberEmail) {
 
     if (sessionErr) return { success: false, message: sessionErr.message };
 
+    // Insert logged hours into main tambay_logs
     await supabase.from('tambay_logs').insert([{
       hours: calculatedHours,
       user_id: applicantId
@@ -188,6 +193,7 @@ export async function validateApplicantTambay(applicantId, memberEmail) {
 // ------------------------------------------
 // 3. USER PROFILE & BUDDY GROUP API
 // ------------------------------------------
+
 export async function getUserProfile() {
   const userId = await getCurrentUserId();
   if (!userId || !supabase) return null;
@@ -249,6 +255,7 @@ export async function spendCurrency(cost, itemDescription) {
 // ------------------------------------------
 // 4. SIGNATORIES & TAMBAY LOGS API
 // ------------------------------------------
+
 export async function getSignatories() {
   const userId = await getCurrentUserId();
   if (!userId || !supabase) return [];
@@ -334,6 +341,7 @@ export async function resetTambayHours() {
 // ------------------------------------------
 // 5. EVENTS API
 // ------------------------------------------
+
 export async function getEvents() {
   const userId = await getCurrentUserId();
   if (!userId || !supabase) return [];
@@ -382,7 +390,7 @@ export async function checkInToEvent(eventId, passcodeEntered) {
     return false;
   }
 
-  // Credit 2 hours directly to tambay_logs upon event check-in
+  // Credit 2.0 hours directly to tambay_logs upon event check-in
   await supabase.from('tambay_logs').insert([{
     hours: 2.0,
     user_id: userId
