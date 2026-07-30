@@ -1,12 +1,12 @@
 import { CONFIG } from './config.js';
 import { 
-  getStoredData, supabase, getBuddyGroupMembers, spendCurrency,
+  supabase, getBuddyGroupMembers, spendCurrency,
   getActiveTambaySession, validateApplicantTambay,
   checkIfRAComm, getGlobalSettings, updateGlobalSettings,
-  addSignatoryRequirement, createEvent
+  createEvent, COMMITTEES_LIST
 } from './storage.js';
 import { getSignatories, toggleSignatoryTask } from './signatories.js';
-import { getTambayHours, resetTambayHours } from './tambay.js';
+import { getTambayHours } from './tambay.js';
 import { getEvents, checkInToEvent } from './events.js';
 import { signInWithGoogle, signOutUser, getCurrentUser, getUserProfileData, createApplicantProfile } from './auth.js';
 
@@ -106,7 +106,6 @@ export async function render() {
       stopLiveTimer();
     }
 
-    // Toggle RAComm Command Center
     const isRAComm = await checkIfRAComm(currentUser.email);
     const racommPanel = document.getElementById('racommPanel');
 
@@ -124,26 +123,59 @@ export async function render() {
     }
   }
 
+  // RENDER 6 COMMITTEES SIGNATORIES MATRIX (18 Total Signatures)
   const sigList = document.getElementById('signatoryList');
   if (sigList) {
     sigList.innerHTML = '';
-    stats.signatoriesList.forEach(item => {
-      const li = document.createElement('li');
-      li.className = 'task-item';
-      li.innerHTML = `
-        <div class="task-info">
-          <strong>${item.role}</strong>
-          <small>Task: ${item.task}</small>
-        </div>
-        <input 
-          type="checkbox" 
-          ${item.completed ? 'checked' : ''} 
-          data-id="${item.id}" 
-          data-completed="${item.completed}"
-          class="sig-checkbox" 
-        />
-      `;
-      sigList.appendChild(li);
+
+    COMMITTEES_LIST.forEach(comm => {
+      const commSection = document.createElement('div');
+      commSection.style.marginBottom = '16px';
+      commSection.style.padding = '12px';
+      commSection.style.border = '1px solid var(--border-subtle)';
+      commSection.style.borderRadius = 'var(--radius-sm)';
+      commSection.style.background = 'var(--surface-subtle)';
+
+      commSection.innerHTML = `<h4 style="color: var(--brand-forest); margin-bottom: 8px;">🏛️ ${comm.name} Committee</h4>`;
+
+      const commSigs = stats.signatoriesList.filter(s => s.committee_name === comm.name);
+      const member1 = commSigs.find(s => s.type === 'MEMBER_1');
+      const member2 = commSigs.find(s => s.type === 'MEMBER_2');
+      const vpSig = commSigs.find(s => s.type === 'VP');
+
+      const isVpUnlocked = member1?.completed && member2?.completed;
+
+      commSigs.forEach(item => {
+        const isVpTask = item.type === 'VP';
+        const isLocked = isVpTask && !isVpUnlocked;
+
+        const li = document.createElement('li');
+        li.className = 'task-item';
+        li.style.background = isLocked ? '#f5f5f5' : 'white';
+        li.style.opacity = isLocked ? '0.6' : '1.0';
+
+        li.innerHTML = `
+          <div class="task-info">
+            <strong>${isVpTask ? `👑 ${comm.vp}` : `👤 Member Task (${item.type === 'MEMBER_1' ? '#1' : '#2'})`}</strong>
+            <small style="display: block; margin-top: 2px;">${item.trait_description}</small>
+            <small style="color: var(--brand-forest); font-weight: 600;">Task: ${item.task_description}</small>
+          </div>
+          ${isLocked ? `
+            <span class="badge" style="background: #e0e0e0; color: #666;">🔒 Locked</span>
+          ` : `
+            <input 
+              type="checkbox" 
+              ${item.completed ? 'checked' : ''} 
+              data-id="${item.id}" 
+              data-completed="${item.completed}"
+              class="sig-checkbox" 
+            />
+          `}
+        `;
+        commSection.appendChild(li);
+      });
+
+      sigList.appendChild(commSection);
     });
   }
 
@@ -259,7 +291,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // QR Display Generator
   document.getElementById('showQrBtn')?.addEventListener('click', () => {
     if (!currentUser) return;
 
@@ -336,7 +367,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // RAComm Admin Control Buttons
   document.getElementById('set1xBtn')?.addEventListener('click', async () => {
     if (await updateGlobalSettings('hourly_multiplier', '1.0')) {
       alert("Multiplier set to 1.0x (Standard)");
@@ -361,16 +391,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('disableCapBtn')?.addEventListener('click', async () => {
     if (await updateGlobalSettings('daily_cap_enabled', 'false')) {
       alert("Daily Cap Removed! (Unlimited Hours)");
-      await render();
-    }
-  });
-
-  document.getElementById('addRequirementBtn')?.addEventListener('click', async () => {
-    const roleInput = document.getElementById('adminRoleInput');
-    const taskInput = document.getElementById('adminTaskInput');
-    if (roleInput && taskInput && await addSignatoryRequirement(roleInput.value, taskInput.value)) {
-      roleInput.value = '';
-      taskInput.value = '';
       await render();
     }
   });
