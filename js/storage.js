@@ -115,23 +115,25 @@ export async function generateApplicantSignatories(userId) {
 
 export async function checkIfResidentMember(email) {
   if (!supabase || !email) return false;
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('members')
     .select('id')
-    .eq('email', email)
+    .ilike('email', email.trim())
     .maybeSingle();
   
+  if (error) console.error('Error checking resident member:', error.message);
   return !!data;
 }
 
 export async function checkIfRAComm(email) {
   if (!supabase || !email) return false;
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('members')
     .select('racomm')
-    .eq('email', email)
+    .ilike('email', email.trim())
     .maybeSingle();
   
+  if (error) console.error('Error checking RAComm officer:', error.message);
   return data?.racomm === true;
 }
 
@@ -162,7 +164,60 @@ export async function updateGlobalSettings(key, value) {
 }
 
 // ------------------------------------------
-// 3. TAMBAY SESSION VALIDATION API
+// 3. SHORT CODE VALIDATION API
+// ------------------------------------------
+
+export async function generateApplicantShortCode() {
+  const userId = await getCurrentUserId();
+  if (!supabase || !userId) return null;
+
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let shortCode = '';
+  for (let i = 0; i < 6; i++) {
+    shortCode += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 mins
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ 
+      temp_code: shortCode, 
+      code_expires_at: expiresAt 
+    })
+    .eq('id', userId);
+
+  if (error) {
+    console.error('Error generating short code:', error.message);
+    return null;
+  }
+
+  return shortCode;
+}
+
+export async function getApplicantIdByShortCode(code) {
+  if (!supabase || !code) return null;
+
+  const cleanCode = code.trim().toUpperCase();
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, code_expires_at')
+    .eq('temp_code', cleanCode)
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  if (new Date(data.code_expires_at) < new Date()) {
+    alert('That code has expired! Please ask the applicant to regenerate their code.');
+    return null;
+  }
+
+  return data.id;
+}
+
+// ------------------------------------------
+// 4. TAMBAY SESSION VALIDATION API
 // ------------------------------------------
 
 export async function getActiveTambaySession(applicantId) {
@@ -266,7 +321,7 @@ export async function validateApplicantTambay(applicantId, memberEmail) {
 }
 
 // ------------------------------------------
-// 4. USER PROFILE & BUDDY GROUP API
+// 5. USER PROFILE & BUDDY GROUP API
 // ------------------------------------------
 
 export async function getUserProfile() {
@@ -328,7 +383,7 @@ export async function spendCurrency(cost, itemDescription) {
 }
 
 // ------------------------------------------
-// 5. SIGNATORIES & TAMBAY LOGS API
+// 6. SIGNATORIES & TAMBAY LOGS API
 // ------------------------------------------
 
 export async function getSignatories() {
@@ -401,7 +456,7 @@ export async function resetTambayHours() {
 }
 
 // ------------------------------------------
-// 6. EVENTS API
+// 7. EVENTS & ANALYTICS API
 // ------------------------------------------
 
 export async function getEvents() {
