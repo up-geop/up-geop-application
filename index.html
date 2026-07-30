@@ -75,14 +75,14 @@
           <h2 style="color: var(--brand-forest);">🛡️ Resident Member Portal</h2>
           <span class="badge" style="background: var(--brand-forest); color: white;">Member Access</span>
         </div>
-        <p class="subtext">You are signed in as an active resident member. Use this hub to scan applicant QR codes for Tambay validation.</p>
+        <p class="subtext">You are signed in as an active resident member. Use this hub to scan applicant QR codes or validate short codes.</p>
 
         <div style="padding: 20px; background: white; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); text-align: center;">
-          <h3>📱 Scan Applicant QR Code</h3>
+          <h3>📱 Validate Applicant Tambay</h3>
           <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
-            Open your smartphone camera or QR scanner app and scan the applicant's QR code on their screen to log their <strong>Time In</strong> or <strong>Time Out</strong>.
+            Scan the applicant's QR code or enter their 6-character code to log <strong>Time In</strong> or <strong>Time Out</strong>.
           </p>
-          <button id="manualValidateBtn" class="btn btn-checkin">🔍 Manual Validation by Applicant ID</button>
+          <button id="manualValidateBtn" class="btn btn-checkin" style="font-size: 0.95rem; padding: 10px 20px;">🔍 Enter 6-Character Short Code</button>
         </div>
       </section>
 
@@ -237,7 +237,7 @@
           <h2>☕ Tambay Hours Log</h2>
           <span class="badge" id="tambayBadge">0 / 15 hrs</span>
         </div>
-        <p class="subtext">Present your QR code to a resident member or RAComm officer to log your time in/out.</p>
+        <p class="subtext">Present your QR code or 6-character code to a resident member or RAComm officer to log your time in/out.</p>
 
         <!-- LIVE ACTIVE TIMER BANNER -->
         <div id="activeTambayBanner" style="display: none; background: var(--brand-mint-light); padding: 16px; border-radius: var(--radius-sm); margin-bottom: 16px; border: 1.5px solid var(--brand-mint);">
@@ -250,13 +250,23 @@
           </div>
         </div>
 
-        <button id="showQrBtn" class="btn">📱 Show My Validation QR Code</button>
+        <button id="showQrBtn" class="btn">📱 Show My Validation QR & Short Code</button>
 
         <div id="qrDisplayContainer" style="display: none; text-align: center; margin-top: 20px; padding: 20px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--surface-subtle);">
           <h3 style="margin-bottom: 4px;">Validation QR Code</h3>
           <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 16px;">Ask a resident member or RAComm officer to scan this code.</p>
+          
           <div id="qrcodeCanvas" style="display: flex; justify-content: center; padding: 12px; background: white; width: fit-content; margin: 0 auto 16px; border-radius: 8px; border: 1px solid var(--border-subtle);"></div>
-          <button id="closeQrBtn" class="btn btn-secondary" style="padding: 6px 14px; font-size: 0.82rem;">Hide QR Code</button>
+          
+          <!-- 6-CHARACTER SHORT CODE DISPLAY -->
+          <div style="margin-bottom: 16px; padding: 10px 16px; background: white; border: 2px dashed var(--brand-forest); border-radius: 8px; display: inline-block;">
+            <small style="color: var(--text-muted); display: block; font-weight: 600; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.5px;">Manual Validation Code (Valid for 10 mins)</small>
+            <span id="applicantShortCodeText" style="font-size: 1.8rem; color: var(--brand-forest); font-weight: 800; font-family: monospace; letter-spacing: 4px;">------</span>
+          </div>
+
+          <div>
+            <button id="closeQrBtn" class="btn btn-secondary" style="padding: 6px 14px; font-size: 0.82rem;">Hide QR Code</button>
+          </div>
         </div>
       </section>
 
