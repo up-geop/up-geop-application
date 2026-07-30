@@ -438,7 +438,6 @@ export async function getTambayHours() {
   return (data || []).reduce((sum, item) => sum + Number(item.hours), 0);
 }
 
-// RESTORED: Export resetTambayHours for tambay.js
 export async function resetTambayHours() {
   const userId = await getCurrentUserId();
   if (!userId || !supabase) return false;
@@ -456,7 +455,7 @@ export async function resetTambayHours() {
 }
 
 // ------------------------------------------
-// 7. EVENTS & ANALYTICS API (FOR RACOMM)
+// 7. EVENTS API
 // ------------------------------------------
 
 export async function getEvents() {
@@ -530,7 +529,6 @@ export async function createEvent(name, passkey) {
   return true;
 }
 
-// FETCH ALL APPLICANTS WITH PROGRESS METRICS FOR RACOMM ROSTER
 export async function getAllApplicantsProgress() {
   if (!supabase) return [];
 
@@ -574,4 +572,61 @@ export async function getAllApplicantsProgress() {
       isTimedIn
     };
   });
+}
+
+// ------------------------------------------
+// 8. RACOMM FULL ADMIN CONTROLS API
+// ------------------------------------------
+
+export async function getApplicantFullDetails(applicantId) {
+  if (!supabase || !applicantId) return null;
+
+  const { data: profile } = await supabase.from('profiles').select('*').eq('id', applicantId).single();
+  const { data: signatories } = await supabase.from('signatories').select('*').eq('user_id', applicantId).order('created_at', { ascending: true });
+  const { data: tambayLogs } = await supabase.from('tambay_logs').select('*').eq('user_id', applicantId).order('created_at', { ascending: false });
+  const { data: events } = await supabase.from('events').select('*').eq('user_id', applicantId);
+
+  return { profile, signatories, tambayLogs, events };
+}
+
+export async function deleteApplicantProfile(applicantId) {
+  if (!supabase || !applicantId) return false;
+
+  await supabase.from('signatories').delete().eq('user_id', applicantId);
+  await supabase.from('tambay_logs').delete().eq('user_id', applicantId);
+  await supabase.from('tambay_sessions').delete().eq('applicant_id', applicantId);
+  await supabase.from('events').delete().eq('user_id', applicantId);
+  
+  const { error } = await supabase.from('profiles').delete().eq('id', applicantId);
+
+  if (error) {
+    console.error('Error deleting profile:', error.message);
+    return false;
+  }
+  return true;
+}
+
+export async function adminAdjustTambayHours(applicantId, hoursAmount) {
+  if (!supabase || !applicantId) return false;
+
+  const { error } = await supabase.from('tambay_logs').insert([{
+    user_id: applicantId,
+    hours: hoursAmount
+  }]);
+
+  return !error;
+}
+
+export async function adminAdjustTokens(applicantId, newBalance) {
+  if (!supabase || !applicantId) return false;
+
+  const { error } = await supabase.from('profiles').update({ currency: newBalance }).eq('id', applicantId);
+  return !error;
+}
+
+export async function adminToggleApplicantSignatory(taskId, currentStatus) {
+  if (!supabase || !taskId) return false;
+
+  const { error } = await supabase.from('signatories').update({ completed: !currentStatus }).eq('id', taskId);
+  return !error;
 }
