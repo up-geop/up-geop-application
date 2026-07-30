@@ -167,9 +167,9 @@
                 <th style="padding: 10px 14px;">Buddy Group</th>
                 <th style="padding: 10px 14px;">Signatories</th>
                 <th style="padding: 10px 14px;">Tambay Hours</th>
-                <th style="padding: 10px 14px;">Events</th>
                 <th style="padding: 10px 14px;">Overall %</th>
                 <th style="padding: 10px 14px;">Status</th>
+                <th style="padding: 10px 14px;">Action</th>
               </tr>
             </thead>
             <tbody id="applicantRosterTbody">
@@ -337,7 +337,42 @@
       </div>
     </div>
 
-    <!-- 4. NON-BLOCKING TOAST CONTAINER -->
+    <!-- ========================================== -->
+    <!-- 4. RACOMM INSPECTION & MANAGEMENT MODAL   -->
+    <!-- ========================================== -->
+    <div id="adminInspectionModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; align-items: center; justify-content: center; padding: 16px;">
+      <div class="card" style="max-width: 650px; width: 100%; max-height: 85vh; overflow-y: auto; margin: 0; border: 2px solid var(--brand-forest);">
+        
+        <!-- Modal Header -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 10px;">
+          <div>
+            <h3 id="inspectApplicantName" style="color: var(--brand-forest); margin: 0;">Applicant Details</h3>
+            <small id="inspectApplicantEmail" style="color: var(--text-muted);"></small>
+          </div>
+          <button id="closeInspectModalBtn" style="background: none; border: none; font-size: 1.4rem; cursor: pointer; color: var(--text-muted); font-weight: bold;">&times;</button>
+        </div>
+
+        <!-- Quick Admin Actions Bar -->
+        <div style="background: var(--surface-subtle); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); margin-bottom: 16px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: space-between;">
+          <div style="display: flex; gap: 8px;">
+            <button id="adminAddHoursBtn" class="btn btn-checkin" style="font-size: 0.8rem; padding: 6px 12px;">⏱️ Adjust Hours</button>
+            <button id="adminEditTokensBtn" class="btn btn-secondary" style="font-size: 0.8rem; padding: 6px 12px;">🪙 Set Tokens</button>
+          </div>
+          <button id="adminDeleteApplicantBtn" class="btn" style="background: #d32f2f; color: white; font-size: 0.8rem; padding: 6px 12px;">🗑️ Delete Profile</button>
+        </div>
+
+        <!-- Complete Signatory Breakdown -->
+        <h4 style="margin-bottom: 8px; color: var(--brand-forest);">✍️ Full Signatories Matrix (Click to toggle)</h4>
+        <div id="inspectSignatoriesList" style="margin-bottom: 20px; display: flex; flex-direction: column; gap: 6px;"></div>
+
+        <!-- Tambay Logs Breakdown -->
+        <h4 style="margin-bottom: 8px; color: var(--brand-forest);">☕ Tambay Hours History</h4>
+        <div id="inspectTambayLogsList" style="margin-bottom: 20px; max-height: 120px; overflow-y: auto; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 4px; background: white;"></div>
+
+      </div>
+    </div>
+
+    <!-- 5. NON-BLOCKING TOAST CONTAINER -->
     <div id="toastContainer"></div>
 
   </main>
