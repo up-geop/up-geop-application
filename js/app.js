@@ -217,11 +217,7 @@ async function handleAuthState() {
     const isMember = await checkIfResidentMember(currentUser.email);
     const isRAComm = await checkIfRAComm(currentUser.email);
 
-    console.log("Logged in User:", currentUser.email);
-    console.log("isMember Result:", isMember, "| isRAComm Result:", isRAComm);
-
     if (isMember || isRAComm) {
-      // ROUTE TO MEMBER / RACOMM DASHBOARD
       if (onboardingSection) onboardingSection.style.display = 'none';
       if (applicantDashboard) applicantDashboard.style.display = 'none';
       if (memberDashboard) memberDashboard.style.display = 'block';
@@ -244,7 +240,6 @@ async function handleAuthState() {
         if (capText) capText.textContent = settings.dailyCapEnabled ? 'Active (3.0 hrs/day)' : 'Disabled (No Limit)';
       }
     } else {
-      // ROUTE TO APPLICANT DASHBOARD
       if (memberDashboard) memberDashboard.style.display = 'none';
 
       if (roleBadgeHeader) {
@@ -316,7 +311,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // Show QR Code & Generate Fresh 6-Digit Code
+  // Show QR Code & Short Code
   document.getElementById('showQrBtn')?.addEventListener('click', async () => {
     if (!currentUser) return;
 
@@ -351,19 +346,42 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (qrContainer) qrContainer.style.display = 'none';
   });
 
-  // Manual Validation via Short Code
-  document.getElementById('manualValidateBtn')?.addEventListener('click', async () => {
-    const inputCode = prompt('Enter Applicant 6-Character Short Code (e.g. K7X9P2):');
-    if (!inputCode || !currentUser) return;
+  // Modal Handlers for Manual Short Code Entry
+  const closeModal = () => {
+    const modal = document.getElementById('manualCodeModal');
+    if (modal) modal.style.display = 'none';
+  };
 
-    const cleanInput = inputCode.trim();
+  document.getElementById('manualValidateBtn')?.addEventListener('click', () => {
+    const modal = document.getElementById('manualCodeModal');
+    const input = document.getElementById('manualCodeInput');
+    if (modal) {
+      modal.style.display = 'flex';
+      if (input) {
+        input.value = '';
+        input.focus();
+      }
+    }
+  });
 
-    let applicantId = cleanInput;
-    if (cleanInput.length <= 8) {
-      applicantId = await getApplicantIdByShortCode(cleanInput);
+  document.getElementById('closeModalBtn')?.addEventListener('click', closeModal);
+  document.getElementById('cancelManualCodeBtn')?.addEventListener('click', closeModal);
+
+  document.getElementById('submitManualCodeBtn')?.addEventListener('click', async () => {
+    const input = document.getElementById('manualCodeInput');
+    if (!input || !currentUser) return;
+
+    const cleanInput = input.value.trim().toUpperCase();
+
+    if (cleanInput.length < 6) {
+      alert('Please enter a valid 6-character code.');
+      return;
     }
 
+    const applicantId = await getApplicantIdByShortCode(cleanInput);
+
     if (applicantId) {
+      closeModal();
       const res = await validateApplicantTambay(applicantId, currentUser.email);
       alert(res.message);
     } else {
