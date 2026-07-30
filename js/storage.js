@@ -26,10 +26,93 @@ export function getStoredData() {
 }
 
 // ------------------------------------------
-// 1. MEMBER & RACOMM PERMISSIONS API
+// 1. COMMITTEES & SIGNATORIES MATRIX (18 Total)
 // ------------------------------------------
 
-// Check if email belongs to an authorized resident member or RAComm officer
+export const COMMITTEES_LIST = [
+  { name: 'Academics', vp: 'VP for Academic Affairs' },
+  { name: 'Publicity', vp: 'VP for Publicity Affairs' },
+  { name: 'RAComm', vp: 'Recruitment & Applications Committee Head' },
+  { name: 'Internal', vp: 'VP for Internal Affairs' },
+  { name: 'External', vp: 'VP for External Affairs' },
+  { name: 'Finance', vp: 'VP for Finance Affairs' }
+];
+
+const MEMBER_TRAITS = [
+  "owns an Adidas or Nike shoe",
+  "has dyed hair or wears glasses",
+  "brought a reusable water jug today",
+  "is wearing a green or black shirt",
+  "commutes more than 1 hour to campus",
+  "has taken a GE class with you",
+  "is left-handed or wears a wristwatch",
+  "listens to OPM or K-Pop"
+];
+
+const INTERACTION_TASKS = [
+  "Take a photo using a funny camera filter",
+  "Swap bags for 1 minute and take a fit check photo",
+  "Do a synchronized high-five or funny pose together",
+  "Play a quick game of Rock-Paper-Scissors (Best of 3)",
+  "Get a song or coffee recommendation from them",
+  "Record a 5-second video saying 'GEOP Go!'"
+];
+
+export async function generateApplicantSignatories(userId) {
+  if (!supabase || !userId) return;
+
+  const { data: existing } = await supabase
+    .from('signatories')
+    .select('id')
+    .eq('user_id', userId);
+
+  if (existing && existing.length > 0) return; // Already generated
+
+  const newSignatories = [];
+
+  COMMITTEES_LIST.forEach(comm => {
+    // Random Trait & Task for Member 1
+    const trait1 = MEMBER_TRAITS[Math.floor(Math.random() * MEMBER_TRAITS.length)];
+    const task1 = INTERACTION_TASKS[Math.floor(Math.random() * INTERACTION_TASKS.length)];
+    newSignatories.push({
+      user_id: userId,
+      committee_name: comm.name,
+      type: 'MEMBER_1',
+      trait_description: `Find a member who ${trait1}`,
+      task_description: task1,
+      completed: false
+    });
+
+    // Random Trait & Task for Member 2
+    const trait2 = MEMBER_TRAITS[Math.floor(Math.random() * MEMBER_TRAITS.length)];
+    const task2 = INTERACTION_TASKS[Math.floor(Math.random() * INTERACTION_TASKS.length)];
+    newSignatories.push({
+      user_id: userId,
+      committee_name: comm.name,
+      type: 'MEMBER_2',
+      trait_description: `Find another member who ${trait2}`,
+      task_description: task2,
+      completed: false
+    });
+
+    // VP Signatory (Locked until Member 1 & 2 are complete)
+    newSignatories.push({
+      user_id: userId,
+      committee_name: comm.name,
+      type: 'VP',
+      trait_description: `Official Verification by ${comm.vp}`,
+      task_description: `Locked until both ${comm.name} member signatories are completed!`,
+      completed: false
+    });
+  });
+
+  await supabase.from('signatories').insert(newSignatories);
+}
+
+// ------------------------------------------
+// 2. MEMBER & RACOMM PERMISSIONS API
+// ------------------------------------------
+
 export async function checkIfResidentMember(email) {
   if (!supabase || !email) return false;
   const { data } = await supabase
@@ -41,7 +124,6 @@ export async function checkIfResidentMember(email) {
   return !!data;
 }
 
-// Check if user is specifically an RAComm committee member
 export async function checkIfRAComm(email) {
   if (!supabase || !email) return false;
   const { data } = await supabase
@@ -53,7 +135,6 @@ export async function checkIfRAComm(email) {
   return data?.racomm === true;
 }
 
-// Get global settings (Cap & Multipliers) set by RAComm
 export async function getGlobalSettings() {
   if (!supabase) return { dailyCapEnabled: true, multiplier: 1.0 };
   const { data } = await supabase.from('global_settings').select('*');
@@ -67,7 +148,6 @@ export async function getGlobalSettings() {
   };
 }
 
-// RAComm Control: Update Global Settings
 export async function updateGlobalSettings(key, value) {
   if (!supabase) return false;
   const { error } = await supabase
@@ -82,7 +162,7 @@ export async function updateGlobalSettings(key, value) {
 }
 
 // ------------------------------------------
-// 2. TAMBAY SESSION VALIDATION API
+// 3. TAMBAY SESSION VALIDATION API
 // ------------------------------------------
 
 export async function getActiveTambaySession(applicantId) {
@@ -104,7 +184,6 @@ export async function validateApplicantTambay(applicantId, memberEmail) {
     return { success: false, message: 'Invalid validation request.' };
   }
 
-  // Allow both Resident Members and RAComm officers to validate
   const isMember = await checkIfResidentMember(memberEmail);
   if (!isMember) {
     return { 
@@ -117,7 +196,6 @@ export async function validateApplicantTambay(applicantId, memberEmail) {
   const settings = await getGlobalSettings();
 
   if (!activeSession) {
-    // TIME IN ACTION
     const { error } = await supabase
       .from('tambay_sessions')
       .insert([{
@@ -130,7 +208,6 @@ export async function validateApplicantTambay(applicantId, memberEmail) {
     if (error) return { success: false, message: error.message };
     return { success: true, action: 'TIME_IN', message: 'Applicant Timed IN successfully!' };
   } else {
-    // TIME OUT ACTION
     const timeIn = new Date(activeSession.time_in);
     const timeOut = new Date();
     const diffMs = timeOut - timeIn;
@@ -138,7 +215,6 @@ export async function validateApplicantTambay(applicantId, memberEmail) {
     let rawHours = Math.max(0.1, parseFloat((diffMs / (1000 * 60 * 60)).toFixed(2)));
     let calculatedHours = rawHours * settings.multiplier;
 
-    // Apply 3.0-hour Daily Cap if enabled
     if (settings.dailyCapEnabled) {
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
@@ -174,7 +250,6 @@ export async function validateApplicantTambay(applicantId, memberEmail) {
 
     if (sessionErr) return { success: false, message: sessionErr.message };
 
-    // Insert logged hours into main tambay_logs
     await supabase.from('tambay_logs').insert([{
       hours: calculatedHours,
       user_id: applicantId
@@ -191,7 +266,7 @@ export async function validateApplicantTambay(applicantId, memberEmail) {
 }
 
 // ------------------------------------------
-// 3. USER PROFILE & BUDDY GROUP API
+// 4. USER PROFILE & BUDDY GROUP API
 // ------------------------------------------
 
 export async function getUserProfile() {
@@ -253,12 +328,14 @@ export async function spendCurrency(cost, itemDescription) {
 }
 
 // ------------------------------------------
-// 4. SIGNATORIES & TAMBAY LOGS API
+// 5. SIGNATORIES & TAMBAY LOGS API
 // ------------------------------------------
 
 export async function getSignatories() {
   const userId = await getCurrentUserId();
   if (!userId || !supabase) return [];
+
+  await generateApplicantSignatories(userId);
 
   const { data, error } = await supabase
     .from('signatories')
@@ -285,21 +362,6 @@ export async function toggleSignatoryTask(taskId, currentStatus) {
 
   if (error) {
     console.error('Error toggling signatory status:', error.message);
-    return false;
-  }
-  return true;
-}
-
-export async function addSignatoryRequirement(role, task) {
-  const userId = await getCurrentUserId();
-  if (!userId || !supabase) return false;
-
-  const { error } = await supabase
-    .from('signatories')
-    .insert([{ role, task, completed: false, user_id: userId }]);
-
-  if (error) {
-    console.error('Error adding signatory task:', error.message);
     return false;
   }
   return true;
@@ -339,7 +401,7 @@ export async function resetTambayHours() {
 }
 
 // ------------------------------------------
-// 5. EVENTS API
+// 6. EVENTS API
 // ------------------------------------------
 
 export async function getEvents() {
@@ -390,7 +452,6 @@ export async function checkInToEvent(eventId, passcodeEntered) {
     return false;
   }
 
-  // Credit 2.0 hours directly to tambay_logs upon event check-in
   await supabase.from('tambay_logs').insert([{
     hours: 2.0,
     user_id: userId
@@ -413,4 +474,15 @@ export async function createEvent(name, passkey) {
     return false;
   }
   return true;
+}
+
+export async function getApplicantAnalytics() {
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*');
+
+  if (error) return [];
+  return data || [];
 }
