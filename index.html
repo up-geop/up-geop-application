@@ -23,9 +23,12 @@
 
     <!-- USER PROFILE / LOGOUT BAR -->
     <div id="userProfileBar" class="card" style="display: none; justify-content: space-between; align-items: center; padding: 16px 24px; margin-bottom: 20px;">
-      <span style="font-size: 0.9rem; color: var(--text-body);">
-        Logged in as: <strong id="userEmailText" style="color: var(--brand-forest);"></strong>
-      </span>
+      <div>
+        <span style="font-size: 0.9rem; color: var(--text-body);">
+          Logged in as: <strong id="userEmailText" style="color: var(--brand-forest);"></strong>
+        </span>
+        <span id="roleBadgeHeader" class="badge" style="margin-left: 8px;">Applicant</span>
+      </div>
       <button id="logoutBtn" class="btn btn-secondary" style="padding: 6px 14px; font-size: 0.82rem;">Sign Out</button>
     </div>
 
@@ -33,14 +36,14 @@
     <div id="authSection" class="card" style="text-align: center; padding: 40px 24px;">
       <h2 style="margin-bottom: 8px;">Sign In to Applicant Portal</h2>
       <p class="subtext" style="max-width: 420px; margin: 0 auto 24px;">
-        Please sign in using your official <strong>@up.edu.ph</strong> or <strong>@upd.edu.ph</strong> email to access your tracking sheet.
+        Please sign in using your official <strong>@up.edu.ph</strong> email to access your portal.
       </p>
       <button id="loginGoogleBtn" class="btn" style="padding: 14px 28px; font-size: 1rem;">
-        🔑 Sign In with Google (@up.edu.ph)
+        🔑 Sign In with Google
       </button>
     </div>
 
-    <!-- INLINE ONBOARDING FORM -->
+    <!-- ONBOARDING FORM (APPLICANTS ONLY) -->
     <div id="onboardingSection" class="card" style="display: none; text-align: center;">
       <div class="card-header" style="justify-content: center; margin-bottom: 8px;">
         <h2>🎓 Complete Your Applicant Profile</h2>
@@ -62,8 +65,127 @@
       </form>
     </div>
 
-    <!-- MAIN DASHBOARD CONTENT -->
-    <div id="dashboardContent" style="display: none;">
+    <!-- ========================================== -->
+    <!-- 1. RESIDENT MEMBER & RACOMM DASHBOARD      -->
+    <!-- ========================================== -->
+    <div id="memberDashboardContent" style="display: none;">
+      
+      <section class="card" style="border: 2px solid var(--brand-forest); background: #f4f9f6;">
+        <div class="card-header">
+          <h2 style="color: var(--brand-forest);">🛡️ Resident Member Portal</h2>
+          <span class="badge" style="background: var(--brand-forest); color: white;">Member Access</span>
+        </div>
+        <p class="subtext">You are signed in as an active resident member. Use this hub to scan applicant QR codes for Tambay validation.</p>
+
+        <div style="padding: 20px; background: white; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); text-align: center;">
+          <h3>📱 Scan Applicant QR Code</h3>
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
+            Open your smartphone camera or QR scanner app and scan the applicant's QR code on their screen to log their <strong>Time In</strong> or <strong>Time Out</strong>.
+          </p>
+          <button id="manualValidateBtn" class="btn btn-checkin">🔍 Manual Validation by Applicant ID</button>
+        </div>
+      </section>
+
+      <!-- RACOMM EXCLUSIVE COMMAND CENTER -->
+      <section id="racommPanel" class="card" style="display: none; border: 2px solid #2e7d32; background: #e8f5e9; margin-top: 20px;">
+        <div class="card-header">
+          <h2 style="color: #1b5e20;">⚙️ RAComm Command Center</h2>
+          <span class="badge" style="background: #1b5e20; color: white;">RAComm Exclusive</span>
+        </div>
+        <p class="subtext">Configure global policies, multipliers, and applicant requirements.</p>
+
+        <!-- MULTIPLIER & CAP CONTROLS -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 20px;">
+          <div style="background: white; padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+            <strong>⚡ Tambay Hour Multiplier</strong>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin: 4px 0 10px;">Currently: <strong id="currentMultiplierText">1.0x</strong></p>
+            <div style="display: flex; gap: 6px;">
+              <button id="set1xBtn" class="btn btn-checkin" style="padding: 4px 10px; font-size: 0.8rem;">1.0x Normal</button>
+              <button id="set2xBtn" class="btn btn-checkin" style="padding: 4px 10px; font-size: 0.8rem; background: var(--brand-forest);">2.0x Double</button>
+            </div>
+          </div>
+
+          <div style="background: white; padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+            <strong>🛡️ 3-Hour Daily Cap</strong>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin: 4px 0 10px;">Status: <strong id="currentCapText">Active (3.0 hrs/day)</strong></p>
+            <div style="display: flex; gap: 6px;">
+              <button id="enableCapBtn" class="btn btn-checkin" style="padding: 4px 10px; font-size: 0.8rem;">Enable Cap</button>
+              <button id="disableCapBtn" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;">Remove Cap</button>
+            </div>
+          </div>
+        </div>
+
+        <hr style="margin: 20px 0;" />
+
+        <!-- EVENT CREATION -->
+        <h3>📅 Create Event</h3>
+        <div style="display: flex; gap: 8px; margin-top: 12px; margin-bottom: 20px;">
+          <input type="text" id="adminEventNameInput" placeholder="Event Name (e.g. GA #1)" />
+          <input type="text" id="adminEventPasskeyInput" placeholder="Passkey" />
+          <button id="addEventBtn" class="btn btn-checkin">Create Event</button>
+        </div>
+
+        <hr style="margin: 20px 0;" />
+
+        <!-- GLOBAL ANALYTICS METRICS -->
+        <h3 style="margin-bottom: 12px; color: #1b5e20;">📊 Global Application Statistics</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px;">
+          
+          <div style="background: white; padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); text-align: center;">
+            <span style="font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700;">Total Applicants</span>
+            <h2 id="statTotalApplicants" style="font-size: 1.8rem; color: var(--brand-forest); margin-top: 4px;">0</h2>
+          </div>
+
+          <div style="background: white; padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); text-align: center;">
+            <span style="font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700;">Average Progress</span>
+            <h2 id="statAvgProgress" style="font-size: 1.8rem; color: var(--brand-forest); margin-top: 4px;">0%</h2>
+          </div>
+
+          <div style="background: white; padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); text-align: center;">
+            <span style="font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700;">Total Tambay Hours</span>
+            <h2 id="statTotalTambay" style="font-size: 1.8rem; color: var(--brand-forest); margin-top: 4px;">0 hrs</h2>
+          </div>
+
+          <div style="background: white; padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); text-align: center;">
+            <span style="font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700;">Currently Timed In</span>
+            <h2 id="statActiveTambay" style="font-size: 1.8rem; color: var(--brand-forest); margin-top: 4px;">0</h2>
+          </div>
+
+        </div>
+
+        <!-- APPLICANT PROGRESS MONITORING TABLE -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+          <h3>📋 Applicant Progress Roster</h3>
+          <input type="text" id="searchApplicantInput" placeholder="🔍 Search applicant by name..." style="padding: 6px 12px; font-size: 0.85rem; width: 240px;" />
+        </div>
+
+        <div style="overflow-x: auto; background: white; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);">
+          <table style="width: 100%; border-collapse: collapse; font-size: 0.88rem; text-align: left;">
+            <thead>
+              <tr style="background: var(--surface-subtle); border-bottom: 1px solid var(--border-subtle);">
+                <th style="padding: 10px 14px;">Applicant Name</th>
+                <th style="padding: 10px 14px;">Buddy Group</th>
+                <th style="padding: 10px 14px;">Signatories</th>
+                <th style="padding: 10px 14px;">Tambay Hours</th>
+                <th style="padding: 10px 14px;">Events</th>
+                <th style="padding: 10px 14px;">Overall %</th>
+                <th style="padding: 10px 14px;">Status</th>
+              </tr>
+            </thead>
+            <tbody id="applicantRosterTbody">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+        </div>
+
+      </section>
+
+    </div>
+
+    <!-- ========================================== -->
+    <!-- 2. APPLICANT DASHBOARD (APPLICANTS ONLY)   -->
+    <!-- ========================================== -->
+    <div id="applicantDashboardContent" style="display: none;">
 
       <!-- WELCOME, BUDDY GROUP & TOKEN BAR -->
       <div class="card" style="display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, var(--brand-mint-light) 0%, #ffffff 100%);">
@@ -96,21 +218,17 @@
           <span class="badge" id="buddyCountBadge">0 Members</span>
         </div>
         <p class="subtext">Work together, complete tasks, and support each other throughout the application process.</p>
-        <ul class="task-list" id="buddyList">
-          <!-- Rendered via JS -->
-        </ul>
+        <ul class="task-list" id="buddyList"></ul>
       </section>
 
-      <!-- SIGNATORIES CARD -->
+      <!-- SIGNATORIES MATRIX CARD (18 Total) -->
       <section class="card">
         <div class="card-header">
           <h2>✍️ Signatories Tracker</h2>
-          <span class="badge" id="signatoryBadge">0 / 0 Done</span>
+          <span class="badge" id="signatoryBadge">0 / 18 Done</span>
         </div>
-        <p class="subtext">Get your required signatures from resident members and committee heads.</p>
-        <ul class="task-list" id="signatoryList">
-          <!-- Rendered via JS -->
-        </ul>
+        <p class="subtext">Fulfill member tasks and get verified by committee Vice Presidents across all 6 committees.</p>
+        <div id="signatoryList"></div>
       </section>
 
       <!-- TAMBAY HOURS CARD -->
@@ -134,13 +252,10 @@
 
         <button id="showQrBtn" class="btn">📱 Show My Validation QR Code</button>
 
-        <!-- QR DISPLAY CONTAINER -->
         <div id="qrDisplayContainer" style="display: none; text-align: center; margin-top: 20px; padding: 20px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--surface-subtle);">
           <h3 style="margin-bottom: 4px;">Validation QR Code</h3>
           <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 16px;">Ask a resident member or RAComm officer to scan this code.</p>
-          
           <div id="qrcodeCanvas" style="display: flex; justify-content: center; padding: 12px; background: white; width: fit-content; margin: 0 auto 16px; border-radius: 8px; border: 1px solid var(--border-subtle);"></div>
-          
           <button id="closeQrBtn" class="btn btn-secondary" style="padding: 6px 14px; font-size: 0.82rem;">Hide QR Code</button>
         </div>
       </section>
@@ -149,77 +264,30 @@
       <section class="card">
         <div class="card-header">
           <h2>📅 Event Attendance</h2>
-          <span class="badge" id="eventBadge">0 / 0 Attended</span>
+          <span class="badge" id="eventBadge">0 Attended</span>
         </div>
         <p class="subtext">Enter passcodes provided during official org events to verify your attendance.</p>
-        <ul class="task-list" id="eventList">
-          <!-- Rendered via JS -->
-        </ul>
+        <ul class="task-list" id="eventList"></ul>
       </section>
 
-      <!-- APPLICANT PERKS / CURRENCY STORE -->
+      <!-- APPLICANT PERKS EXCHANGE -->
       <section class="card">
         <div class="card-header">
           <h2>🪙 GEOP Perks Exchange</h2>
         </div>
-        <p class="subtext">Spend your application tokens to unlock flexible perks for your requirements.</p>
+        <p class="subtext">Spend your tokens to redeem flexible applicant perks.</p>
         
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 12px;">
           <div style="border: 1px solid var(--border-subtle); padding: 16px; border-radius: var(--radius-sm); text-align: center; background: var(--surface-subtle);">
             <strong>⏳ Deadline Extension</strong>
-            <p style="font-size: 0.8rem; color: var(--text-muted); margin: 6px 0 12px;">+2 days for any pending deadline</p>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin: 6px 0 12px;">+2 days for pending deadline</p>
             <button class="btn btn-checkin" id="buyDeadlineBtn">Redeem (🪙 30)</button>
           </div>
 
           <div style="border: 1px solid var(--border-subtle); padding: 16px; border-radius: var(--radius-sm); text-align: center; background: var(--surface-subtle);">
-            <strong>🔄 Swap Sig Sheet Task</strong>
-            <p style="font-size: 0.8rem; color: var(--text-muted); margin: 6px 0 12px;">Replace 1 requirement task</p>
+            <strong>🔄 Swap Task</strong>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin: 6px 0 12px;">Replace 1 signatory task</p>
             <button class="btn btn-checkin" id="buyTaskSwapBtn">Redeem (🪙 50)</button>
-          </div>
-        </div>
-      </section>
-
-      <!-- RACOMM COMMAND CENTER -->
-      <section id="racommPanel" class="card" style="display: none; border: 2px solid var(--brand-forest); background: #f4f9f6;">
-        <div class="card-header">
-          <h2 style="color: var(--brand-forest);">⚙️ RAComm Command Center</h2>
-          <span class="badge" style="background: var(--brand-forest); color: white;">RAComm Exclusive</span>
-        </div>
-        <p class="subtext">Configure global tambayan policies, multipliers, and applicant requirements.</p>
-
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 20px;">
-          <div style="background: white; padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
-            <strong>⚡ Tambay Hour Multiplier</strong>
-            <p style="font-size: 0.8rem; color: var(--text-muted); margin: 4px 0 10px;">Currently: <strong id="currentMultiplierText">1.0x</strong></p>
-            <div style="display: flex; gap: 6px;">
-              <button id="set1xBtn" class="btn btn-checkin" style="padding: 4px 10px; font-size: 0.8rem;">1.0x Normal</button>
-              <button id="set2xBtn" class="btn btn-checkin" style="padding: 4px 10px; font-size: 0.8rem; background: var(--brand-forest);">2.0x Double</button>
-            </div>
-          </div>
-
-          <div style="background: white; padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
-            <strong>🛡️ 3-Hour Daily Cap</strong>
-            <p style="font-size: 0.8rem; color: var(--text-muted); margin: 4px 0 10px;">Status: <strong id="currentCapText">Active (3.0 hrs/day)</strong></p>
-            <div style="display: flex; gap: 6px;">
-              <button id="enableCapBtn" class="btn btn-checkin" style="padding: 4px 10px; font-size: 0.8rem;">Enable Cap</button>
-              <button id="disableCapBtn" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;">Remove Cap</button>
-            </div>
-          </div>
-        </div>
-
-        <hr />
-
-        <h3>✍️ Add Requirements & Events</h3>
-        <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 12px;">
-          <div style="display: flex; gap: 8px;">
-            <input type="text" id="adminRoleInput" placeholder="Role (e.g. EB Member)" />
-            <input type="text" id="adminTaskInput" placeholder="Task description" />
-            <button id="addRequirementBtn" class="btn btn-checkin">Add Task</button>
-          </div>
-          <div style="display: flex; gap: 8px;">
-            <input type="text" id="adminEventNameInput" placeholder="Event Name" />
-            <input type="text" id="adminEventPasskeyInput" placeholder="Passkey" />
-            <button id="addEventBtn" class="btn btn-checkin">Add Event</button>
           </div>
         </div>
       </section>
