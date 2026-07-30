@@ -378,7 +378,6 @@ export async function spendCurrency(cost, itemDescription) {
     return false;
   }
 
-  alert(`Success! Redeemed: ${itemDescription}. Remaining Tokens: 🪙 ${newBalance}`);
   return true;
 }
 
@@ -439,24 +438,8 @@ export async function getTambayHours() {
   return (data || []).reduce((sum, item) => sum + Number(item.hours), 0);
 }
 
-export async function resetTambayHours() {
-  const userId = await getCurrentUserId();
-  if (!userId || !supabase) return false;
-
-  const { error } = await supabase
-    .from('tambay_logs')
-    .delete()
-    .eq('user_id', userId);
-
-  if (error) {
-    console.error('Error resetting tambay hours:', error.message);
-    return false;
-  }
-  return true;
-}
-
 // ------------------------------------------
-// 7. EVENTS & ANALYTICS API
+// 7. EVENTS & ANALYTICS API (FOR RACOMM)
 // ------------------------------------------
 
 export async function getEvents() {
@@ -512,7 +495,6 @@ export async function checkInToEvent(eventId, passcodeEntered) {
     user_id: userId
   }]);
 
-  alert('✅ Event Attendance Verified! +2.0 hours credited to your Tambay Log.');
   return true;
 }
 
@@ -531,13 +513,48 @@ export async function createEvent(name, passkey) {
   return true;
 }
 
-export async function getApplicantAnalytics() {
+// FETCH ALL APPLICANTS WITH PROGRESS METRICS FOR RACOMM ROSTER
+export async function getAllApplicantsProgress() {
   if (!supabase) return [];
 
-  const { data, error } = await supabase
+  const { data: profiles, error: profileErr } = await supabase
     .from('profiles')
-    .select('*');
+    .select('*')
+    .order('created_at', { ascending: false });
 
-  if (error) return [];
-  return data || [];
+  if (profileErr || !profiles) {
+    console.error('Error fetching applicant profiles:', profileErr?.message);
+    return [];
+  }
+
+  const { data: allSigs } = await supabase.from('signatories').select('*');
+  const { data: allTambay } = await supabase.from('tambay_logs').select('*');
+  const { data: activeSessions } = await supabase.from('tambay_sessions').select('*').eq('status', 'ACTIVE');
+
+  return profiles.map(profile => {
+    const userSigs = (allSigs || []).filter(s => s.user_id === profile.id);
+    const completedSigs = userSigs.filter(s => s.completed).length;
+    const totalSigs = userSigs.length || 18;
+
+    const userTambay = (allTambay || []).filter(t => t.user_id === profile.id);
+    const totalTambayHours = userTambay.reduce((sum, item) => sum + Number(item.hours), 0);
+
+    const sigRatio = completedSigs / totalSigs;
+    const tambayRatio = Math.min(totalTambayHours / 15, 1);
+    const overallPercent = Math.round((sigRatio * 0.50 + tambayRatio * 0.35) * 100);
+
+    const isTimedIn = (activeSessions || []).some(s => s.applicant_id === profile.id);
+
+    return {
+      id: profile.id,
+      fullName: profile.full_name || 'N/A',
+      nickname: profile.nickname || 'N/A',
+      buddyGroup: profile.buddy_group_name || 'Unassigned',
+      completedSigs,
+      totalSigs,
+      tambayHours: totalTambayHours.toFixed(1),
+      overallPercent,
+      isTimedIn
+    };
+  });
 }
