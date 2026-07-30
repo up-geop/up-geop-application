@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UP GEOP - Applicant Progress Portal</title>
+  <link rel="stylesheet" href="styles.css" />
+  <!-- Supabase CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- QRCode Generator Library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header class="header">
+    <h1>Applicant Progress Portal</h1>
+    <p>UP Society of Geodetic Engineering Majors</p>
+  </header>
+
+  <!-- MAIN CONTAINER -->
+  <main class="container">
+
+    <!-- USER PROFILE / LOGOUT BAR -->
+    <div id="userProfileBar" class="card" style="display: none; justify-content: space-between; align-items: center; padding: 16px 24px; margin-bottom: 20px;">
+      <span style="font-size: 0.9rem; color: var(--text-body);">
+        Logged in as: <strong id="userEmailText" style="color: var(--brand-forest);"></strong>
+      </span>
+      <button id="logoutBtn" class="btn btn-secondary" style="padding: 6px 14px; font-size: 0.82rem;">Sign Out</button>
+    </div>
+
+    <!-- SIGN IN CARD -->
+    <div id="authSection" class="card" style="text-align: center; padding: 40px 24px;">
+      <h2 style="margin-bottom: 8px;">Sign In to Applicant Portal</h2>
+      <p class="subtext" style="max-width: 420px; margin: 0 auto 24px;">
+        Please sign in using your official <strong>@up.edu.ph</strong> or <strong>@upd.edu.ph</strong> email to access your tracking sheet.
+      </p>
+      <button id="loginGoogleBtn" class="btn" style="padding: 14px 28px; font-size: 1rem;">
+        🔑 Sign In with Google (@up.edu.ph)
+      </button>
+    </div>
+
+    <!-- INLINE ONBOARDING FORM (First-Time Sign In Only) -->
+    <div id="onboardingSection" class="card" style="display: none; text-align: center;">
+      <div class="card-header" style="justify-content: center; margin-bottom: 8px;">
+        <h2>🎓 Complete Your Applicant Profile</h2>
+      </div>
+      <p class="subtext">Welcome to UP GEOP! Provide your details below to activate your portal and get assigned to a buddy group.</p>
+
+      <form id="onboardingForm" style="display: flex; flex-direction: column; gap: 16px; max-width: 380px; margin: 20px auto 0;">
+        <div style="text-align: left;">
+          <label style="font-size: 0.88rem; font-weight: 600; color: var(--text-heading); display: block; margin-bottom: 6px;">Full Name</label>
+          <input type="text" id="onboardFullName" placeholder="e.g. Juan De La Cruz" required />
+        </div>
+
+        <div style="text-align: left;">
+          <label style="font-size: 0.88rem; font-weight: 600; color: var(--text-heading); display: block; margin-bottom: 6px;">Nickname / Call Sign</label>
+          <input type="text" id="onboardNickname" placeholder="e.g. Juan" required />
+        </div>
+
+        <button type="submit" class="btn" style="margin-top: 8px;">Save Profile & Continue 🚀</button>
+      </form>
+    </div>
+
+    <!-- MAIN DASHBOARD CONTENT -->
+    <div id="dashboardContent" style="display: none;">
+
+      <!-- WELCOME, BUDDY GROUP & TOKEN BAR -->
+      <div class="card" style="display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, var(--brand-mint-light) 0%, #ffffff 100%);">
+        <div>
+          <h3 id="userNicknameHeading" style="font-size: 1.15rem; color: var(--brand-forest); margin-bottom: 2px;">Welcome!</h3>
+          <p class="subtext" style="margin-bottom: 0;">Buddy Group: <strong id="buddyGroupName">Alpha Geods</strong></p>
+        </div>
+        <div>
+          <span class="badge" style="font-size: 0.95rem; background: var(--brand-forest); color: white;">
+            🪙 <span id="userCurrencyText">100</span> Tokens
+          </span>
+        </div>
+      </div>
+
+      <!-- OVERALL PROGRESS CARD -->
+      <section class="card">
+        <div class="card-header">
+          <h2>Overall Progress</h2>
+        </div>
+        <div class="progress-container">
+          <div id="progressBar" class="progress-bar">0%</div>
+        </div>
+        <p class="status-text">Keep completing your signatory requirements, tambay hours, and events!</p>
+      </section>
+
+      <!-- BUDDY GROUP CARD -->
+      <section class="card">
+        <div class="card-header">
+          <h2>👥 Your Buddy Group</h2>
+          <span class="badge" id="buddyCountBadge">0 Members</span>
+        </div>
+        <p class="subtext">Work together, complete tasks, and support each other throughout the application process.</p>
+        <ul class="task-list" id="buddyList">
+          <!-- Rendered via JS -->
+        </ul>
+      </section>
+
+      <!-- SIGNATORIES CARD -->
+      <section class="card">
+        <div class="card-header">
+          <h2>✍️ Signatories Tracker</h2>
+          <span class="badge" id="signatoryBadge">0 / 0 Done</span>
+        </div>
+        <p class="subtext">Get your required signatures from resident members and committee heads.</p>
+        <ul class="task-list" id="signatoryList">
+          <!-- Rendered via JS -->
+        </ul>
+      </section>
+
+      <!-- TAMBAY HOURS CARD -->
+      <section class="card">
+        <div class="card-header">
+          <h2>☕ Tambay Hours Log</h2>
+          <span class="badge" id="tambayBadge">0 / 15 hrs</span>
+        </div>
+        <p class="subtext">Present your QR code to a resident member. When they scan it, your time in/out will automatically log.</p>
+
+        <!-- LIVE ACTIVE TIMER BANNER -->
+        <div id="activeTambayBanner" style="display: none; background: var(--brand-mint-light); padding: 16px; border-radius: var(--radius-sm); margin-bottom: 16px; border: 1.5px solid var(--brand-mint);">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <span style="font-size: 0.8rem; font-weight: 700; color: var(--brand-forest); text-transform: uppercase;">🟢 Currently Timed In</span>
+              <h3 id="liveTimerDisplay" style="font-size: 1.6rem; color: var(--brand-forest); font-family: monospace; margin-top: 2px;">00h 00m 00s</h3>
+            </div>
+            <span class="badge" id="timeInMemberBadge" style="background: #ffffff;">Verified by Member</span>
+          </div>
+        </div>
+
+        <button id="showQrBtn" class="btn">📱 Show My Validation QR Code</button>
+
+        <!-- QR DISPLAY CONTAINER -->
+        <div id="qrDisplayContainer" style="display: none; text-align: center; margin-top: 20px; padding: 20px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--surface-subtle);">
+          <h3 style="margin-bottom: 4px;">Validation QR Code</h3>
+          <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 16px;">Ask a resident member to scan this code with their phone camera.</p>
+          
+          <div id="qrcodeCanvas" style="display: flex; justify-content: center; padding: 12px; background: white; width: fit-content; margin: 0 auto 16px; border-radius: 8px; border: 1px solid var(--border-subtle);"></div>
+          
+          <button id="closeQrBtn" class="btn btn-secondary" style="padding: 6px 14px; font-size: 0.82rem;">Hide QR Code</button>
+        </div>
+      </section>
+
+      <!-- EVENTS CHECK-IN CARD -->
+      <section class="card">
+        <div class="card-header">
+          <h2>📅 Event Attendance</h2>
+          <span class="badge" id="eventBadge">0 / 0 Attended</span>
+        </div>
+        <p class="subtext">Enter passcodes provided during official org events to verify your attendance.</p>
+        <ul class="task-list" id="eventList">
+          <!-- Rendered via JS -->
+        </ul>
+      </section>
+
+      <!-- APPLICANT PERKS / CURRENCY STORE -->
+      <section class="card">
+        <div class="card-header">
+          <h2>🪙 GEOP Perks Exchange</h2>
+        </div>
+        <p class="subtext">Spend your application tokens to unlock flexible perks for your requirements.</p>
+        
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 12px;">
+          <div style="border: 1px solid var(--border-subtle); padding: 16px; border-radius: var(--radius-sm); text-align: center; background: var(--surface-subtle);">
+            <strong>⏳ Deadline Extension</strong>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin: 6px 0 12px;">+2 days for any pending deadline</p>
+            <button class="btn btn-checkin" id="buyDeadlineBtn">Redeem (🪙 30)</button>
+          </div>
+
+          <div style="border: 1px solid var(--border-subtle); padding: 16px; border-radius: var(--radius-sm); text-align: center; background: var(--surface-subtle);">
+            <strong>🔄 Swap Sig Sheet Task</strong>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin: 6px 0 12px;">Replace 1 requirement task</p>
+            <button class="btn btn-checkin" id="buyTaskSwapBtn">Redeem (🪙 50)</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ADMIN PANEL -->
+      <section class="card" id="adminPanel" style="display: none;">
+        <div class="card-header">
+          <h3>🛠️ Committee Admin Panel</h3>
+        </div>
+        <p class="subtext">Add new signatory tasks or event passkeys for applicants.</p>
+        
+        <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 12px;">
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="adminRoleInput" placeholder="Role (e.g. EB Member)" />
+            <input type="text" id="adminTaskInput" placeholder="Task description" />
+            <button id="addRequirementBtn" class="btn btn-checkin">Add Requirement</button>
+          </div>
+          <hr />
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="adminEventNameInput" placeholder="Event Name" />
+            <input type="text" id="adminEventPasskeyInput" placeholder="Passkey" />
+            <button id="addEventBtn" class="btn btn-checkin">Add Event</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW TOGGLE SWITCH (DEBUG) -->
+      <div style="text-align: center; margin-top: 20px;">
+        <button id="btnRoleApplicant" class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.78rem;">View as Applicant</button>
+        <button id="btnRoleAdmin" class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.78rem;">View as Admin</button>
+      </div>
+
+    </div>
+
+  </main>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
