@@ -3,7 +3,7 @@ import {
   supabase, getBuddyGroupMembers, spendCurrency,
   getActiveTambaySession, validateApplicantTambay,
   checkIfResidentMember, checkIfRAComm, getGlobalSettings, updateGlobalSettings,
-  createEvent, COMMITTEES_LIST
+  createEvent, COMMITTEES_LIST, generateApplicantShortCode, getApplicantIdByShortCode
 } from './storage.js';
 import { getSignatories, toggleSignatoryTask } from './signatories.js';
 import { getTambayHours } from './tambay.js';
@@ -217,8 +217,11 @@ async function handleAuthState() {
     const isMember = await checkIfResidentMember(currentUser.email);
     const isRAComm = await checkIfRAComm(currentUser.email);
 
+    console.log("Logged in User:", currentUser.email);
+    console.log("isMember Result:", isMember, "| isRAComm Result:", isRAComm);
+
     if (isMember || isRAComm) {
-      // MEMBER / RACOMM ROUTE
+      // ROUTE TO MEMBER / RACOMM DASHBOARD
       if (onboardingSection) onboardingSection.style.display = 'none';
       if (applicantDashboard) applicantDashboard.style.display = 'none';
       if (memberDashboard) memberDashboard.style.display = 'block';
@@ -241,7 +244,7 @@ async function handleAuthState() {
         if (capText) capText.textContent = settings.dailyCapEnabled ? 'Active (3.0 hrs/day)' : 'Disabled (No Limit)';
       }
     } else {
-      // APPLICANT ROUTE
+      // ROUTE TO APPLICANT DASHBOARD
       if (memberDashboard) memberDashboard.style.display = 'none';
 
       if (roleBadgeHeader) {
@@ -313,14 +316,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  document.getElementById('showQrBtn')?.addEventListener('click', () => {
+  // Show QR Code & Generate Fresh 6-Digit Code
+  document.getElementById('showQrBtn')?.addEventListener('click', async () => {
     if (!currentUser) return;
 
     const qrContainer = document.getElementById('qrDisplayContainer');
     const qrCanvas = document.getElementById('qrcodeCanvas');
+    const codeText = document.getElementById('applicantShortCodeText');
 
     if (qrContainer && qrCanvas) {
       qrCanvas.innerHTML = '';
+      if (codeText) codeText.textContent = '...';
+
+      const shortCode = await generateApplicantShortCode();
+      if (codeText) codeText.textContent = shortCode || 'ERROR';
 
       const baseUrl = window.location.origin + window.location.pathname;
       const validationUrl = `${baseUrl}?validateApplicant=${currentUser.id}`;
@@ -342,11 +351,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (qrContainer) qrContainer.style.display = 'none';
   });
 
+  // Manual Validation via Short Code
   document.getElementById('manualValidateBtn')?.addEventListener('click', async () => {
-    const appTargetId = prompt('Enter Applicant User ID to Validate:');
-    if (appTargetId && currentUser) {
-      const res = await validateApplicantTambay(appTargetId.trim(), currentUser.email);
+    const inputCode = prompt('Enter Applicant 6-Character Short Code (e.g. K7X9P2):');
+    if (!inputCode || !currentUser) return;
+
+    const cleanInput = inputCode.trim();
+
+    let applicantId = cleanInput;
+    if (cleanInput.length <= 8) {
+      applicantId = await getApplicantIdByShortCode(cleanInput);
+    }
+
+    if (applicantId) {
+      const res = await validateApplicantTambay(applicantId, currentUser.email);
       alert(res.message);
+    } else {
+      alert('Invalid or expired code. Please ask the applicant to regenerate their code.');
     }
   });
 
