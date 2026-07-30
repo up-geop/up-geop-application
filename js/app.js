@@ -13,6 +13,34 @@ import { signInWithGoogle, signOutUser, getCurrentUser, getUserProfileData, crea
 let currentUser = null;
 let timerInterval = null;
 
+// ==========================================
+// 2026 TOAST NOTIFICATION SYSTEM (Trend #1)
+// ==========================================
+export function showToast(message, type = 'info') {
+  const container = document.getElementById('toastContainer');
+  if (!container) {
+    alert(message);
+    return;
+  }
+
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.innerHTML = `
+    <span>${message}</span>
+    <button style="background:none; border:none; color:inherit; cursor:pointer; font-weight:bold;">&times;</button>
+  `;
+
+  toast.querySelector('button').onclick = () => toast.remove();
+
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(10px)';
+    setTimeout(() => toast.remove(), 200);
+  }, 3500);
+}
+
 function startLiveTimer(timeInIso) {
   if (timerInterval) clearInterval(timerInterval);
 
@@ -191,7 +219,7 @@ async function checkAndProcessUrlValidation(user) {
   if (validateApplicantId && user) {
     window.history.replaceState({}, document.title, window.location.pathname);
     const result = await validateApplicantTambay(validateApplicantId, user.email);
-    alert(result.message);
+    showToast(result.message, result.success ? 'success' : 'error');
   }
 }
 
@@ -367,25 +395,40 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('closeModalBtn')?.addEventListener('click', closeModal);
   document.getElementById('cancelManualCodeBtn')?.addEventListener('click', closeModal);
 
+  // Submit Short Code with Believable Friction Delay (350ms - Trend #2)
   document.getElementById('submitManualCodeBtn')?.addEventListener('click', async () => {
     const input = document.getElementById('manualCodeInput');
+    const submitBtn = document.getElementById('submitManualCodeBtn');
     if (!input || !currentUser) return;
 
     const cleanInput = input.value.trim().toUpperCase();
 
     if (cleanInput.length < 6) {
-      alert('Please enter a valid 6-character code.');
+      showToast('Please enter a valid 6-character code.', 'error');
       return;
     }
 
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Verifying Code...';
+    }
+
+    // 350ms deliberate friction delay for trust architecture
+    await new Promise(resolve => setTimeout(resolve, 350));
+
     const applicantId = await getApplicantIdByShortCode(cleanInput);
+
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Validate Code 🚀';
+    }
 
     if (applicantId) {
       closeModal();
       const res = await validateApplicantTambay(applicantId, currentUser.email);
-      alert(res.message);
+      showToast(res.message, res.success ? 'success' : 'error');
     } else {
-      alert('Invalid or expired code. Please ask the applicant to regenerate their code.');
+      showToast('Invalid or expired code. Please ask the applicant to regenerate their code.', 'error');
     }
   });
 
@@ -397,6 +440,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (currentUser && fullNameInput && nicknameInput) {
       const created = await createApplicantProfile(currentUser.id, fullNameInput.value, nicknameInput.value);
       if (created) {
+        showToast('Profile created successfully!', 'success');
         await handleAuthState();
       }
     }
@@ -407,12 +451,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('buyDeadlineBtn')?.addEventListener('click', async () => {
     if (await spendCurrency(30, 'Deadline Extension (+2 Days)')) {
+      showToast('Redeemed Deadline Extension (+2 Days)!', 'success');
       await handleAuthState();
     }
   });
 
   document.getElementById('buyTaskSwapBtn')?.addEventListener('click', async () => {
     if (await spendCurrency(50, 'Signatory Task Swap')) {
+      showToast('Redeemed Signatory Task Swap!', 'success');
       await handleAuthState();
     }
   });
@@ -422,6 +468,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const taskId = e.target.dataset.id;
       const currentStatus = e.target.dataset.completed === 'true';
       await toggleSignatoryTask(taskId, currentStatus);
+      showToast('Task updated!', 'info');
       await render();
     }
   });
@@ -431,6 +478,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const eventId = e.target.dataset.eventId;
       const passInput = document.getElementById(`pass-${eventId}`);
       if (passInput && await checkInToEvent(eventId, passInput.value)) {
+        showToast('Event Attendance Verified! +2.0 hours credited.', 'success');
         await render();
       }
     }
@@ -438,28 +486,28 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('set1xBtn')?.addEventListener('click', async () => {
     if (await updateGlobalSettings('hourly_multiplier', '1.0')) {
-      alert("Multiplier set to 1.0x (Standard)");
+      showToast('Multiplier set to 1.0x (Standard)', 'info');
       await handleAuthState();
     }
   });
 
   document.getElementById('set2xBtn')?.addEventListener('click', async () => {
     if (await updateGlobalSettings('hourly_multiplier', '2.0')) {
-      alert("⚡ Double Hours Activated! (2.0x)");
+      showToast('⚡ Double Hours Activated! (2.0x)', 'success');
       await handleAuthState();
     }
   });
 
   document.getElementById('enableCapBtn')?.addEventListener('click', async () => {
     if (await updateGlobalSettings('daily_cap_enabled', 'true')) {
-      alert("Daily Cap Enabled (3.0 Hours Max)");
+      showToast('Daily Cap Enabled (3.0 Hours Max)', 'info');
       await handleAuthState();
     }
   });
 
   document.getElementById('disableCapBtn')?.addEventListener('click', async () => {
     if (await updateGlobalSettings('daily_cap_enabled', 'false')) {
-      alert("Daily Cap Removed! (Unlimited Hours)");
+      showToast('Daily Cap Removed! (Unlimited Hours)', 'success');
       await handleAuthState();
     }
   });
@@ -470,7 +518,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (nameInput && await createEvent(nameInput.value, passkeyInput ? passkeyInput.value : '')) {
       nameInput.value = '';
       if (passkeyInput) passkeyInput.value = '';
-      alert('Event created successfully!');
+      showToast('Event created successfully!', 'success');
       await handleAuthState();
     }
   });
