@@ -40,7 +40,7 @@
       </button>
     </div>
 
-    <!-- INLINE ONBOARDING FORM (First-Time Sign In Only) -->
+    <!-- INLINE ONBOARDING FORM -->
     <div id="onboardingSection" class="card" style="display: none; text-align: center;">
       <div class="card-header" style="justify-content: center; margin-bottom: 8px;">
         <h2>🎓 Complete Your Applicant Profile</h2>
@@ -119,7 +119,7 @@
           <h2>☕ Tambay Hours Log</h2>
           <span class="badge" id="tambayBadge">0 / 15 hrs</span>
         </div>
-        <p class="subtext">Present your QR code to a resident member. When they scan it, your time in/out will automatically log.</p>
+        <p class="subtext">Present your QR code to a resident member or RAComm officer to log your time in/out.</p>
 
         <!-- LIVE ACTIVE TIMER BANNER -->
         <div id="activeTambayBanner" style="display: none; background: var(--brand-mint-light); padding: 16px; border-radius: var(--radius-sm); margin-bottom: 16px; border: 1.5px solid var(--brand-mint);">
@@ -137,7 +137,7 @@
         <!-- QR DISPLAY CONTAINER -->
         <div id="qrDisplayContainer" style="display: none; text-align: center; margin-top: 20px; padding: 20px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--surface-subtle);">
           <h3 style="margin-bottom: 4px;">Validation QR Code</h3>
-          <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 16px;">Ask a resident member to scan this code with their phone camera.</p>
+          <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 16px;">Ask a resident member or RAComm officer to scan this code.</p>
           
           <div id="qrcodeCanvas" style="display: flex; justify-content: center; padding: 12px; background: white; width: fit-content; margin: 0 auto 16px; border-radius: 8px; border: 1px solid var(--border-subtle);"></div>
           
@@ -179,20 +179,43 @@
         </div>
       </section>
 
-      <!-- ADMIN PANEL -->
-      <section class="card" id="adminPanel" style="display: none;">
+      <!-- RACOMM COMMAND CENTER -->
+      <section id="racommPanel" class="card" style="display: none; border: 2px solid var(--brand-forest); background: #f4f9f6;">
         <div class="card-header">
-          <h3>🛠️ Committee Admin Panel</h3>
+          <h2 style="color: var(--brand-forest);">⚙️ RAComm Command Center</h2>
+          <span class="badge" style="background: var(--brand-forest); color: white;">RAComm Exclusive</span>
         </div>
-        <p class="subtext">Add new signatory tasks or event passkeys for applicants.</p>
-        
+        <p class="subtext">Configure global tambayan policies, multipliers, and applicant requirements.</p>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 20px;">
+          <div style="background: white; padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+            <strong>⚡ Tambay Hour Multiplier</strong>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin: 4px 0 10px;">Currently: <strong id="currentMultiplierText">1.0x</strong></p>
+            <div style="display: flex; gap: 6px;">
+              <button id="set1xBtn" class="btn btn-checkin" style="padding: 4px 10px; font-size: 0.8rem;">1.0x Normal</button>
+              <button id="set2xBtn" class="btn btn-checkin" style="padding: 4px 10px; font-size: 0.8rem; background: var(--brand-forest);">2.0x Double</button>
+            </div>
+          </div>
+
+          <div style="background: white; padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+            <strong>🛡️ 3-Hour Daily Cap</strong>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin: 4px 0 10px;">Status: <strong id="currentCapText">Active (3.0 hrs/day)</strong></p>
+            <div style="display: flex; gap: 6px;">
+              <button id="enableCapBtn" class="btn btn-checkin" style="padding: 4px 10px; font-size: 0.8rem;">Enable Cap</button>
+              <button id="disableCapBtn" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;">Remove Cap</button>
+            </div>
+          </div>
+        </div>
+
+        <hr />
+
+        <h3>✍️ Add Requirements & Events</h3>
         <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 12px;">
           <div style="display: flex; gap: 8px;">
             <input type="text" id="adminRoleInput" placeholder="Role (e.g. EB Member)" />
             <input type="text" id="adminTaskInput" placeholder="Task description" />
-            <button id="addRequirementBtn" class="btn btn-checkin">Add Requirement</button>
+            <button id="addRequirementBtn" class="btn btn-checkin">Add Task</button>
           </div>
-          <hr />
           <div style="display: flex; gap: 8px;">
             <input type="text" id="adminEventNameInput" placeholder="Event Name" />
             <input type="text" id="adminEventPasskeyInput" placeholder="Passkey" />
@@ -200,12 +223,6 @@
           </div>
         </div>
       </section>
-
-      <!-- VIEW TOGGLE SWITCH (DEBUG) -->
-      <div style="text-align: center; margin-top: 20px;">
-        <button id="btnRoleApplicant" class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.78rem;">View as Applicant</button>
-        <button id="btnRoleAdmin" class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.78rem;">View as Admin</button>
-      </div>
 
     </div>
 
