@@ -4,7 +4,8 @@ import {
   getActiveTambaySession, validateApplicantTambay,
   checkIfResidentMember, checkIfRAComm, getGlobalSettings, updateGlobalSettings,
   createEvent, COMMITTEES_LIST, generateApplicantShortCode, getApplicantIdByShortCode,
-  getAllApplicantsProgress
+  getAllApplicantsProgress, getApplicantFullDetails, deleteApplicantProfile,
+  adminAdjustTambayHours, adminAdjustTokens, adminToggleApplicantSignatory
 } from './storage.js';
 import { getSignatories, toggleSignatoryTask } from './signatories.js';
 import { getTambayHours } from './tambay.js';
@@ -13,9 +14,10 @@ import { signInWithGoogle, signOutUser, getCurrentUser, getUserProfileData, crea
 
 let currentUser = null;
 let timerInterval = null;
+let currentInspectedApplicantId = null;
 
 // ==========================================
-// 2026 TOAST NOTIFICATION SYSTEM (Trend #1)
+// TOAST NOTIFICATION SYSTEM
 // ==========================================
 export function showToast(message, type = 'info') {
   const container = document.getElementById('toastContainer');
@@ -148,7 +150,6 @@ async function renderApplicantRosterTable() {
       <td style="padding: 10px 14px;">${app.buddyGroup}</td>
       <td style="padding: 10px 14px; font-family: monospace;">${app.completedSigs} / ${app.totalSigs}</td>
       <td style="padding: 10px 14px; font-family: monospace;">${app.tambayHours} hrs</td>
-      <td style="padding: 10px 14px;">0 Attended</td>
       <td style="padding: 10px 14px; font-family: monospace;">
         <strong style="color: var(--brand-forest);">${app.overallPercent}%</strong>
       </td>
@@ -159,9 +160,52 @@ async function renderApplicantRosterTable() {
           <span class="badge">Offline</span>
         `}
       </td>
+      <td style="padding: 10px 14px;">
+        <button class="btn btn-secondary inspect-app-btn" data-id="${app.id}" style="padding: 4px 10px; font-size: 0.78rem;">🔍 Inspect</button>
+      </td>
     `;
     tbody.appendChild(tr);
   });
+}
+
+// OPEN FULL APPLICANT INSPECTION MODAL
+async function openApplicantInspectionModal(applicantId) {
+  currentInspectedApplicantId = applicantId;
+  const modal = document.getElementById('adminInspectionModal');
+  const details = await getApplicantFullDetails(applicantId);
+
+  if (!details || !details.profile || !modal) return;
+
+  document.getElementById('inspectApplicantName').textContent = `${details.profile.full_name} ("${details.profile.nickname}")`;
+  document.getElementById('inspectApplicantEmail').textContent = `ID: ${details.profile.id} | Tokens: 🪙 ${details.profile.currency}`;
+
+  const sigListElem = document.getElementById('inspectSignatoriesList');
+  sigListElem.innerHTML = '';
+
+  (details.signatories || []).forEach(sig => {
+    const row = document.createElement('div');
+    row.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border: 1px solid var(--border-subtle); border-radius: 4px; background: white; font-size: 0.82rem;";
+    row.innerHTML = `
+      <div>
+        <strong>[${sig.committee_name}] ${sig.type}</strong>: ${sig.task_description}
+      </div>
+      <input type="checkbox" ${sig.completed ? 'checked' : ''} data-sig-id="${sig.id}" class="admin-sig-toggle" />
+    `;
+    sigListElem.appendChild(row);
+  });
+
+  const tambayElem = document.getElementById('inspectTambayLogsList');
+  tambayElem.innerHTML = (details.tambayLogs || []).length === 0 ? '<small style="color: var(--text-muted);">No tambay logs recorded yet.</small>' : '';
+
+  (details.tambayLogs || []).forEach(log => {
+    const logItem = document.createElement('div');
+    logItem.style.fontSize = '0.8rem';
+    logItem.style.marginBottom = '4px';
+    logItem.textContent = `+${log.hours} hrs logged on ${new Date(log.created_at).toLocaleString()}`;
+    tambayElem.appendChild(logItem);
+  });
+
+  modal.style.display = 'flex';
 }
 
 export async function render() {
@@ -329,7 +373,6 @@ async function handleAuthState() {
         if (multText) multText.textContent = `${settings.multiplier}x`;
         if (capText) capText.textContent = settings.dailyCapEnabled ? 'Active (3.0 hrs/day)' : 'Disabled (No Limit)';
 
-        // RENDER LIVE APPLICANT ROSTER TABLE
         await renderApplicantRosterTable();
       }
     } else {
@@ -494,6 +537,64 @@ document.addEventListener('DOMContentLoaded', async () => {
       await handleAuthState();
     } else {
       showToast('Invalid or expired code. Please ask the applicant to regenerate their code.', 'error');
+    }
+  });
+
+  // Roster Inspect Button Handler
+  document.getElementById('applicantRosterTbody')?.addEventListener('click', async (e) => {
+    if (e.target.classList.contains('inspect-app-btn')) {
+      const appId = e.target.dataset.id;
+      await openApplicantInspectionModal(appId);
+    }
+  });
+
+  // Close Inspection Modal
+  document.getElementById('closeInspectModalBtn')?.addEventListener('click', () => {
+    document.getElementById('adminInspectionModal').style.display = 'none';
+  });
+
+  // Admin Toggle Signatory for Applicant
+  document.getElementById('inspectSignatoriesList')?.addEventListener('change', async (e) => {
+    if (e.target.classList.contains('admin-sig-toggle')) {
+      const taskId = e.target.dataset.sigId;
+      const currentStatus = !e.target.checked;
+      await adminToggleApplicantSignatory(taskId, currentStatus);
+      showToast('Applicant signatory updated by admin!', 'success');
+      await renderApplicantRosterTable();
+    }
+  });
+
+  // Admin Adjust Hours
+  document.getElementById('adminAddHoursBtn')?.addEventListener('click', async () => {
+    if (!currentInspectedApplicantId) return;
+    const input = prompt('Enter hours to add (e.g. 1.5) or deduct (e.g. -1.0):');
+    if (input && !isNaN(input)) {
+      await adminAdjustTambayHours(currentInspectedApplicantId, parseFloat(input));
+      showToast('Hours adjusted successfully!', 'success');
+      await openApplicantInspectionModal(currentInspectedApplicantId);
+      await renderApplicantRosterTable();
+    }
+  });
+
+  // Admin Adjust Tokens
+  document.getElementById('adminEditTokensBtn')?.addEventListener('click', async () => {
+    if (!currentInspectedApplicantId) return;
+    const input = prompt('Enter new GEOP Token balance:');
+    if (input && !isNaN(input)) {
+      await adminAdjustTokens(currentInspectedApplicantId, parseInt(input, 10));
+      showToast('Token balance updated!', 'success');
+      await openApplicantInspectionModal(currentInspectedApplicantId);
+    }
+  });
+
+  // Admin Delete Profile
+  document.getElementById('adminDeleteApplicantBtn')?.addEventListener('click', async () => {
+    if (!currentInspectedApplicantId) return;
+    if (confirm('⚠️ ARE YOU SURE? This will permanently delete this applicant profile and all their records.')) {
+      await deleteApplicantProfile(currentInspectedApplicantId);
+      document.getElementById('adminInspectionModal').style.display = 'none';
+      showToast('Applicant profile removed.', 'info');
+      await renderApplicantRosterTable();
     }
   });
 
