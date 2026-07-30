@@ -304,6 +304,39 @@
 
     </div>
 
+    <!-- ========================================== -->
+    <!-- 3. MANUAL CODE VALIDATION MODAL DIALOG     -->
+    <!-- ========================================== -->
+    <div id="manualCodeModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; align-items: center; justify-content: center; padding: 16px;">
+      <div class="card" style="max-width: 400px; width: 100%; text-align: center; border: 2px solid var(--brand-forest); margin: 0;">
+        
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <h3 style="color: var(--brand-forest); margin: 0;">🔍 Manual Code Validation</h3>
+          <button id="closeModalBtn" style="background: none; border: none; font-size: 1.4rem; cursor: pointer; color: var(--text-muted); font-weight: bold;">&times;</button>
+        </div>
+
+        <p class="subtext" style="margin-bottom: 20px;">
+          Ask the applicant for the <strong>6-character code</strong> displayed on their screen to log <strong>Time In</strong> or <strong>Time Out</strong>.
+        </p>
+
+        <div style="margin-bottom: 20px;">
+          <input 
+            type="text" 
+            id="manualCodeInput" 
+            placeholder="K7X9P2" 
+            maxlength="6"
+            style="font-size: 1.8rem; text-align: center; font-weight: 800; letter-spacing: 6px; text-transform: uppercase; padding: 10px; width: 85%; border: 2px solid var(--brand-forest); border-radius: var(--radius-sm); font-family: monospace;"
+          />
+        </div>
+
+        <div style="display: flex; gap: 10px; justify-content: center;">
+          <button id="submitManualCodeBtn" class="btn btn-checkin" style="flex: 1; padding: 10px;">Validate Code 🚀</button>
+          <button id="cancelManualCodeBtn" class="btn btn-secondary" style="flex: 1; padding: 10px;">Cancel</button>
+        </div>
+
+      </div>
+    </div>
+
   </main>
 
   <script type="module" src="js/app.js"></script>
