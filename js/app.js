@@ -2,7 +2,7 @@ import { CONFIG } from './config.js';
 import { 
   supabase, getBuddyGroupMembers, spendCurrency,
   getActiveTambaySession, validateApplicantTambay,
-  checkIfRAComm, getGlobalSettings, updateGlobalSettings,
+  checkIfResidentMember, checkIfRAComm, getGlobalSettings, updateGlobalSettings,
   createEvent, COMMITTEES_LIST
 } from './storage.js';
 import { getSignatories, toggleSignatoryTask } from './signatories.js';
@@ -105,25 +105,8 @@ export async function render() {
       activeBanner.style.display = 'none';
       stopLiveTimer();
     }
-
-    const isRAComm = await checkIfRAComm(currentUser.email);
-    const racommPanel = document.getElementById('racommPanel');
-
-    if (racommPanel) {
-      racommPanel.style.display = isRAComm ? 'block' : 'none';
-    }
-
-    if (isRAComm) {
-      const settings = await getGlobalSettings();
-      const multText = document.getElementById('currentMultiplierText');
-      const capText = document.getElementById('currentCapText');
-
-      if (multText) multText.textContent = `${settings.multiplier}x`;
-      if (capText) capText.textContent = settings.dailyCapEnabled ? 'Active (3.0 hrs/day)' : 'Disabled (No Limit)';
-    }
   }
 
-  // RENDER 6 COMMITTEES SIGNATORIES MATRIX (18 Total Signatures)
   const sigList = document.getElementById('signatoryList');
   if (sigList) {
     sigList.innerHTML = '';
@@ -141,7 +124,6 @@ export async function render() {
       const commSigs = stats.signatoriesList.filter(s => s.committee_name === comm.name);
       const member1 = commSigs.find(s => s.type === 'MEMBER_1');
       const member2 = commSigs.find(s => s.type === 'MEMBER_2');
-      const vpSig = commSigs.find(s => s.type === 'VP');
 
       const isVpUnlocked = member1?.completed && member2?.completed;
 
@@ -218,9 +200,12 @@ async function handleAuthState() {
 
   const authSection = document.getElementById('authSection');
   const onboardingSection = document.getElementById('onboardingSection');
-  const dashboardContent = document.getElementById('dashboardContent');
+  const applicantDashboard = document.getElementById('applicantDashboardContent');
+  const memberDashboard = document.getElementById('memberDashboardContent');
+  const racommPanel = document.getElementById('racommPanel');
   const userProfileBar = document.getElementById('userProfileBar');
   const userEmailText = document.getElementById('userEmailText');
+  const roleBadgeHeader = document.getElementById('roleBadgeHeader');
 
   if (currentUser) {
     if (authSection) authSection.style.display = 'none';
@@ -229,50 +214,87 @@ async function handleAuthState() {
 
     await checkAndProcessUrlValidation(currentUser);
 
-    const profile = await getUserProfileData(currentUser.id);
+    const isMember = await checkIfResidentMember(currentUser.email);
+    const isRAComm = await checkIfRAComm(currentUser.email);
 
-    if (!profile) {
-      if (onboardingSection) onboardingSection.style.display = 'block';
-      if (dashboardContent) dashboardContent.style.display = 'none';
-    } else {
+    if (isMember || isRAComm) {
+      // MEMBER / RACOMM ROUTE
       if (onboardingSection) onboardingSection.style.display = 'none';
-      if (dashboardContent) dashboardContent.style.display = 'block';
+      if (applicantDashboard) applicantDashboard.style.display = 'none';
+      if (memberDashboard) memberDashboard.style.display = 'block';
 
-      const nicknameElem = document.getElementById('userNicknameHeading');
-      const currencyElem = document.getElementById('userCurrencyText');
-      const groupNameElem = document.getElementById('buddyGroupName');
-
-      if (nicknameElem) nicknameElem.textContent = `Welcome, ${profile.nickname}! 👋`;
-      if (currencyElem) currencyElem.textContent = profile.currency;
-      if (groupNameElem) groupNameElem.textContent = profile.buddy_group_name;
-
-      const buddies = await getBuddyGroupMembers(profile.buddy_group_name);
-      const buddyList = document.getElementById('buddyList');
-      const buddyCountBadge = document.getElementById('buddyCountBadge');
-
-      if (buddyCountBadge) buddyCountBadge.textContent = `${buddies.length} Members`;
-      if (buddyList) {
-        buddyList.innerHTML = '';
-        buddies.forEach(buddy => {
-          const li = document.createElement('li');
-          li.className = 'task-item';
-          li.innerHTML = `
-            <div class="task-info">
-              <strong>${buddy.full_name}</strong>
-              <small>Nickname: "${buddy.nickname}"</small>
-            </div>
-            <span class="badge">Buddy</span>
-          `;
-          buddyList.appendChild(li);
-        });
+      if (roleBadgeHeader) {
+        roleBadgeHeader.textContent = isRAComm ? 'RAComm Officer' : 'Resident Member';
+        roleBadgeHeader.style.background = 'var(--brand-forest)';
       }
 
-      await render();
+      if (racommPanel) {
+        racommPanel.style.display = isRAComm ? 'block' : 'none';
+      }
+
+      if (isRAComm) {
+        const settings = await getGlobalSettings();
+        const multText = document.getElementById('currentMultiplierText');
+        const capText = document.getElementById('currentCapText');
+
+        if (multText) multText.textContent = `${settings.multiplier}x`;
+        if (capText) capText.textContent = settings.dailyCapEnabled ? 'Active (3.0 hrs/day)' : 'Disabled (No Limit)';
+      }
+    } else {
+      // APPLICANT ROUTE
+      if (memberDashboard) memberDashboard.style.display = 'none';
+
+      if (roleBadgeHeader) {
+        roleBadgeHeader.textContent = 'Applicant';
+        roleBadgeHeader.style.background = '#0288d1';
+      }
+
+      const profile = await getUserProfileData(currentUser.id);
+
+      if (!profile) {
+        if (onboardingSection) onboardingSection.style.display = 'block';
+        if (applicantDashboard) applicantDashboard.style.display = 'none';
+      } else {
+        if (onboardingSection) onboardingSection.style.display = 'none';
+        if (applicantDashboard) applicantDashboard.style.display = 'block';
+
+        const nicknameElem = document.getElementById('userNicknameHeading');
+        const currencyElem = document.getElementById('userCurrencyText');
+        const groupNameElem = document.getElementById('buddyGroupName');
+
+        if (nicknameElem) nicknameElem.textContent = `Welcome, ${profile.nickname}! 👋`;
+        if (currencyElem) currencyElem.textContent = profile.currency;
+        if (groupNameElem) groupNameElem.textContent = profile.buddy_group_name;
+
+        const buddies = await getBuddyGroupMembers(profile.buddy_group_name);
+        const buddyList = document.getElementById('buddyList');
+        const buddyCountBadge = document.getElementById('buddyCountBadge');
+
+        if (buddyCountBadge) buddyCountBadge.textContent = `${buddies.length} Members`;
+        if (buddyList) {
+          buddyList.innerHTML = '';
+          buddies.forEach(buddy => {
+            const li = document.createElement('li');
+            li.className = 'task-item';
+            li.innerHTML = `
+              <div class="task-info">
+                <strong>${buddy.full_name}</strong>
+                <small>Nickname: "${buddy.nickname}"</small>
+              </div>
+              <span class="badge">Buddy</span>
+            `;
+            buddyList.appendChild(li);
+          });
+        }
+
+        await render();
+      }
     }
   } else {
     if (authSection) authSection.style.display = 'block';
     if (onboardingSection) onboardingSection.style.display = 'none';
-    if (dashboardContent) dashboardContent.style.display = 'none';
+    if (applicantDashboard) applicantDashboard.style.display = 'none';
+    if (memberDashboard) memberDashboard.style.display = 'none';
     if (userProfileBar) userProfileBar.style.display = 'none';
   }
 }
@@ -318,6 +340,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('closeQrBtn')?.addEventListener('click', () => {
     const qrContainer = document.getElementById('qrDisplayContainer');
     if (qrContainer) qrContainer.style.display = 'none';
+  });
+
+  document.getElementById('manualValidateBtn')?.addEventListener('click', async () => {
+    const appTargetId = prompt('Enter Applicant User ID to Validate:');
+    if (appTargetId && currentUser) {
+      const res = await validateApplicantTambay(appTargetId.trim(), currentUser.email);
+      alert(res.message);
+    }
   });
 
   document.getElementById('onboardingForm')?.addEventListener('submit', async (e) => {
@@ -370,28 +400,28 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('set1xBtn')?.addEventListener('click', async () => {
     if (await updateGlobalSettings('hourly_multiplier', '1.0')) {
       alert("Multiplier set to 1.0x (Standard)");
-      await render();
+      await handleAuthState();
     }
   });
 
   document.getElementById('set2xBtn')?.addEventListener('click', async () => {
     if (await updateGlobalSettings('hourly_multiplier', '2.0')) {
       alert("⚡ Double Hours Activated! (2.0x)");
-      await render();
+      await handleAuthState();
     }
   });
 
   document.getElementById('enableCapBtn')?.addEventListener('click', async () => {
     if (await updateGlobalSettings('daily_cap_enabled', 'true')) {
       alert("Daily Cap Enabled (3.0 Hours Max)");
-      await render();
+      await handleAuthState();
     }
   });
 
   document.getElementById('disableCapBtn')?.addEventListener('click', async () => {
     if (await updateGlobalSettings('daily_cap_enabled', 'false')) {
       alert("Daily Cap Removed! (Unlimited Hours)");
-      await render();
+      await handleAuthState();
     }
   });
 
@@ -401,7 +431,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (nameInput && await createEvent(nameInput.value, passkeyInput ? passkeyInput.value : '')) {
       nameInput.value = '';
       if (passkeyInput) passkeyInput.value = '';
-      await render();
+      alert('Event created successfully!');
+      await handleAuthState();
     }
   });
 });
