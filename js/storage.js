@@ -67,17 +67,21 @@ async function fetchSheetPools() {
 export async function generateApplicantSignatories(userId) {
   if (!supabase || !userId) return;
 
-  const { data: existing } = await supabase
+  const { data: existing, error: checkErr } = await supabase
     .from('signatories')
     .select('id')
     .eq('user_id', userId);
+
+  if (checkErr) {
+    console.error('Error checking existing signatories:', checkErr.message);
+  }
 
   if (existing && existing.length > 0) return; // Already generated
 
   const pools = await fetchSheetPools();
   const allTasks = pools.tasks.map(t => t.task_description).filter(Boolean);
 
-  // Randomly pick 25 unique tasks for this applicant's personal choice pool
+  // Pick 25 unique random tasks for this applicant
   const shuffledTasks = [...allTasks].sort(() => 0.5 - Math.random());
   const applicant25Pool = shuffledTasks.slice(0, Math.min(25, shuffledTasks.length));
 
@@ -133,7 +137,10 @@ export async function generateApplicantSignatories(userId) {
     });
   });
 
-  await supabase.from('signatories').insert(newSignatories);
+  const { error: insertErr } = await supabase.from('signatories').insert(newSignatories);
+  if (insertErr) {
+    console.error('Supabase Signatories Insert Error Details:', insertErr);
+  }
 }
 
 export async function selectTaskForSignatory(taskId, selectedTask) {
@@ -270,7 +277,8 @@ export async function getSignatories() {
   const userId = await getCurrentUserId();
   if (!userId || !supabase) return [];
   await generateApplicantSignatories(userId);
-  const { data } = await supabase.from('signatories').select('*').eq('user_id', userId).order('created_at', { ascending: true });
+  const { data, error } = await supabase.from('signatories').select('*').eq('user_id', userId).order('created_at', { ascending: true });
+  if (error) console.error('Error fetching signatories:', error.message);
   return data || [];
 }
 
@@ -281,7 +289,6 @@ export async function getTambayHours() {
   return (data || []).reduce((sum, item) => sum + Number(item.hours), 0);
 }
 
-// RESTORED: Export resetTambayHours for tambay.js
 export async function resetTambayHours() {
   const userId = await getCurrentUserId();
   if (!userId || !supabase) return false;
