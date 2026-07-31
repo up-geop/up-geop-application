@@ -486,7 +486,7 @@ export async function getBuddyGroupMembers(groupName) {
 }
 
 // ==========================================
-// ANNOUNCEMENTS & WHEN2MEET AVAILABILITY LOGIC
+// ANNOUNCEMENTS & WHEN2MEET EXPORTS
 // ==========================================
 
 export async function getAnnouncements() {
@@ -496,6 +496,22 @@ export async function getAnnouncements() {
     .select('*')
     .order('created_at', { ascending: false });
   return error ? [] : data;
+}
+
+export async function createAnnouncement(title, content, authorEmail) {
+  if (!supabase || !title || !content) return false;
+  const { error } = await supabase.from('announcements').insert([{
+    title,
+    content,
+    author_email: authorEmail
+  }]);
+  return !error;
+}
+
+export async function deleteAnnouncement(announcementId) {
+  if (!supabase || !announcementId) return false;
+  const { error } = await supabase.from('announcements').delete().eq('id', announcementId);
+  return !error;
 }
 
 export async function getAvailabilitySlots() {
