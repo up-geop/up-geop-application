@@ -1,12 +1,13 @@
 import { CONFIG } from './config.js';
 import { 
   supabase, getBuddyGroupMembers, spendCurrency,
-  getActiveTambaySession, validateApplicantTambay, verifyUniversalCode,
+  getActiveTambaySession, verifyUniversalCode,
   checkIfResidentMember, checkIfRAComm, getGlobalSettings, updateGlobalSettings,
-  createEvent, COMMITTEES_LIST, generateApplicantShortCode,
+  createEvent, generateApplicantShortCode,
   getAllApplicantsProgress, getApplicantFullDetails, deleteApplicantProfile,
   adminAdjustTambayHours, adminAdjustTokens, adminToggleApplicantSignatory,
-  getSignatories, getTambayHours, getEvents
+  getSignatories, getTambayHours, getEvents,
+  getAnnouncements, getAvailabilitySlots, toggleUserAvailabilitySlot
 } from './storage.js';
 
 import { renderSignatoriesTab } from './signatories.js';
@@ -67,6 +68,78 @@ function startLiveTimer(timeInIso) {
 
 function stopLiveTimer() {
   if (timerInterval) clearInterval(timerInterval);
+}
+
+async function renderAnnouncements() {
+  const container = document.getElementById('announcementsList');
+  if (!container) return;
+
+  const announcements = await getAnnouncements();
+  if (announcements.length === 0) {
+    container.innerHTML = '<p class="subtext">No active announcements right now.</p>';
+    return;
+  }
+
+  container.innerHTML = announcements.map(ann => `
+    <div style="background: var(--surface-subtle); border: 1px solid var(--border-subtle); padding: 14px; border-radius: var(--radius-sm);">
+      <h3 style="font-size: 1rem; color: var(--brand-forest); margin-bottom: 4px;">${ann.title}</h3>
+      <p style="font-size: 0.88rem; margin-bottom: 8px; white-space: pre-line;">${ann.content}</p>
+      <small style="color: var(--text-muted);">Posted by ${ann.author_email} on ${new Date(ann.created_at).toLocaleDateString()}</small>
+    </div>
+  `).join('');
+}
+
+async function renderWhen2MeetGrid() {
+  const tbody = document.getElementById('availabilityGridTbody');
+  if (!tbody || !currentUser) return;
+
+  const allSlots = await getAvailabilitySlots();
+  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+  const times = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
+
+  const slotCounts = {};
+  const userSelectedSlots = new Set();
+
+  allSlots.forEach(slot => {
+    slotCounts[slot.time_slot] = (slotCounts[slot.time_slot] || 0) + 1;
+    if (slot.user_id === currentUser.id) {
+      userSelectedSlots.add(slot.time_slot);
+    }
+  });
+
+  tbody.innerHTML = '';
+
+  times.forEach(time => {
+    const tr = document.createElement('tr');
+    tr.style.borderBottom = '1px solid var(--border-subtle)';
+
+    let rowHtml = `<td style="padding: 8px; font-weight: bold; background: var(--surface-subtle);">${time}</td>`;
+
+    days.forEach(day => {
+      const slotKey = `${day}-${time}`;
+      const count = slotCounts[slotKey] || 0;
+      const isUserAvailable = userSelectedSlots.has(slotKey);
+
+      let bgColor = '#f5f5f5';
+      if (count > 0) {
+        const intensity = Math.min(count * 25, 100);
+        bgColor = `hsl(123, 45%, ${85 - (intensity * 0.4)}%)`;
+      }
+
+      rowHtml += `
+        <td class="when2meet-cell ${isUserAvailable ? 'user-selected' : ''}" 
+            data-slot="${slotKey}" 
+            data-available="${isUserAvailable}"
+            style="padding: 10px; background-color: ${bgColor}; cursor: pointer; border: 1px solid var(--border-subtle); transition: all 0.2s;"
+            title="${count} person(s) available">
+            ${isUserAvailable ? '<b>✓ You</b>' : (count > 0 ? `${count}` : '')}
+        </td>
+      `;
+    });
+
+    tr.innerHTML = rowHtml;
+    tbody.appendChild(tr);
+  });
 }
 
 async function calculateProgress() {
@@ -190,9 +263,6 @@ export async function render() {
     progressBar.textContent = `${stats.total}%`;
   }
 
-  const overviewProg = document.getElementById('overviewProgressText');
-  if (overviewProg) overviewProg.textContent = `${stats.total}%`;
-
   const overviewSig = document.getElementById('overviewSigText');
   if (overviewSig) overviewSig.textContent = `${stats.sigCompleted}/${stats.sigTotal}`;
 
@@ -256,21 +326,13 @@ function setupRealtimeListeners() {
 
   supabase
     .channel('public-db-changes')
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'signatories' },
-      async () => {
-        showToast('Signatory matrix updated live!', 'success');
-        await render();
-      }
-    )
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'tambay_sessions' },
-      async () => {
-        await render();
-      }
-    )
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'signatories' }, async () => {
+      showToast('Signatory matrix updated live!', 'success');
+      await render();
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'tambay_sessions' }, async () => {
+      await render();
+    })
     .subscribe();
 }
 
@@ -403,7 +465,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupRealtimeListeners();
 
   if (supabase) {
-    supabase.auth.onAuthStateChange(async (event, session) => {
+    supabase.auth.onAuthStateChange(async (event) => {
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         if (window.location.hash.includes('access_token')) {
           window.history.replaceState(null, '', window.location.pathname);
@@ -414,7 +476,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
+    btn.addEventListener('click', async () => {
       const targetTabId = btn.dataset.tab;
 
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -431,11 +493,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         targetContent.style.display = 'block';
         targetContent.classList.add('active');
 
-        if (targetTabId === 'signatories' || targetTabId === 'signatoriesTab') {
+        if (targetTabId === 'tab-signatories' || targetTabId === 'signatories') {
           await renderSignatoriesTab(targetContent);
+        } else if (targetTabId === 'tab-schedule') {
+          await renderAnnouncements();
+          await renderWhen2MeetGrid();
         }
       }
     });
+  });
+
+  document.getElementById('availabilityGridTbody')?.addEventListener('click', async (e) => {
+    const cell = e.target.closest('.when2meet-cell');
+    if (!cell || !currentUser) return;
+
+    const slotKey = cell.dataset.slot;
+    const isAvailable = cell.dataset.available === 'true';
+
+    await toggleUserAvailabilitySlot(currentUser.id, currentUser.email, slotKey, isAvailable);
+    await renderWhen2MeetGrid();
   });
 
   document.getElementById('manualValidateBtn')?.addEventListener('click', () => {
