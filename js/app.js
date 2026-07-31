@@ -5,9 +5,10 @@ import {
   checkIfResidentMember, checkIfRAComm, getGlobalSettings, updateGlobalSettings,
   createEvent, COMMITTEES_LIST, generateApplicantShortCode, getApplicantIdByShortCode,
   getAllApplicantsProgress, getApplicantFullDetails, deleteApplicantProfile,
-  adminAdjustTambayHours, adminAdjustTokens, adminToggleApplicantSignatory
+  adminAdjustTambayHours, adminAdjustTokens, adminToggleApplicantSignatory,
+  selectTaskForSignatory
 } from './storage.js';
-import { getSignatories, toggleSignatoryTask } from './signatories.js';
+import { getSignatories } from './signatories.js';
 import { getTambayHours } from './tambay.js';
 import { getEvents, checkInToEvent } from './events.js';
 import { signInWithGoogle, signOutUser, getCurrentUser, getUserProfileData, createApplicantProfile } from './auth.js';
@@ -17,9 +18,6 @@ let timerInterval = null;
 let currentInspectedApplicantId = null;
 let activeCommitteeFilter = 'ALL';
 
-// ==========================================
-// TOAST NOTIFICATION SYSTEM
-// ==========================================
 export function showToast(message, type = 'info') {
   const container = document.getElementById('toastContainer');
   if (!container) {
@@ -105,7 +103,6 @@ async function calculateProgress() {
   };
 }
 
-// RENDER APPLICANT ROSTER TABLE
 async function renderApplicantRosterTable() {
   const tbody = document.getElementById('applicantRosterTbody');
   if (!tbody) return;
@@ -146,7 +143,6 @@ async function renderApplicantRosterTable() {
   });
 }
 
-// OPEN FULL APPLICANT INSPECTION MODAL
 async function openApplicantInspectionModal(applicantId) {
   currentInspectedApplicantId = applicantId;
   const modal = document.getElementById('adminInspectionModal');
@@ -165,7 +161,7 @@ async function openApplicantInspectionModal(applicantId) {
     row.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border: 1px solid var(--border-subtle); border-radius: 4px; background: white; font-size: 0.82rem;";
     row.innerHTML = `
       <div>
-        <strong>[${sig.committee_name}] ${sig.type}</strong>: ${sig.task_description}
+        <strong>[${sig.committee_name}] ${sig.type}</strong>: ${sig.trait_description}
       </div>
       <input type="checkbox" ${sig.completed ? 'checked' : ''} data-sig-id="${sig.id}" class="admin-sig-toggle" />
     `;
@@ -257,27 +253,45 @@ export async function render() {
 
         const li = document.createElement('li');
         li.className = 'task-item';
-        li.style.background = isLocked ? '#f8f8f8' : 'white';
-        li.style.opacity = isLocked ? '0.6' : '1.0';
+        li.style.cssText = `background: ${isLocked ? '#f8f8f8' : 'white'}; opacity: ${isLocked ? '0.6' : '1.0'}; display: block; padding: 12px 16px; margin-bottom: 8px; border-radius: 8px; border: 1px solid var(--border-subtle);`;
+
+        const usedTasks = stats.signatoriesList
+          .filter(s => s.id !== item.id && s.selected_task)
+          .map(s => s.selected_task);
+
+        const availableTasks = (item.task_pool || []).filter(t => !usedTasks.includes(t) || t === item.selected_task);
+
+        let taskDropdownHtml = '';
+        if (!item.completed && !isLocked) {
+          taskDropdownHtml = `
+            <div style="margin-top: 8px;">
+              <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Choose 1 Task from your 25-Task Pool:</label>
+              <select class="task-selector" data-task-id="${item.id}" style="width: 100%; padding: 6px 10px; font-size: 0.82rem; border-radius: 4px; border: 1px solid var(--border-medium);">
+                <option value="">-- Select a Task --</option>
+                ${availableTasks.map(t => `<option value="${t}" ${item.selected_task === t ? 'selected' : ''}>${t}</option>`).join('')}
+              </select>
+            </div>
+          `;
+        } else if (item.selected_task) {
+          taskDropdownHtml = `<p style="font-size: 0.82rem; color: var(--brand-forest); font-weight: 600; margin-top: 6px;">Selected Task: ${item.selected_task}</p>`;
+        }
 
         li.innerHTML = `
-          <div class="task-info">
-            <strong>${isVpTask ? `VP Verification (${comm.vp})` : `Member Task (${item.type === 'MEMBER_1' ? '#1' : '#2'})`}</strong>
-            <small style="display: block; margin-top: 2px;">${item.trait_description}</small>
-            <small style="color: var(--brand-forest); font-weight: 600;">Task: ${item.task_description}</small>
+          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div>
+              <strong style="font-size: 0.9rem;">${isVpTask ? `👑 VP Endorsement (${comm.vp})` : `👤 Member Task (${item.type === 'MEMBER_1' ? '#1' : '#2'})`}</strong>
+              <p style="font-size: 0.82rem; color: var(--text-heading); margin-top: 2px;">${item.trait_description}</p>
+              <small style="display: block; color: var(--text-muted); font-size: 0.78rem; margin-top: 2px;">💬 <strong>Questions:</strong> ${item.questions_required}</small>
+            </div>
+            <div>
+              ${item.completed 
+                ? `<span class="badge" style="background: var(--brand-mint-subtle); color: var(--brand-forest); border: 1px solid var(--brand-mint);">Signed by: ${item.signed_by || 'Member'}</span>` 
+                : (isLocked ? `<span class="badge">Locked</span>` : `<span class="badge" style="background: #fff3e0; color: #e65100;">Pending Member Sign</span>`)}
+            </div>
           </div>
-          ${isLocked ? `
-            <span class="badge">Locked</span>
-          ` : `
-            <input 
-              type="checkbox" 
-              ${item.completed ? 'checked' : ''} 
-              data-id="${item.id}" 
-              data-completed="${item.completed}"
-              class="sig-checkbox" 
-            />
-          `}
+          ${taskDropdownHtml}
         `;
+
         commSection.appendChild(li);
       });
 
@@ -338,7 +352,6 @@ async function handleAuthState() {
     if (userProfileBar) userProfileBar.style.display = 'flex';
     if (userEmailText) userEmailText.textContent = currentUser.email;
 
-    // Set Google Profile Avatar or default to UP GEOP Logo
     const avatarUrl = currentUser.user_metadata?.avatar_url || currentUser.user_metadata?.picture || 'logo.png';
     if (userAvatarHeader) { userAvatarHeader.src = avatarUrl; }
     if (userAvatarHero) { userAvatarHero.src = avatarUrl; }
@@ -363,7 +376,6 @@ async function handleAuthState() {
       }
 
       if (isRAComm) {
-        // Display Applicant Dashboard so RAComm Officers can also see the Tabs & Progress Bar!
         if (applicantDashboard) applicantDashboard.style.display = 'block';
 
         const settings = await getGlobalSettings();
@@ -450,12 +462,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // Tab Switching Logic (Applicant & RAComm)
   document.querySelectorAll('.tab-nav').forEach(nav => {
     nav.addEventListener('click', (e) => {
       if (e.target.classList.contains('tab-btn')) {
         const targetTabId = e.target.dataset.tab;
-        
         nav.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
         e.target.classList.add('active');
 
@@ -470,7 +480,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // Committee Filter Chips
   document.getElementById('committeeChips')?.addEventListener('click', async (e) => {
     if (e.target.classList.contains('chip')) {
       document.querySelectorAll('#committeeChips .chip').forEach(c => c.classList.remove('active'));
@@ -480,7 +489,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Show QR Code & Short Code
+  document.getElementById('signatoryList')?.addEventListener('change', async (e) => {
+    if (e.target.classList.contains('task-selector')) {
+      const taskId = e.target.dataset.taskId;
+      const selectedTask = e.target.value;
+      if (selectedTask) {
+        await selectTaskForSignatory(taskId, selectedTask);
+        showToast('Task paired with signatory requirement!', 'success');
+        await render();
+      }
+    }
+  });
+
   document.getElementById('showQrBtn')?.addEventListener('click', async () => {
     if (!currentUser) return;
 
@@ -515,7 +535,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (qrContainer) qrContainer.style.display = 'none';
   });
 
-  // Modal Handlers
   const closeModal = () => {
     const modal = document.getElementById('manualCodeModal');
     if (modal) modal.style.display = 'none';
@@ -652,16 +671,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (await spendCurrency(50, 'Signatory Task Swap')) {
       showToast('Redeemed Signatory Task Swap.', 'success');
       await handleAuthState();
-    }
-  });
-
-  document.getElementById('signatoryList')?.addEventListener('change', async (e) => {
-    if (e.target.classList.contains('sig-checkbox')) {
-      const taskId = e.target.dataset.id;
-      const currentStatus = e.target.dataset.completed === 'true';
-      await toggleSignatoryTask(taskId, currentStatus);
-      showToast('Task status updated.', 'info');
-      await render();
     }
   });
 
