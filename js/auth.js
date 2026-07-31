@@ -1,7 +1,10 @@
 import { supabase } from './storage.js';
 
 // Allowed test bypass emails
-const TEST_BYPASS_EMAILS = ['ejhayignacio889@gmail.com'];
+export const TEST_BYPASS_EMAILS = [
+  'ejhayignacio889@gmail.com',
+  'sandrapolinar2166@gmail.com'
+];
 
 export async function signInWithGoogle() {
   if (!supabase) return;
