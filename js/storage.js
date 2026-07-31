@@ -9,8 +9,8 @@ const createClient = window.supabase?.createClient || window.supabaseClient?.cre
 export const supabase = createClient ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
 // Replace these two URLs with your published Google Sheet CSV URLs
-const TRAITS_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRUM49iGYGFrwckeq-pSZv65dVWYi7yqE2DIYcpBfZKxFTqIc-1l-CXa6U1TvmGE3oqf8NhjWq29qeC/pub?gid=0&single=true&output=csv';
-const TASKS_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRUM49iGYGFrwckeq-pSZv65dVWYi7yqE2DIYcpBfZKxFTqIc-1l-CXa6U1TvmGE3oqf8NhjWq29qeC/pub?gid=448373194&single=true&output=csv';
+const TRAITS_SHEET_CSV_URL = 'YOUR_TRAITS_POOL_CSV_URL_HERE';
+const TASKS_SHEET_CSV_URL = 'YOUR_TASKS_POOL_CSV_URL_HERE';
 
 async function getCurrentUserId() {
   if (!supabase) return null;
@@ -161,7 +161,7 @@ export async function verifySignatoryByMember(taskId, memberEmail) {
   return !error;
 }
 
-// Additional Database Methods
+// User Profile & Member Checks
 export async function checkIfResidentMember(email) {
   if (!supabase || !email) return false;
   const { data } = await supabase.from('members').select('id').ilike('email', email.trim()).maybeSingle();
@@ -356,4 +356,24 @@ export async function adminToggleApplicantSignatory(taskId, currentStatus) {
   if (!supabase || !taskId) return false;
   const { error } = await supabase.from('signatories').update({ completed: !currentStatus }).eq('id', taskId);
   return !error;
+}
+
+export async function spendCurrency(cost, itemDescription) {
+  const userId = await getCurrentUserId();
+  if (!userId || !supabase) return false;
+
+  const { data: profile } = await supabase.from('profiles').select('currency').eq('id', userId).single();
+  if (!profile || profile.currency < cost) {
+    alert(`Insufficient tokens! Required: ${cost}`);
+    return false;
+  }
+
+  const { error } = await supabase.from('profiles').update({ currency: profile.currency - cost }).eq('id', userId);
+  return !error;
+}
+
+export async function getBuddyGroupMembers(groupName) {
+  if (!groupName || !supabase) return [];
+  const { data } = await supabase.from('profiles').select('full_name, nickname').eq('buddy_group_name', groupName);
+  return data || [];
 }
