@@ -140,7 +140,7 @@ function renderSignatoryCard(sig, index, usedTasks) {
       <!-- Interactive Q&A Input Fields -->
       <div class="bg-gray-50 border border-gray-100 rounded-lg p-3 space-y-3">
         <span class="text-xs font-bold text-gray-700 flex items-center gap-1">
-          <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+          <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
           Interview Details & Answers:
         </span>
         
@@ -206,7 +206,7 @@ function attachSignatoryEvents(container, signatories) {
       const sigId = e.target.dataset.id;
       const selectedTask = e.target.value;
       await selectTaskForSignatory(sigId, selectedTask);
-      renderSignatoriesTab(container); // Refresh UI to lock claimed tasks in other dropdowns
+      renderSignatoriesTab(container);
     });
   });
 
@@ -232,7 +232,6 @@ function attachSignatoryEvents(container, signatories) {
       const sigCard = e.target.closest('.bg-white');
       const selectElem = sigCard?.querySelector('.task-select');
 
-      // Validation: Check if task was selected before allowing signature request
       if (selectElem && !selectElem.value) {
         alert('Please choose 1 task from your dropdown pool before requesting a signature!');
         return;
