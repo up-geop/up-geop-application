@@ -27,16 +27,19 @@ export const COMMITTEES_LIST = [
   { name: 'Finance', vp: 'VP for Finance Affairs' }
 ];
 
-// CSV Parser Helper
+// Robust CSV Parser Helper
 function parseCSV(csvText) {
   if (!csvText) return [];
-  const lines = csvText.trim().split('\n');
+  const lines = csvText.trim().split(/\r?\n/).filter(line => line.trim().length > 0);
   if (lines.length <= 1) return [];
-  const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-  
+
+  // Clean headers (remove surrounding quotes, BOM characters, and extra spaces)
+  const headers = lines[0].split(',').map(h => h.trim().replace(/^["\uFEFF]|["\uFEFF]$/g, '').toLowerCase());
+
   return lines.slice(1).map(line => {
     const values = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
     const cleanValues = values.map(v => v.trim().replace(/^"|"$/g, ''));
+    
     let obj = {};
     headers.forEach((header, i) => {
       obj[header] = cleanValues[i] || '';
@@ -45,7 +48,7 @@ function parseCSV(csvText) {
   });
 }
 
-// Fetch Google Sheets Pools
+// Fetch Google Sheets Pools directly
 async function fetchSheetPools() {
   try {
     const [traitsRes, tasksRes] = await Promise.all([
@@ -53,45 +56,59 @@ async function fetchSheetPools() {
       fetch(TASKS_SHEET_CSV_URL).then(r => r.text())
     ]);
 
-    return {
-      traits: parseCSV(traitsRes),
-      tasks: parseCSV(tasksRes)
-    };
+    const traits = parseCSV(traitsRes);
+    const tasks = parseCSV(tasksRes);
+
+    console.log('Fetched Traits from Sheet:', traits);
+    console.log('Fetched Tasks from Sheet:', tasks);
+
+    return { traits, tasks };
   } catch (err) {
     console.error('Error fetching Google Sheets CSV pools:', err);
     return { traits: [], tasks: [] };
   }
 }
 
-// Generate Applicant Signatory Matrix (18 Items)
+// Generate Applicant Signatory Matrix (18 Items from Google Sheet)
 export async function generateApplicantSignatories(userId) {
   if (!supabase || !userId) return;
 
+  // Strict check: if user already has signatories, stop to avoid duplicates
   const { data: existing, error: checkErr } = await supabase
     .from('signatories')
     .select('id')
-    .eq('user_id', userId);
+    .eq('user_id', userId)
+    .limit(1);
 
-  if (checkErr) {
-    console.error('Error checking existing signatories:', checkErr.message);
-  }
-
-  if (existing && existing.length > 0) return; // Already generated
+  if (checkErr) console.error('Error checking existing signatories:', checkErr.message);
+  if (existing && existing.length > 0) return; // Prevent duplicate generation
 
   const pools = await fetchSheetPools();
-  const allTasks = pools.tasks.map(t => t.task_description).filter(Boolean);
 
-  // Randomly pick 25 unique tasks for this applicant's personal choice pool
+  // Extract task descriptions dynamically from sheet
+  const allTasks = pools.tasks
+    .map(t => t.task_description || t.task || Object.values(t)[0])
+    .filter(val => val && val.trim().length > 0);
+
+  if (allTasks.length === 0) {
+    console.warn('Warning: Google Sheet tasks pool returned 0 items. Check sheet publication URL!');
+  }
+
+  // Shuffle and pick 25 tasks for applicant's pool directly from sheet
   const shuffledTasks = [...allTasks].sort(() => 0.5 - Math.random());
   const applicant25Pool = shuffledTasks.slice(0, Math.min(25, shuffledTasks.length));
 
   const newSignatories = [];
 
   COMMITTEES_LIST.forEach(comm => {
+    // Filter traits specifically matching this committee from Google Sheet
     const commTraits = pools.traits
-      .filter(t => t.committee_name?.trim().toLowerCase() === comm.name.toLowerCase())
-      .map(t => t.trait_description)
-      .filter(Boolean);
+      .filter(t => {
+        const commVal = t.committee_name || t.committee || Object.values(t)[0];
+        return commVal && commVal.trim().toLowerCase() === comm.name.toLowerCase();
+      })
+      .map(t => t.trait_description || t.trait || Object.values(t)[1])
+      .filter(val => val && val.trim().length > 0);
 
     const shuffledTraits = [...commTraits].sort(() => 0.5 - Math.random());
     const trait1 = shuffledTraits[0] || 'owns a GEOP jacket or lanyard';
