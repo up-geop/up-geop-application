@@ -392,24 +392,37 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  document.querySelectorAll('.tab-nav').forEach(nav => {
-    nav.addEventListener('click', (e) => {
-      if (e.target.classList.contains('tab-btn')) {
-        const targetTabId = e.target.dataset.tab;
-        nav.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-        e.target.classList.add('active');
+  // Tambay QR Code Modal Trigger
+  document.getElementById('showQrBtn')?.addEventListener('click', async () => {
+    if (!currentUser) return;
 
-        const parentContainer = nav.parentElement;
-        parentContainer.querySelectorAll('.tab-content').forEach(content => {
-          content.classList.remove('active');
-        });
+    const qrContainer = document.getElementById('qrDisplayContainer');
+    const qrCanvas = document.getElementById('qrcodeCanvas');
+    const codeText = document.getElementById('applicantShortCodeText');
 
-        const targetContent = document.getElementById(targetTabId);
-        if (targetContent) targetContent.classList.add('active');
+    if (qrContainer) {
+      if (codeText) codeText.textContent = '...';
+
+      const shortCode = await generateApplicantShortCode();
+      if (codeText) codeText.textContent = shortCode || 'ERROR';
+
+      const baseUrl = window.location.origin + window.location.pathname;
+      const validationUrl = `${baseUrl}?validateApplicant=${currentUser.id}`;
+
+      if (qrCanvas) {
+        qrCanvas.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(validationUrl)}" alt="Tambay QR" style="width:180px; height:180px; margin: 0 auto; display:block;" />`;
       }
-    });
+
+      qrContainer.style.display = 'block';
+    }
   });
 
+  document.getElementById('closeQrBtn')?.addEventListener('click', () => {
+    const qrContainer = document.getElementById('qrDisplayContainer');
+    if (qrContainer) qrContainer.style.display = 'none';
+  });
+
+  // Manual Short Code Verification
   document.getElementById('manualValidateBtn')?.addEventListener('click', () => {
     const modal = document.getElementById('manualCodeModal');
     const input = document.getElementById('manualCodeInput');
@@ -449,68 +462,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  document.getElementById('applicantRosterTbody')?.addEventListener('click', async (e) => {
-    if (e.target.classList.contains('inspect-app-btn')) {
-      const appId = e.target.dataset.id;
-      await openApplicantInspectionModal(appId);
-    }
-  });
-
-  document.getElementById('closeInspectModalBtn')?.addEventListener('click', () => {
-    document.getElementById('adminInspectionModal').style.display = 'none';
-  });
-
-  document.getElementById('inspectSignatoriesList')?.addEventListener('change', async (e) => {
-    if (e.target.classList.contains('admin-sig-toggle')) {
-      const taskId = e.target.dataset.sigId;
-      const currentStatus = !e.target.checked;
-      await adminToggleApplicantSignatory(taskId, currentStatus);
-      showToast('Applicant signatory updated by admin.', 'success');
-      await renderApplicantRosterTable();
-    }
-  });
-
-  document.getElementById('adminAddHoursBtn')?.addEventListener('click', async () => {
-    if (!currentInspectedApplicantId) return;
-    const input = prompt('Enter hours to add (e.g. 1.5) or deduct (e.g. -1.0):');
-    if (input && !isNaN(input)) {
-      await adminAdjustTambayHours(currentInspectedApplicantId, parseFloat(input));
-      showToast('Hours adjusted successfully.', 'success');
-      await openApplicantInspectionModal(currentInspectedApplicantId);
-      await renderApplicantRosterTable();
-    }
-  });
-
-  document.getElementById('adminEditTokensBtn')?.addEventListener('click', async () => {
-    if (!currentInspectedApplicantId) return;
-    const input = prompt('Enter new GEOP Token balance:');
-    if (input && !isNaN(input)) {
-      await adminAdjustTokens(currentInspectedApplicantId, parseInt(input, 10));
-      showToast('Token balance updated.', 'success');
-      await openApplicantInspectionModal(currentInspectedApplicantId);
-    }
-  });
-
-  document.getElementById('adminDeleteApplicantBtn')?.addEventListener('click', async () => {
-    if (!currentInspectedApplicantId) return;
-    if (confirm('Are you sure you want to permanently delete this applicant profile?')) {
-      await deleteApplicantProfile(currentInspectedApplicantId);
-      document.getElementById('adminInspectionModal').style.display = 'none';
-      showToast('Applicant profile removed.', 'info');
-      await renderApplicantRosterTable();
-    }
-  });
-
-  document.getElementById('onboardingForm')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const fullNameInput = document.getElementById('onboardFullName');
-    const nicknameInput = document.getElementById('onboardNickname');
-
-    if (currentUser && fullNameInput && nicknameInput) {
-      const created = await createApplicantProfile(currentUser.id, fullNameInput.value, nicknameInput.value);
-      if (created) {
-        showToast('Profile created successfully.', 'success');
-        await handleAuthState();
+  // Event Check-ins
+  document.getElementById('eventList')?.addEventListener('click', async (e) => {
+    if (e.target.classList.contains('btn-checkin')) {
+      const eventId = e.target.dataset.eventId;
+      const passInput = document.getElementById(`pass-${eventId}`);
+      if (passInput && await checkInToEvent(eventId, passInput.value)) {
+        showToast('Event Attendance Verified! +2.0 hours credited.', 'success');
+        await render();
       }
     }
   });
