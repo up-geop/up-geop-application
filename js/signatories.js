@@ -3,6 +3,7 @@ import {
   selectTaskForSignatory, 
   generateApplicantShortCode, 
   verifySignatoryDirectly,
+  getApplicantIdByShortCode,
   COMMITTEES_LIST,
   supabase 
 } from './storage.js';
@@ -92,7 +93,7 @@ export async function renderSignatoriesTab(container) {
 
         <div class="code-display" id="modalShortCode">------</div>
 
-        <!-- Direct Sign-off -->
+        <!-- Direct Email Sign-off -->
         <div style="margin-top: 12px; border-top: 1px solid #f1f5f9; padding-top: 12px;">
           <input type="email" id="verifierEmailInput" placeholder="Member Email to Sign" style="width:100%; padding:8px; font-size:0.8rem; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:6px; box-sizing:border-box;" />
           <button id="confirmDirectSignBtn" class="action-btn" style="background:#0284c7;">Sign Task Now</button>
@@ -292,19 +293,36 @@ function attachSignatoryEvents(container, signatories) {
   });
 
   confirmDirectSignBtn?.addEventListener('click', async () => {
-    const email = verifierEmailInput?.value?.trim();
-    if (!email) {
-      alert('Please enter member email to sign.');
+    const inputVal = verifierEmailInput?.value?.trim();
+    if (!inputVal) {
+      alert('Please enter member email or 6-digit code to sign.');
       return;
     }
 
     if (!activeSigIdForModal) return;
 
-    const res = await verifySignatoryDirectly(activeSigIdForModal, email);
-    alert(res.message);
-    if (res.success) {
-      verifyModal.style.display = 'none';
-      renderSignatoriesTab(container);
+    // Support entering short code or member email
+    if (inputVal.length === 6 && !inputVal.includes('@')) {
+      const applicantId = await getApplicantIdByShortCode(inputVal);
+      if (!applicantId) {
+        alert('Invalid or expired 6-digit verification code.');
+        return;
+      }
+      const { data: { session } } = await supabase.auth.getSession();
+      const currentEmail = session?.user?.email || 'Resident Member';
+      const res = await verifySignatoryDirectly(activeSigIdForModal, currentEmail);
+      alert(res.message);
+      if (res.success) {
+        verifyModal.style.display = 'none';
+        renderSignatoriesTab(container);
+      }
+    } else {
+      const res = await verifySignatoryDirectly(activeSigIdForModal, inputVal);
+      alert(res.message);
+      if (res.success) {
+        verifyModal.style.display = 'none';
+        renderSignatoriesTab(container);
+      }
     }
   });
 
