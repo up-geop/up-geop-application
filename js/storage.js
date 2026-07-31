@@ -27,40 +27,58 @@ export const COMMITTEES_LIST = [
   { name: 'Finance', vp: 'VP for Finance Affairs' }
 ];
 
-// Robust CSV Parser Helper
+// RFC-Compliant CSV Parser Helper
 function parseCSV(csvText) {
   if (!csvText) return [];
-  const lines = csvText.trim().split(/\r?\n/).filter(line => line.trim().length > 0);
+  
+  const lines = csvText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   if (lines.length <= 1) return [];
 
-  // Clean headers (remove surrounding quotes, BOM characters, and extra spaces)
-  const headers = lines[0].split(',').map(h => h.trim().replace(/^["\uFEFF]|["\uFEFF]$/g, '').toLowerCase());
+  const headers = lines[0].split(',').map(h => h.replace(/^["\uFEFF]|["\uFEFF]$/g, '').trim().toLowerCase());
+  const result = [];
 
-  return lines.slice(1).map(line => {
-    const values = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
-    const cleanValues = values.map(v => v.trim().replace(/^"|"$/g, ''));
-    
-    let obj = {};
-    headers.forEach((header, i) => {
-      obj[header] = cleanValues[i] || '';
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    const values = [];
+    let insideQuotes = false;
+    let currentValue = '';
+
+    for (let charIndex = 0; charIndex < line.length; charIndex++) {
+      const char = line[charIndex];
+
+      if (char === '"') {
+        insideQuotes = !insideQuotes;
+      } else if (char === ',' && !insideQuotes) {
+        values.push(currentValue.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+        currentValue = '';
+      } else {
+        currentValue += char;
+      }
+    }
+    values.push(currentValue.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+
+    let row = {};
+    headers.forEach((header, idx) => {
+      row[header] = values[idx] || '';
     });
-    return obj;
-  });
+    result.push(row);
+  }
+
+  return result;
 }
 
-// Fetch Google Sheets Pools directly
+// Fetch Google Sheets Pools via CORS Proxy
 async function fetchSheetPools() {
   try {
+    const proxyUrl = 'https://api.allorigins.win/raw?url=';
+    
     const [traitsRes, tasksRes] = await Promise.all([
-      fetch(TRAITS_SHEET_CSV_URL).then(r => r.text()),
-      fetch(TASKS_SHEET_CSV_URL).then(r => r.text())
+      fetch(proxyUrl + encodeURIComponent(TRAITS_SHEET_CSV_URL)).then(r => r.text()),
+      fetch(proxyUrl + encodeURIComponent(TASKS_SHEET_CSV_URL)).then(r => r.text())
     ]);
 
     const traits = parseCSV(traitsRes);
     const tasks = parseCSV(tasksRes);
-
-    console.log('Fetched Traits from Sheet:', traits);
-    console.log('Fetched Tasks from Sheet:', tasks);
 
     return { traits, tasks };
   } catch (err) {
@@ -69,50 +87,45 @@ async function fetchSheetPools() {
   }
 }
 
-// Generate Applicant Signatory Matrix (18 Items from Google Sheet)
+// Generate Applicant Signatory Matrix (STRICT 18 Items)
 export async function generateApplicantSignatories(userId) {
   if (!supabase || !userId) return;
 
-  // Strict check: if user already has signatories, stop to avoid duplicates
+  // Strict check: if user already has signatories, stop immediately!
   const { data: existing, error: checkErr } = await supabase
     .from('signatories')
     .select('id')
-    .eq('user_id', userId)
-    .limit(1);
+    .eq('user_id', userId);
 
   if (checkErr) console.error('Error checking existing signatories:', checkErr.message);
-  if (existing && existing.length > 0) return; // Prevent duplicate generation
+  if (existing && existing.length > 0) return; // Hard stop! Prevents duplication
 
   const pools = await fetchSheetPools();
 
-  // Extract task descriptions dynamically from sheet
+  // Extract task descriptions matching Column A ("Task Description")
   const allTasks = pools.tasks
-    .map(t => t.task_description || t.task || Object.values(t)[0])
+    .map(t => t['task description'] || t['task_description'] || Object.values(t)[0])
     .filter(val => val && val.trim().length > 0);
 
-  if (allTasks.length === 0) {
-    console.warn('Warning: Google Sheet tasks pool returned 0 items. Check sheet publication URL!');
-  }
-
-  // Shuffle and pick 25 tasks for applicant's pool directly from sheet
+  // Pick 25 unique tasks for this applicant's personal choice pool
   const shuffledTasks = [...allTasks].sort(() => 0.5 - Math.random());
   const applicant25Pool = shuffledTasks.slice(0, Math.min(25, shuffledTasks.length));
 
   const newSignatories = [];
 
   COMMITTEES_LIST.forEach(comm => {
-    // Filter traits specifically matching this committee from Google Sheet
+    // Extract traits matching Column A ("Committee") & Column B ("Trait Description")
     const commTraits = pools.traits
       .filter(t => {
-        const commVal = t.committee_name || t.committee || Object.values(t)[0];
-        return commVal && commVal.trim().toLowerCase() === comm.name.toLowerCase();
+        const cVal = t['committee'] || Object.values(t)[0];
+        return cVal && cVal.trim().toLowerCase() === comm.name.toLowerCase();
       })
-      .map(t => t.trait_description || t.trait || Object.values(t)[1])
+      .map(t => t['trait description'] || t['trait_description'] || Object.values(t)[1])
       .filter(val => val && val.trim().length > 0);
 
     const shuffledTraits = [...commTraits].sort(() => 0.5 - Math.random());
-    const trait1 = shuffledTraits[0] || 'owns a GEOP jacket or lanyard';
-    const trait2 = shuffledTraits[1] || 'has been in UP GEOP for over 2 years';
+    const trait1 = shuffledTraits[0] || 'owns an iPad or mechanical pencil for notes';
+    const trait2 = shuffledTraits[1] || 'has a favorite cafe near Katipunan';
 
     // Member Task 1
     newSignatories.push({
