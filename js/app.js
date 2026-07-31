@@ -1,12 +1,12 @@
 import { CONFIG } from './config.js';
 import { 
   supabase, getBuddyGroupMembers, spendCurrency,
-  getActiveTambaySession, validateApplicantTambay,
+  getActiveTambaySession, validateApplicantTambay, verifyUniversalCode,
   checkIfResidentMember, checkIfRAComm, getGlobalSettings, updateGlobalSettings,
-  createEvent, COMMITTEES_LIST, generateApplicantShortCode, getApplicantIdByShortCode,
+  createEvent, COMMITTEES_LIST, generateApplicantShortCode,
   getAllApplicantsProgress, getApplicantFullDetails, deleteApplicantProfile,
   adminAdjustTambayHours, adminAdjustTokens, adminToggleApplicantSignatory,
-  selectTaskForSignatory, verifySignatoryDirectly, getSignatories, getTambayHours, getEvents
+  getSignatories, getTambayHours, getEvents
 } from './storage.js';
 
 import { renderSignatoriesTab } from './signatories.js';
@@ -102,85 +102,6 @@ async function calculateProgress() {
   };
 }
 
-async function renderApplicantRosterTable() {
-  const tbody = document.getElementById('applicantRosterTbody');
-  if (!tbody) return;
-
-  const applicants = await getAllApplicantsProgress();
-  tbody.innerHTML = '';
-
-  if (applicants.length === 0) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="7" style="text-align: center; padding: 16px; color: var(--text-muted);">
-          No applicants registered yet.
-        </td>
-      </tr>
-    `;
-    return;
-  }
-
-  applicants.forEach(app => {
-    const tr = document.createElement('tr');
-    tr.style.borderBottom = '1px solid var(--border-subtle)';
-    tr.innerHTML = `
-      <td style="padding: 10px 14px;"><strong>${app.fullName}</strong> ("${app.nickname}")</td>
-      <td style="padding: 10px 14px;">${app.buddyGroup}</td>
-      <td style="padding: 10px 14px; font-family: var(--font-mono);">${app.completedSigs} / ${app.totalSigs}</td>
-      <td style="padding: 10px 14px; font-family: var(--font-mono);">${app.tambayHours} hrs</td>
-      <td style="padding: 10px 14px; font-family: var(--font-mono);">
-        <strong style="color: var(--brand-forest);">${app.overallPercent}%</strong>
-      </td>
-      <td style="padding: 10px 14px;">
-        ${app.isTimedIn ? `<span class="badge" style="background: #e8f5e9; color: #1b5e20;">Timed In</span>` : `<span class="badge">Offline</span>`}
-      </td>
-      <td style="padding: 10px 14px;">
-        <button class="btn btn-secondary inspect-app-btn" data-id="${app.id}" style="padding: 4px 10px; font-size: 0.78rem;">Inspect</button>
-      </td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-
-async function openApplicantInspectionModal(applicantId) {
-  currentInspectedApplicantId = applicantId;
-  const modal = document.getElementById('adminInspectionModal');
-  const details = await getApplicantFullDetails(applicantId);
-
-  if (!details || !details.profile || !modal) return;
-
-  document.getElementById('inspectApplicantName').textContent = `${details.profile.full_name} ("${details.profile.nickname}")`;
-  document.getElementById('inspectApplicantEmail').textContent = `ID: ${details.profile.id} | Tokens: ${details.profile.currency}`;
-
-  const sigListElem = document.getElementById('inspectSignatoriesList');
-  sigListElem.innerHTML = '';
-
-  (details.signatories || []).forEach(sig => {
-    const row = document.createElement('div');
-    row.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border: 1px solid var(--border-subtle); border-radius: 4px; background: white; font-size: 0.82rem;";
-    row.innerHTML = `
-      <div>
-        <strong>[${sig.committee_name}] ${sig.type}</strong>: ${sig.trait_description}
-      </div>
-      <input type="checkbox" ${sig.completed ? 'checked' : ''} data-sig-id="${sig.id}" class="admin-sig-toggle" />
-    `;
-    sigListElem.appendChild(row);
-  });
-
-  const tambayElem = document.getElementById('inspectTambayLogsList');
-  tambayElem.innerHTML = (details.tambayLogs || []).length === 0 ? '<small style="color: var(--text-muted);">No tambay logs recorded yet.</small>' : '';
-
-  (details.tambayLogs || []).forEach(log => {
-    const logItem = document.createElement('div');
-    logItem.style.fontSize = '0.8rem';
-    logItem.style.marginBottom = '4px';
-    logItem.textContent = `+${log.hours} hrs logged on ${new Date(log.created_at).toLocaleString()}`;
-    tambayElem.appendChild(logItem);
-  });
-
-  modal.style.display = 'flex';
-}
-
 export async function render() {
   const stats = await calculateProgress();
 
@@ -227,53 +148,41 @@ export async function render() {
   if (signatoriesTabContainer) {
     await renderSignatoriesTab(signatoriesTabContainer);
   }
+}
 
-  const eventList = document.getElementById('eventList');
-  if (eventList) {
-    eventList.innerHTML = '';
-    stats.eventsList.forEach(evt => {
-      const li = document.createElement('li');
-      li.className = 'task-item';
-      li.innerHTML = `
-        <div class="task-info">
-          <strong>${evt.name}</strong>
-          <small>${evt.attended ? 'Attended' : 'Pending'}</small>
-        </div>
-        ${!evt.attended ? `
-          <div style="display: flex; gap: 4px;">
-            <input type="text" id="pass-${evt.id}" placeholder="Passcode" style="width: 100px; padding: 4px;" />
-            <button class="btn btn-checkin" data-event-id="${evt.id}">Check In</button>
-          </div>
-        ` : '<span>Done</span>'}
-      `;
-      eventList.appendChild(li);
-    });
-  }
+// Setup Supabase Realtime Subscriptions for Dynamic Live Updates
+function setupRealtimeListeners() {
+  if (!supabase) return;
+
+  supabase
+    .channel('public-db-changes')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'signatories' },
+      async () => {
+        showToast('Signatory matrix updated live!', 'success');
+        await render();
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'tambay_sessions' },
+      async () => {
+        await render();
+      }
+    )
+    .subscribe();
 }
 
 async function checkAndProcessUrlValidation(user) {
   const urlParams = new URLSearchParams(window.location.search);
-  const validateApplicantId = urlParams.get('validateApplicant');
-  const verifySigId = urlParams.get('verifySig');
+  const verifyCode = urlParams.get('verifyCode') || urlParams.get('validateApplicant');
 
-  if (!user) return;
-
-  // 1. Process Signatory Scan Route
-  if (verifySigId) {
+  if (verifyCode && user) {
     window.history.replaceState({}, document.title, window.location.pathname);
-    const result = await verifySignatoryDirectly(verifySigId, user.email);
+    const result = await verifyUniversalCode(verifyCode, user.email);
     showToast(result.message, result.success ? 'success' : 'error');
     if (result.success) await render();
-    return;
-  }
-
-  // 2. Process Tambay Scan Route
-  if (validateApplicantId) {
-    window.history.replaceState({}, document.title, window.location.pathname);
-    const result = await validateApplicantTambay(validateApplicantId, user.email);
-    showToast(result.message, result.success ? 'success' : 'error');
-    if (result.success) await render();
-    return;
   }
 }
 
@@ -284,21 +193,13 @@ async function handleAuthState() {
   const onboardingSection = document.getElementById('onboardingSection');
   const applicantDashboard = document.getElementById('applicantDashboardContent');
   const memberDashboard = document.getElementById('memberDashboardContent');
-  const racommTabNav = document.getElementById('racommTabNav');
   const userProfileBar = document.getElementById('userProfileBar');
   const userEmailText = document.getElementById('userEmailText');
-  const userAvatarHeader = document.getElementById('userAvatarHeader');
-  const userAvatarHero = document.getElementById('userAvatarHero');
-  const roleBadgeHeader = document.getElementById('roleBadgeHeader');
 
   if (currentUser) {
     if (authSection) authSection.style.display = 'none';
     if (userProfileBar) userProfileBar.style.display = 'flex';
     if (userEmailText) userEmailText.textContent = currentUser.email;
-
-    const avatarUrl = currentUser.user_metadata?.avatar_url || currentUser.user_metadata?.picture || 'logo.png';
-    if (userAvatarHeader) { userAvatarHeader.src = avatarUrl; }
-    if (userAvatarHero) { userAvatarHero.src = avatarUrl; }
 
     await checkAndProcessUrlValidation(currentUser);
 
@@ -308,39 +209,8 @@ async function handleAuthState() {
     if (isMember || isRAComm) {
       if (onboardingSection) onboardingSection.style.display = 'none';
       if (memberDashboard) memberDashboard.style.display = 'block';
-
-      if (roleBadgeHeader) {
-        roleBadgeHeader.textContent = isRAComm ? 'RAComm Officer' : 'Resident Member';
-        roleBadgeHeader.style.background = 'var(--brand-forest)';
-        roleBadgeHeader.style.color = '#ffffff';
-      }
-
-      if (racommTabNav) {
-        racommTabNav.style.display = isRAComm ? 'flex' : 'none';
-      }
-
-      if (isRAComm) {
-        if (applicantDashboard) applicantDashboard.style.display = 'block';
-
-        const settings = await getGlobalSettings();
-        const multText = document.getElementById('currentMultiplierText');
-        const capText = document.getElementById('currentCapText');
-
-        if (multText) multText.textContent = `${settings.multiplier}x`;
-        if (capText) capText.textContent = settings.dailyCapEnabled ? 'Active (3.0 hrs/day)' : 'Disabled';
-
-        await renderApplicantRosterTable();
-      } else {
-        if (applicantDashboard) applicantDashboard.style.display = 'none';
-      }
     } else {
       if (memberDashboard) memberDashboard.style.display = 'none';
-
-      if (roleBadgeHeader) {
-        roleBadgeHeader.textContent = 'Applicant';
-        roleBadgeHeader.style.background = 'var(--surface-subtle)';
-        roleBadgeHeader.style.color = 'var(--text-body)';
-      }
 
       const profile = await getUserProfileData(currentUser.id);
 
@@ -350,35 +220,6 @@ async function handleAuthState() {
       } else {
         if (onboardingSection) onboardingSection.style.display = 'none';
         if (applicantDashboard) applicantDashboard.style.display = 'block';
-
-        const greetingElem = document.getElementById('userGreetingHeading');
-        const currencyElem = document.getElementById('userCurrencyText');
-        const groupNameElem = document.getElementById('buddyGroupName');
-
-        if (greetingElem) greetingElem.textContent = `Good day, ${profile.nickname}!`;
-        if (currencyElem) currencyElem.textContent = profile.currency;
-        if (groupNameElem) groupNameElem.textContent = profile.buddy_group_name;
-
-        const buddies = await getBuddyGroupMembers(profile.buddy_group_name);
-        const buddyList = document.getElementById('buddyList');
-        const buddyCountBadge = document.getElementById('buddyCountBadge');
-
-        if (buddyCountBadge) buddyCountBadge.textContent = `${buddies.length} Members`;
-        if (buddyList) {
-          buddyList.innerHTML = '';
-          buddies.forEach(buddy => {
-            const li = document.createElement('li');
-            li.className = 'task-item';
-            li.innerHTML = `
-              <div class="task-info">
-                <strong>${buddy.full_name}</strong>
-                <small>Nickname: "${buddy.nickname}"</small>
-              </div>
-              <span class="badge">Buddy</span>
-            `;
-            buddyList.appendChild(li);
-          });
-        }
 
         await render();
       }
@@ -394,6 +235,7 @@ async function handleAuthState() {
 
 document.addEventListener('DOMContentLoaded', async () => {
   await handleAuthState();
+  setupRealtimeListeners();
 
   if (supabase) {
     supabase.auth.onAuthStateChange(async (event, session) => {
@@ -406,7 +248,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // Tab Switching Listener
+  // Tab Navigation Listener
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const targetTabId = btn.dataset.tab;
@@ -442,37 +284,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // Tambay QR Modal
-  document.getElementById('showQrBtn')?.addEventListener('click', async () => {
-    if (!currentUser) return;
-
-    const qrContainer = document.getElementById('qrDisplayContainer');
-    const qrCanvas = document.getElementById('qrcodeCanvas');
-    const codeText = document.getElementById('applicantShortCodeText');
-
-    if (qrContainer) {
-      if (codeText) codeText.textContent = '...';
-
-      const shortCode = await generateApplicantShortCode();
-      if (codeText) codeText.textContent = shortCode || 'ERROR';
-
-      const baseUrl = window.location.origin + window.location.pathname;
-      const validationUrl = `${baseUrl}?validateApplicant=${currentUser.id}`;
-
-      if (qrCanvas) {
-        qrCanvas.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(validationUrl)}" alt="Tambay QR" style="width:180px; height:180px; margin: 0 auto; display:block;" />`;
-      }
-
-      qrContainer.style.display = 'block';
-    }
-  });
-
-  document.getElementById('closeQrBtn')?.addEventListener('click', () => {
-    const qrContainer = document.getElementById('qrDisplayContainer');
-    if (qrContainer) qrContainer.style.display = 'none';
-  });
-
-  // Manual Short Code Verification
+  // Universal Verification Button inside Resident Member Hub
   document.getElementById('manualValidateBtn')?.addEventListener('click', () => {
     const modal = document.getElementById('manualCodeModal');
     const input = document.getElementById('manualCodeInput');
@@ -500,16 +312,43 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    const applicantId = await getApplicantIdByShortCode(cleanInput);
-    if (applicantId) {
-      const modal = document.getElementById('manualCodeModal');
-      if (modal) modal.style.display = 'none';
-      const res = await validateApplicantTambay(applicantId, currentUser.email);
-      showToast(res.message, res.success ? 'success' : 'error');
-      await handleAuthState();
-    } else {
-      showToast('Invalid or expired code.', 'error');
+    const res = await verifyUniversalCode(cleanInput, currentUser.email);
+    
+    const modal = document.getElementById('manualCodeModal');
+    if (modal) modal.style.display = 'none';
+
+    showToast(res.message, res.success ? 'success' : 'error');
+    await handleAuthState();
+  });
+
+  // Tambay QR Modal for Applicants
+  document.getElementById('showQrBtn')?.addEventListener('click', async () => {
+    if (!currentUser) return;
+
+    const qrContainer = document.getElementById('qrDisplayContainer');
+    const qrCanvas = document.getElementById('qrcodeCanvas');
+    const codeText = document.getElementById('applicantShortCodeText');
+
+    if (qrContainer) {
+      if (codeText) codeText.textContent = '...';
+
+      const shortCode = await generateApplicantShortCode(null, 'TAMBAY');
+      if (codeText) codeText.textContent = shortCode || 'ERROR';
+
+      const baseUrl = window.location.origin + window.location.pathname;
+      const validationUrl = `${baseUrl}?verifyCode=${shortCode}`;
+
+      if (qrCanvas) {
+        qrCanvas.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(validationUrl)}" alt="Tambay QR" style="width:180px; height:180px; margin: 0 auto; display:block;" />`;
+      }
+
+      qrContainer.style.display = 'block';
     }
+  });
+
+  document.getElementById('closeQrBtn')?.addEventListener('click', () => {
+    const qrContainer = document.getElementById('qrDisplayContainer');
+    if (qrContainer) qrContainer.style.display = 'none';
   });
 
   // Event Check-ins
