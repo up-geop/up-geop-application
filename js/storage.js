@@ -8,7 +8,7 @@ const SUPABASE_KEY = 'sb_publishable_oZ1RQOpJ4BoIAq_vDAqHWw_lOnoqFo0';
 const createClient = window.supabase?.createClient || window.supabaseClient?.createClient;
 export const supabase = createClient ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
-// Replace these two URLs with your published Google Sheet CSV URLs
+// Google Sheet Published CSV URLs
 const TRAITS_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRUM49iGYGFrwckeq-pSZv65dVWYi7yqE2DIYcpBfZKxFTqIc-1l-CXa6U1TvmGE3oqf8NhjWq29qeC/pub?gid=0&single=true&output=csv';
 const TASKS_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRUM49iGYGFrwckeq-pSZv65dVWYi7yqE2DIYcpBfZKxFTqIc-1l-CXa6U1TvmGE3oqf8NhjWq29qeC/pub?gid=448373194&single=true&output=csv';
 
@@ -80,6 +80,9 @@ async function fetchSheetPools() {
     const traits = parseCSV(traitsRes);
     const tasks = parseCSV(tasksRes);
 
+    console.log('Parsed Traits:', traits);
+    console.log('Parsed Tasks:', tasks);
+
     return { traits, tasks };
   } catch (err) {
     console.error('Error fetching Google Sheets CSV pools:', err);
@@ -91,41 +94,57 @@ async function fetchSheetPools() {
 export async function generateApplicantSignatories(userId) {
   if (!supabase || !userId) return;
 
-  // Strict check: if user already has signatories, stop immediately!
-  const { data: existing, error: checkErr } = await supabase
+  // 1. Strict check: Check database FIRST. If rows exist, stop immediately!
+  const { data: existing } = await supabase
     .from('signatories')
     .select('id')
     .eq('user_id', userId);
 
-  if (checkErr) console.error('Error checking existing signatories:', checkErr.message);
   if (existing && existing.length > 0) return; // Hard stop! Prevents duplication
 
   const pools = await fetchSheetPools();
 
-  // Extract task descriptions matching Column A ("Task Description")
+  // 2. Extract tasks dynamically from Column A of the tasks sheet
   const allTasks = pools.tasks
-    .map(t => t['task description'] || t['task_description'] || Object.values(t)[0])
-    .filter(val => val && val.trim().length > 0);
+    .map(t => {
+      const vals = Object.values(t).map(v => String(v).trim()).filter(Boolean);
+      return vals[0] || '';
+    })
+    .filter(val => val.length > 0 && !val.toLowerCase().includes('task description'));
 
-  // Pick 25 unique tasks for this applicant's personal choice pool
+  // Pick 25 unique random tasks for this applicant's personal choice pool
   const shuffledTasks = [...allTasks].sort(() => 0.5 - Math.random());
   const applicant25Pool = shuffledTasks.slice(0, Math.min(25, shuffledTasks.length));
 
   const newSignatories = [];
 
-  COMMITTEES_LIST.forEach(comm => {
-    // Extract traits matching Column A ("Committee") & Column B ("Trait Description")
+  COMMITTEES_LIST.forEach((comm, commIdx) => {
+    // 3. Filter traits specifically matching this committee from Google Sheet
     const commTraits = pools.traits
       .filter(t => {
-        const cVal = t['committee'] || Object.values(t)[0];
-        return cVal && cVal.trim().toLowerCase() === comm.name.toLowerCase();
+        const rowVals = Object.values(t).map(v => String(v).trim().toLowerCase());
+        return rowVals.some(v => v.includes(comm.name.toLowerCase()));
       })
-      .map(t => t['trait description'] || t['trait_description'] || Object.values(t)[1])
-      .filter(val => val && val.trim().length > 0);
+      .map(t => {
+        const vals = Object.values(t).map(v => String(v).trim()).filter(Boolean);
+        return vals[1] || vals[0] || '';
+      })
+      .filter(val => val.length > 0 && !val.toLowerCase().includes(comm.name.toLowerCase()));
 
     const shuffledTraits = [...commTraits].sort(() => 0.5 - Math.random());
-    const trait1 = shuffledTraits[0] || 'owns an iPad or mechanical pencil for notes';
-    const trait2 = shuffledTraits[1] || 'has a favorite cafe near Katipunan';
+
+    // Distinct per-committee fallbacks in case sheet rows for a specific committee are sparse
+    const defaultTraits = [
+      ['owns an iPad or mechanical pencil for notes', 'has taken a GE class in AS / Palma Hall'],
+      ['wearing a green shirt or carries a canvas tote bag', 'loves taking photos during org events'],
+      ['commutes to campus using jeepneys or LRT', 'has been in UP GEOP for over 2 years'],
+      ['brought a reusable water tumbler today', 'loves studying in CS Library or Main Lib'],
+      ['has a favorite cafe near Katipunan', 'frequently tambays at the org room'],
+      ['loves collecting stickers or enamel pins', 'has attended a GEOP night or party']
+    ];
+
+    const trait1 = shuffledTraits[0] || defaultTraits[commIdx % defaultTraits.length][0];
+    const trait2 = shuffledTraits[1] || defaultTraits[commIdx % defaultTraits.length][1];
 
     // Member Task 1
     newSignatories.push({
