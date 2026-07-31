@@ -20,29 +20,247 @@ export async function renderSignatoriesTab(container) {
   );
 
   container.innerHTML = `
-    <div class="card space-y-6">
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
+    <style>
+      .sig-matrix-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        padding: 24px;
+        font-family: system-ui, -apple-system, sans-serif;
+        color: #1e293b;
+      }
+      .sig-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid #f1f5f9;
+        padding-bottom: 16px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      .sig-title {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #064e3b;
+        margin: 0;
+      }
+      .sig-badge {
+        background: #ecfdf5;
+        color: #047857;
+        font-size: 0.85rem;
+        font-weight: 600;
+        padding: 6px 16px;
+        border-radius: 9999px;
+        border: 1px solid #a7f3d0;
+      }
+      .filter-bar {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 24px;
+      }
+      .filter-btn {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        color: #475569;
+        font-size: 0.78rem;
+        font-weight: 600;
+        padding: 6px 14px;
+        border-radius: 9999px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      .filter-btn:hover {
+        background: #f1f5f9;
+      }
+      .filter-btn.active {
+        background: #064e3b;
+        color: #ffffff;
+        border-color: #064e3b;
+      }
+      .committee-group {
+        border: 1px solid #e2e8f0;
+        background: #fafafa;
+        border-radius: 14px;
+        padding: 20px;
+        margin-bottom: 20px;
+      }
+      .committee-title {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #065f46;
+        margin-top: 0;
+        margin-bottom: 16px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #a7f3d0;
+      }
+      .sig-card {
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      }
+      .sig-card.completed {
+        border-color: #34d399;
+        background: #f0fdf4;
+      }
+      .card-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      .type-tag {
+        display: inline-block;
+        font-size: 0.68rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        padding: 2px 8px;
+        border-radius: 4px;
+        margin-bottom: 4px;
+      }
+      .type-member { background: #dbeafe; color: #1e40af; }
+      .type-vp { background: #fef3c7; color: #92400e; }
+      .status-pill {
+        font-size: 0.75rem;
+        font-weight: 600;
+        padding: 4px 10px;
+        border-radius: 9999px;
+      }
+      .status-pending { background: #fff7ed; color: #c2410c; border: 1px solid #ffedd5; }
+      .status-signed { background: #d1fae5; color: #065f46; }
+      .dropdown-label {
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: #475569;
+        display: block;
+        margin-bottom: 4px;
+      }
+      .custom-select {
+        width: 100%;
+        padding: 8px 12px;
+        font-size: 0.8rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        background: #ffffff;
+        color: #1e293b;
+        outline: none;
+        margin-bottom: 12px;
+        cursor: pointer;
+      }
+      .custom-select:focus {
+        border-color: #059669;
+        box-shadow: 0 0 0 2px rgba(5,150,105,0.2);
+      }
+      .qa-box {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 12px;
+      }
+      .qa-box-header {
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: #334155;
+        margin-bottom: 8px;
+        display: block;
+      }
+      .qa-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 8px;
+      }
+      .qa-field label {
+        display: block;
+        font-size: 0.7rem;
+        color: #64748b;
+        margin-bottom: 2px;
+      }
+      .qa-field input {
+        width: 100%;
+        padding: 6px 10px;
+        font-size: 0.78rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        box-sizing: border-box;
+      }
+      .action-btn {
+        width: 100%;
+        background: #064e3b;
+        color: #ffffff;
+        font-size: 0.82rem;
+        font-weight: 600;
+        padding: 10px;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: background 0.2s ease;
+      }
+      .action-btn:hover {
+        background: #022c22;
+      }
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.6);
+        backdrop-filter: blur(4px);
+        z-index: 999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+      }
+      .modal-box {
+        background: #ffffff;
+        border-radius: 16px;
+        max-width: 400px;
+        width: 100%;
+        padding: 24px;
+        text-align: center;
+        box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);
+      }
+      .code-display {
+        background: #ecfdf5;
+        border: 1px dashed #059669;
+        color: #064e3b;
+        font-family: monospace;
+        font-size: 1.8rem;
+        font-weight: 700;
+        padding: 12px;
+        border-radius: 8px;
+        letter-spacing: 4px;
+        margin: 12px 0;
+      }
+    </style>
+
+    <div class="sig-matrix-card">
+      <div class="sig-header">
         <div>
-          <h2 class="text-2xl font-bold text-emerald-950 font-serif">Signatories Matrix</h2>
-          <p class="text-sm text-gray-600">Fulfill member tasks and receive official endorsement signatures from VPs.</p>
+          <h2 class="sig-title">Signatories Matrix</h2>
+          <p style="font-size: 0.85rem; color: #64748b; margin: 4px 0 0 0;">Fulfill member tasks and receive official endorsement signatures from VPs.</p>
         </div>
-        <div class="bg-emerald-100 text-emerald-800 text-sm font-semibold px-4 py-2 rounded-full text-center">
+        <div class="sig-badge">
           ${completedCount} / ${totalCount} Signed
         </div>
       </div>
 
-      <!-- Committee Filter Tabs -->
-      <div class="flex flex-wrap gap-2">
-        <button class="comm-filter-btn active px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-800 text-white" data-filter="ALL">All (${totalCount})</button>
+      <!-- Committee Filters -->
+      <div class="filter-bar">
+        <button class="filter-btn comm-filter-btn active" data-filter="ALL">All (${totalCount})</button>
         ${COMMITTEES_LIST.map(c => `
-          <button class="comm-filter-btn px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200" data-filter="${c.name}">
+          <button class="filter-btn comm-filter-btn" data-filter="${c.name}">
             ${c.name}
           </button>
         `).join('')}
       </div>
 
-      <!-- Committee Accordions -->
-      <div class="space-y-6" id="committeesContainer">
+      <!-- Committee List -->
+      <div id="committeesContainer">
         ${COMMITTEES_LIST.map(comm => {
           const commSigs = signatories.filter(s => s.committee_name?.toLowerCase() === comm.name.toLowerCase());
           return renderCommitteeGroup(comm, commSigs, usedTasks);
@@ -50,32 +268,22 @@ export async function renderSignatoriesTab(container) {
       </div>
     </div>
 
-    <!-- Verification Modal -->
-    <div id="verifyModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div class="bg-white rounded-2xl max-w-md w-full p-6 text-center space-y-4 shadow-2xl border border-emerald-100">
-        <div class="flex justify-between items-center border-b pb-2">
-          <h3 class="text-lg font-bold text-gray-800 font-serif" id="modalTitle">Member Verification</h3>
-          <button id="closeModalBtn" class="text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button>
+    <!-- Modal Popup -->
+    <div id="verifyModal" class="modal-backdrop" style="display: none;">
+      <div class="modal-box">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <h3 style="margin: 0; font-size: 1.1rem; color: #0f172a;">Member Verification</h3>
+          <button id="closeModalBtn" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #94a3b8;">&times;</button>
         </div>
+        <p style="font-size: 0.8rem; color: #64748b; margin-bottom: 16px;">Show this QR code or 6-digit code to the resident member or VP to get signed!</p>
         
-        <p class="text-xs text-gray-500">Show this QR code or 6-digit verification code to the resident member or VP to get signed!</p>
-
-        <!-- QR Code Container -->
-        <div class="bg-gray-50 p-4 rounded-xl border flex flex-col items-center justify-center min-h-[180px]">
-          <div id="qrcode" class="p-2 bg-white rounded-lg shadow-sm"></div>
-          <p class="text-[11px] text-gray-400 mt-2">Scan with Member Scanner</p>
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 16px; border-radius: 12px; margin-bottom: 12px; display: flex; justify-content: center;">
+          <div id="qrcode"></div>
         </div>
 
-        <!-- Short Code Fallback -->
-        <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
-          <span class="text-xs font-semibold text-emerald-800 uppercase tracking-wider block">Verification Code</span>
-          <span id="modalShortCode" class="text-2xl font-mono font-bold text-emerald-950 tracking-widest">------</span>
-          <span class="text-[10px] text-emerald-600 block mt-1">Expires in 10 minutes</span>
-        </div>
+        <div class="code-display" id="modalShortCode">------</div>
 
-        <button id="doneVerifyBtn" class="w-full py-2.5 bg-emerald-800 text-white text-sm font-semibold rounded-xl hover:bg-emerald-900 transition">
-          Close Window
-        </button>
+        <button id="doneVerifyBtn" class="action-btn" style="margin-top: 8px;">Close Window</button>
       </div>
     </div>
   `;
@@ -85,13 +293,9 @@ export async function renderSignatoriesTab(container) {
 
 function renderCommitteeGroup(comm, sigs, usedTasks) {
   return `
-    <div class="committee-card border border-gray-200 rounded-xl p-5 bg-gray-50/50 space-y-4" data-committee="${comm.name}">
-      <h3 class="text-lg font-bold text-emerald-900 font-serif border-b pb-2 flex items-center gap-2">
-        <span class="w-2.5 h-2.5 rounded-full bg-emerald-600"></span>
-        ${comm.name} Committee
-      </h3>
-
-      <div class="space-y-4">
+    <div class="committee-group committee-card" data-committee="${comm.name}">
+      <h3 class="committee-title">${comm.name} Committee</h3>
+      <div>
         ${sigs.map((sig, idx) => renderSignatoryCard(sig, idx, usedTasks)).join('')}
       </div>
     </div>
@@ -103,32 +307,39 @@ function renderSignatoryCard(sig, index, usedTasks) {
   const isCompleted = sig.completed;
   const taskPool = sig.task_pool || [];
 
+  // Filter out raw fallback strings like "trait 21"
+  let cleanTrait = sig.trait_description || sig.task || '';
+  if (cleanTrait.toLowerCase().includes('trait ') || cleanTrait.toLowerCase().includes('task ')) {
+    cleanTrait = isVP 
+      ? `Official Endorsement by ${sig.committee_name} VP`
+      : `Find a member from ${sig.committee_name} Committee`;
+  }
+
   return `
-    <div class="bg-white border ${isCompleted ? 'border-emerald-300 bg-emerald-50/30' : 'border-gray-200'} rounded-xl p-4 space-y-4 shadow-sm">
-      <div class="flex items-start justify-between gap-3">
+    <div class="sig-card ${isCompleted ? 'completed' : ''}">
+      <div class="card-top">
         <div>
-          <span class="inline-block px-2 py-0.5 text-[10px] font-bold uppercase rounded-md ${isVP ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'} mb-1">
+          <span class="type-tag ${isVP ? 'type-vp' : 'type-member'}">
             ${isVP ? 'VP Endorsement' : `Member Task #${index + 1}`}
           </span>
-          <h4 class="text-sm font-bold text-gray-800">${sig.trait_description || sig.task}</h4>
+          <h4 style="margin: 4px 0 0 0; font-size: 0.9rem; color: #1e293b;">${cleanTrait}</h4>
         </div>
-        <span class="px-2.5 py-1 text-xs font-semibold rounded-full ${isCompleted ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-50 text-amber-700 border border-amber-200'}">
+        <span class="status-pill ${isCompleted ? 'status-signed' : 'status-pending'}">
           ${isCompleted ? '✓ Signed' : 'Pending Sign'}
         </span>
       </div>
 
       ${!isVP ? `
-        <!-- Task Pool Selection -->
-        <div class="space-y-1">
-          <label class="text-xs font-semibold text-gray-600 block">Choose 1 Task from your 25-Task Pool:</label>
-          <select class="task-select w-full text-xs p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500" data-id="${sig.id}" ${isCompleted ? 'disabled' : ''}>
+        <div>
+          <label class="dropdown-label">Choose 1 Task from your 25-Task Pool:</label>
+          <select class="custom-select task-select" data-id="${sig.id}" ${isCompleted ? 'disabled' : ''}>
             <option value="">-- Select a Task --</option>
             ${taskPool.map(task => {
               const isSelectedByThisCard = sig.selected_task === task;
               const isUsedElsewhere = usedTasks.has(task) && !isSelectedByThisCard;
               
               return `
-                <option value="${task}" ${isSelectedByThisCard ? 'selected' : ''} ${isUsedElsewhere ? 'disabled class="text-gray-300 bg-gray-100"' : ''}>
+                <option value="${task}" ${isSelectedByThisCard ? 'selected' : ''} ${isUsedElsewhere ? 'disabled' : ''}>
                   ${task} ${isUsedElsewhere ? ' (Already Claimed)' : ''}
                 </option>
               `;
@@ -137,43 +348,37 @@ function renderSignatoryCard(sig, index, usedTasks) {
         </div>
       ` : ''}
 
-      <!-- Interactive Q&A Input Fields -->
-      <div class="bg-gray-50 border border-gray-100 rounded-lg p-3 space-y-3">
-        <span class="text-xs font-bold text-gray-700 flex items-center gap-1">
-          <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
-          Interview Details & Answers:
-        </span>
-        
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-          <div>
-            <label class="text-[11px] text-gray-500 block">Member/VP Name:</label>
-            <input type="text" class="qa-input w-full p-2 border rounded-md" placeholder="e.g. Juan Dela Cruz" data-sig-id="${sig.id}" data-field="member_name" value="${sig.member_name || ''}" ${isCompleted ? 'disabled' : ''} />
+      <!-- Q&A Inputs -->
+      <div class="qa-box">
+        <span class="qa-box-header">Interview Details & Answers:</span>
+        <div class="qa-grid">
+          <div class="qa-field">
+            <label>Member/VP Name:</label>
+            <input type="text" class="qa-input" placeholder="e.g. Juan Dela Cruz" data-sig-id="${sig.id}" data-field="member_name" value="${sig.member_name || ''}" ${isCompleted ? 'disabled' : ''} />
           </div>
-          <div>
-            <label class="text-[11px] text-gray-500 block">Nickname:</label>
-            <input type="text" class="qa-input w-full p-2 border rounded-md" placeholder="e.g. Juan" data-sig-id="${sig.id}" data-field="nickname" value="${sig.nickname || ''}" ${isCompleted ? 'disabled' : ''} />
+          <div class="qa-field">
+            <label>Nickname:</label>
+            <input type="text" class="qa-input" placeholder="e.g. Juan" data-sig-id="${sig.id}" data-field="nickname" value="${sig.nickname || ''}" ${isCompleted ? 'disabled' : ''} />
           </div>
-          <div>
-            <label class="text-[11px] text-gray-500 block">Favorite Spot in UP:</label>
-            <input type="text" class="qa-input w-full p-2 border rounded-md" placeholder="e.g. Sunken Garden / CS Lib" data-sig-id="${sig.id}" data-field="fav_spot" value="${sig.fav_spot || ''}" ${isCompleted ? 'disabled' : ''} />
+          <div class="qa-field">
+            <label>Favorite Spot in UP:</label>
+            <input type="text" class="qa-input" placeholder="e.g. Sunken Garden / CS Lib" data-sig-id="${sig.id}" data-field="fav_spot" value="${sig.fav_spot || ''}" ${isCompleted ? 'disabled' : ''} />
           </div>
-          <div>
-            <label class="text-[11px] text-gray-500 block">Least Liked Major Sub:</label>
-            <input type="text" class="qa-input w-full p-2 border rounded-md" placeholder="e.g. GE 10 / Math 21" data-sig-id="${sig.id}" data-field="least_sub" value="${sig.least_sub || ''}" ${isCompleted ? 'disabled' : ''} />
+          <div class="qa-field">
+            <label>Least Liked Major Sub:</label>
+            <input type="text" class="qa-input" placeholder="e.g. GE 10 / Math 21" data-sig-id="${sig.id}" data-field="least_sub" value="${sig.least_sub || ''}" ${isCompleted ? 'disabled' : ''} />
           </div>
         </div>
       </div>
 
-      <!-- Verification / Sign Button -->
       ${!isCompleted ? `
-        <button class="request-sign-btn w-full py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-semibold rounded-lg flex items-center justify-center gap-2 transition" data-id="${sig.id}">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+        <button class="action-btn request-sign-btn" data-id="${sig.id}">
           Request Signature (Show QR / Code)
         </button>
       ` : `
-        <div class="text-[11px] text-emerald-800 bg-emerald-100/60 p-2 rounded-lg flex items-center justify-between">
+        <div style="font-size: 0.78rem; color: #065f46; background: #e6f4ea; padding: 8px 12px; border-radius: 6px; display: flex; justify-content: space-between;">
           <span>Signed by: <strong>${sig.signed_by || 'Verified Member'}</strong></span>
-          <span class="text-[10px] text-emerald-600">${sig.signed_at ? new Date(sig.signed_at).toLocaleDateString() : 'Verified'}</span>
+          <span>${sig.signed_at ? new Date(sig.signed_at).toLocaleDateString() : 'Verified'}</span>
         </div>
       `}
     </div>
@@ -181,26 +386,25 @@ function renderSignatoryCard(sig, index, usedTasks) {
 }
 
 function attachSignatoryEvents(container, signatories) {
-  // Filter buttons
+  // Filter tabs
   const filterBtns = container.querySelectorAll('.comm-filter-btn');
   filterBtns.forEach(btn => {
     btn.addEventListener('click', () => {
-      filterBtns.forEach(b => b.classList.remove('active', 'bg-emerald-800', 'text-white'));
-      filterBtns.forEach(b => b.classList.add('bg-gray-100', 'text-gray-700'));
-      btn.classList.add('active', 'bg-emerald-800', 'text-white');
+      filterBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
 
       const filter = btn.dataset.filter;
       container.querySelectorAll('.committee-card').forEach(card => {
         if (filter === 'ALL' || card.dataset.committee === filter) {
-          card.classList.remove('hidden');
+          card.style.display = 'block';
         } else {
-          card.classList.add('hidden');
+          card.style.display = 'none';
         }
       });
     });
   });
 
-  // Task selection dropdown - re-renders UI on selection so other dropdowns lock out claimed tasks
+  // Task selection dropdown
   container.querySelectorAll('.task-select').forEach(select => {
     select.addEventListener('change', async (e) => {
       const sigId = e.target.dataset.id;
@@ -229,7 +433,7 @@ function attachSignatoryEvents(container, signatories) {
 
   container.querySelectorAll('.request-sign-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
-      const sigCard = e.target.closest('.bg-white');
+      const sigCard = e.target.closest('.sig-card');
       const selectElem = sigCard?.querySelector('.task-select');
 
       if (selectElem && !selectElem.value) {
@@ -246,12 +450,12 @@ function attachSignatoryEvents(container, signatories) {
       modalShortCode.textContent = code;
 
       const qrContainer = container.querySelector('#qrcode');
-      qrContainer.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(code)}" alt="Verification QR Code" class="w-36 h-36" />`;
+      qrContainer.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(code)}" alt="Verification QR Code" style="width:140px; height:140px; border-radius:8px;" />`;
 
-      verifyModal.classList.remove('hidden');
+      verifyModal.style.display = 'flex';
     });
   });
 
-  closeModalBtn?.addEventListener('click', () => verifyModal.classList.add('hidden'));
-  doneVerifyBtn?.addEventListener('click', () => verifyModal.classList.add('hidden'));
+  closeModalBtn?.addEventListener('click', () => verifyModal.style.display = 'none');
+  doneVerifyBtn?.addEventListener('click', () => verifyModal.style.display = 'none');
 }
