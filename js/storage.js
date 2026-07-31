@@ -281,6 +281,23 @@ export async function getTambayHours() {
   return (data || []).reduce((sum, item) => sum + Number(item.hours), 0);
 }
 
+// RESTORED: Export resetTambayHours for tambay.js
+export async function resetTambayHours() {
+  const userId = await getCurrentUserId();
+  if (!userId || !supabase) return false;
+
+  const { error } = await supabase
+    .from('tambay_logs')
+    .delete()
+    .eq('user_id', userId);
+
+  if (error) {
+    console.error('Error resetting tambay hours:', error.message);
+    return false;
+  }
+  return true;
+}
+
 export async function getEvents() {
   const userId = await getCurrentUserId();
   if (!userId || !supabase) return [];
