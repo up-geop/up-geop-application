@@ -251,7 +251,6 @@ export async function render() {
   }
 }
 
-// Realtime Subscriptions for Dynamic Updates
 function setupRealtimeListeners() {
   if (!supabase) return;
 
@@ -306,8 +305,7 @@ async function handleAuthState() {
     if (userProfileBar) userProfileBar.style.display = 'flex';
     if (userEmailText) userEmailText.textContent = currentUser.email;
 
-    // RESTORED: Profile Picture / Google Avatar sync
-    const avatarUrl = currentUser.user_metadata?.avatar_url || currentUser.user_metadata?.picture || 'logo.png';
+    const avatarUrl = currentUser.user_metadata?.avatar_url || currentUser.user_metadata?.picture || 'logo.png.jpg';
     if (userAvatarHeader) userAvatarHeader.src = avatarUrl;
     if (userAvatarHero) userAvatarHero.src = avatarUrl;
 
@@ -319,11 +317,10 @@ async function handleAuthState() {
     if (isMember || isRAComm) {
       if (onboardingSection) onboardingSection.style.display = 'none';
       if (memberDashboard) memberDashboard.style.display = 'block';
+      if (applicantDashboard) applicantDashboard.style.display = 'none';
 
       if (roleBadgeHeader) {
         roleBadgeHeader.textContent = isRAComm ? 'RAComm Officer' : 'Resident Member';
-        roleBadgeHeader.style.background = 'var(--brand-forest)';
-        roleBadgeHeader.style.color = '#ffffff';
       }
 
       if (racommTabNav) {
@@ -331,8 +328,6 @@ async function handleAuthState() {
       }
 
       if (isRAComm) {
-        if (applicantDashboard) applicantDashboard.style.display = 'block';
-
         const settings = await getGlobalSettings();
         const multText = document.getElementById('currentMultiplierText');
         const capText = document.getElementById('currentCapText');
@@ -341,16 +336,12 @@ async function handleAuthState() {
         if (capText) capText.textContent = settings.dailyCapEnabled ? 'Active (3.0 hrs/day)' : 'Disabled';
 
         await renderApplicantRosterTable();
-      } else {
-        if (applicantDashboard) applicantDashboard.style.display = 'none';
       }
     } else {
       if (memberDashboard) memberDashboard.style.display = 'none';
 
       if (roleBadgeHeader) {
         roleBadgeHeader.textContent = 'Applicant';
-        roleBadgeHeader.style.background = 'var(--surface-subtle)';
-        roleBadgeHeader.style.color = 'var(--text-body)';
       }
 
       const profile = await getUserProfileData(currentUser.id);
@@ -362,7 +353,6 @@ async function handleAuthState() {
         if (onboardingSection) onboardingSection.style.display = 'none';
         if (applicantDashboard) applicantDashboard.style.display = 'block';
 
-        // RESTORED: Nickname greeting, Tokens, and Buddy Group details
         const greetingElem = document.getElementById('userGreetingHeading');
         const currencyElem = document.getElementById('userCurrencyText');
         const groupNameElem = document.getElementById('buddyGroupName');
@@ -371,7 +361,6 @@ async function handleAuthState() {
         if (currencyElem) currencyElem.textContent = profile.currency ?? 100;
         if (groupNameElem) groupNameElem.textContent = profile.buddy_group_name || 'Unassigned';
 
-        // RESTORED: Buddy Group Roster
         const buddies = await getBuddyGroupMembers(profile.buddy_group_name);
         const buddyList = document.getElementById('buddyList');
         const buddyCountBadge = document.getElementById('buddyCountBadge');
@@ -380,7 +369,7 @@ async function handleAuthState() {
         if (buddyList) {
           buddyList.innerHTML = '';
           if (buddies.length === 0) {
-            buddyList.innerHTML = '<li style="font-size:0.8rem; color:var(--text-muted); padding:8px;">No group buddies assigned yet.</li>';
+            buddyList.innerHTML = '<li class="text-muted">No group buddies assigned yet.</li>';
           } else {
             buddies.forEach(buddy => {
               const li = document.createElement('li');
@@ -424,23 +413,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // Tab Navigation Listener
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const targetTabId = btn.dataset.tab;
 
-      document.querySelectorAll('.tab-btn').forEach(b => {
-        b.classList.remove('active');
-        b.style.background = 'transparent';
-        b.style.color = '#374151';
-        b.style.fontWeight = '500';
-      });
-
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      btn.style.background = '#ffffff';
-      btn.style.color = '#064e3b';
-      btn.style.fontWeight = '700';
-      btn.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
 
       document.querySelectorAll('.tab-content').forEach(content => {
         content.style.display = 'none';
@@ -460,7 +438,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // Universal Verification Button inside Resident Member Hub
   document.getElementById('manualValidateBtn')?.addEventListener('click', () => {
     const modal = document.getElementById('manualCodeModal');
     const input = document.getElementById('manualCodeInput');
@@ -497,7 +474,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     await handleAuthState();
   });
 
-  // Tambay QR Modal for Applicants
   document.getElementById('showQrBtn')?.addEventListener('click', async () => {
     if (!currentUser) return;
 
@@ -527,7 +503,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (qrContainer) qrContainer.style.display = 'none';
   });
 
-  // Perks Exchange Redemption
   document.getElementById('buyDeadlineBtn')?.addEventListener('click', async () => {
     if (await spendCurrency(30, 'Deadline Extension (+2 Days)')) {
       showToast('Redeemed Deadline Extension (+2 Days).', 'success');
@@ -542,7 +517,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Event Check-ins
   document.getElementById('eventList')?.addEventListener('click', async (e) => {
     if (e.target.classList.contains('btn-checkin')) {
       const eventId = e.target.dataset.eventId;
@@ -554,7 +528,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // RAComm Admin Settings Controls
   document.getElementById('set1xBtn')?.addEventListener('click', async () => {
     if (await updateGlobalSettings('hourly_multiplier', '1.0')) {
       showToast('Multiplier set to 1.0x (Standard)', 'info');
@@ -594,7 +567,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Admin Inspection Modal Handlers
   document.getElementById('applicantRosterTbody')?.addEventListener('click', async (e) => {
     if (e.target.classList.contains('inspect-app-btn')) {
       const appId = e.target.dataset.id;
@@ -649,7 +621,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Onboarding Form
   document.getElementById('onboardingForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fullNameInput = document.getElementById('onboardFullName');
