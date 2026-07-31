@@ -27,7 +27,6 @@ export const COMMITTEES_LIST = [
   { name: 'Finance', vp: 'VP for Finance Affairs' }
 ];
 
-// RFC-Compliant CSV Parser
 function parseCSV(csvText) {
   if (!csvText) return [];
 
@@ -82,7 +81,6 @@ function parseCSV(csvText) {
   });
 }
 
-// Fetch Google Sheets Pools directly
 async function fetchSheetPools() {
   try {
     const [traitsRes, tasksRes] = await Promise.all([
@@ -100,7 +98,6 @@ async function fetchSheetPools() {
   }
 }
 
-// Generate Applicant Signatory Matrix (18 Items)
 export async function generateApplicantSignatories(userId) {
   if (!supabase || !userId) return;
 
@@ -155,7 +152,6 @@ export async function generateApplicantSignatories(userId) {
     const trait1 = shuffledTraits[0] || defaultTraits[commIdx % defaultTraits.length][0];
     const trait2 = shuffledTraits[1] || defaultTraits[commIdx % defaultTraits.length][1];
 
-    // Member Task 1
     newSignatories.push({
       user_id: userId,
       committee_name: comm.name,
@@ -170,7 +166,6 @@ export async function generateApplicantSignatories(userId) {
       completed: false
     });
 
-    // Member Task 2
     newSignatories.push({
       user_id: userId,
       committee_name: comm.name,
@@ -185,7 +180,6 @@ export async function generateApplicantSignatories(userId) {
       completed: false
     });
 
-    // VP Verification
     newSignatories.push({
       user_id: userId,
       committee_name: comm.name,
@@ -201,10 +195,7 @@ export async function generateApplicantSignatories(userId) {
     });
   });
 
-  const { error: insertErr } = await supabase.from('signatories').insert(newSignatories);
-  if (insertErr) {
-    console.error('Supabase Signatories Insert Error Details:', insertErr);
-  }
+  await supabase.from('signatories').insert(newSignatories);
 }
 
 export async function selectTaskForSignatory(taskId, selectedTask) {
@@ -217,30 +208,77 @@ export async function selectTaskForSignatory(taskId, selectedTask) {
   return !error;
 }
 
-export async function verifySignatoryDirectly(signatoryId, verifierEmail) {
-  if (!supabase || !signatoryId || !verifierEmail) return { success: false, message: 'Missing parameters.' };
+// Universal Shortcode Generator (Handles both Tambay and Signatories)
+export async function generateApplicantShortCode(sigId = null, type = 'TAMBAY') {
+  const userId = await getCurrentUserId();
+  if (!supabase || !userId) return null;
+
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let shortCode = '';
+  for (let i = 0; i < 6; i++) shortCode += chars.charAt(Math.floor(Math.random() * chars.length));
+  
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+  await supabase.from('profiles').update({ 
+    temp_code: shortCode, 
+    code_expires_at: expiresAt,
+    code_type: type,
+    pending_sig_id: sigId 
+  }).eq('id', userId);
+
+  return shortCode;
+}
+
+// Universal All-in-One Code & QR Verification for Members
+export async function verifyUniversalCode(code, verifierEmail) {
+  if (!supabase || !code || !verifierEmail) {
+    return { success: false, message: 'Invalid verification parameters.' };
+  }
 
   const isMember = await checkIfResidentMember(verifierEmail);
   const isRAComm = await checkIfRAComm(verifierEmail);
 
   if (!isMember && !isRAComm) {
-    return { success: false, message: 'Access Denied: Only resident members or VPs can sign.' };
+    return { success: false, message: 'Access Denied: Only active members or officers can verify.' };
   }
 
-  const { error } = await supabase
-    .from('signatories')
-    .update({
-      completed: true,
-      signed_by: verifierEmail,
-      signed_at: new Date().toISOString()
-    })
-    .eq('id', signatoryId);
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('temp_code', code.trim().toUpperCase())
+    .maybeSingle();
 
-  if (error) return { success: false, message: error.message };
-  return { success: true, message: 'Signatory verified and signed successfully!' };
+  if (!profile || new Date(profile.code_expires_at) < new Date()) {
+    return { success: false, message: 'Invalid or expired verification code.' };
+  }
+
+  // 1. Process Signatory Request
+  if (profile.code_type === 'SIGNATORY' && profile.pending_sig_id) {
+    const { error } = await supabase
+      .from('signatories')
+      .update({
+        completed: true,
+        signed_by: verifierEmail,
+        signed_at: new Date().toISOString()
+      })
+      .eq('id', profile.pending_sig_id);
+
+    if (error) return { success: false, message: error.message };
+
+    await supabase.from('profiles').update({ temp_code: null }).eq('id', profile.id);
+
+    return { 
+      success: true, 
+      message: `Verified and signed Signatory Task for ${profile.nickname || 'Applicant'}!` 
+    };
+  } 
+  
+  // 2. Process Tambay Request
+  const res = await validateApplicantTambay(profile.id, verifierEmail);
+  await supabase.from('profiles').update({ temp_code: null }).eq('id', profile.id);
+  return res;
 }
 
-// User Profile & Member Checks
 export async function checkIfResidentMember(email) {
   if (!supabase || !email) return false;
   const { data } = await supabase.from('members').select('id').ilike('email', email.trim()).maybeSingle();
@@ -268,17 +306,6 @@ export async function updateGlobalSettings(key, value) {
   if (!supabase) return false;
   const { error } = await supabase.from('global_settings').upsert({ key, value: String(value) });
   return !error;
-}
-
-export async function generateApplicantShortCode() {
-  const userId = await getCurrentUserId();
-  if (!supabase || !userId) return null;
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let shortCode = '';
-  for (let i = 0; i < 6; i++) shortCode += chars.charAt(Math.floor(Math.random() * chars.length));
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-  await supabase.from('profiles').update({ temp_code: shortCode, code_expires_at: expiresAt }).eq('id', userId);
-  return shortCode;
 }
 
 export async function getApplicantIdByShortCode(code) {
