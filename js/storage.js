@@ -81,7 +81,7 @@ export async function generateApplicantSignatories(userId) {
   const pools = await fetchSheetPools();
   const allTasks = pools.tasks.map(t => t.task_description).filter(Boolean);
 
-  // Pick 25 unique random tasks for this applicant
+  // Randomly pick 25 unique tasks for this applicant's personal choice pool
   const shuffledTasks = [...allTasks].sort(() => 0.5 - Math.random());
   const applicant25Pool = shuffledTasks.slice(0, Math.min(25, shuffledTasks.length));
 
@@ -102,6 +102,8 @@ export async function generateApplicantSignatories(userId) {
       user_id: userId,
       committee_name: comm.name,
       type: 'MEMBER_1',
+      role: 'MEMBER_1',
+      task: `Find a member who ${trait1}`,
       trait_description: `Find a member who ${trait1}`,
       questions_required: 'Ask: Name, Nickname, Favorite spot in UP, Least liked major sub',
       task_pool: applicant25Pool,
@@ -115,6 +117,8 @@ export async function generateApplicantSignatories(userId) {
       user_id: userId,
       committee_name: comm.name,
       type: 'MEMBER_2',
+      role: 'MEMBER_2',
+      task: `Find another member who ${trait2}`,
       trait_description: `Find another member who ${trait2}`,
       questions_required: 'Ask: Name, Nickname, Favorite spot in UP, Least liked major sub',
       task_pool: applicant25Pool,
@@ -128,6 +132,8 @@ export async function generateApplicantSignatories(userId) {
       user_id: userId,
       committee_name: comm.name,
       type: 'VP',
+      role: 'VP',
+      task: `Official Endorsement by ${comm.vp}`,
       trait_description: `Official Endorsement by ${comm.vp}`,
       questions_required: 'Ask: Nickname, Favorite spot in UP, Least liked major sub',
       task_pool: applicant25Pool,
