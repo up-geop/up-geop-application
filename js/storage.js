@@ -8,7 +8,7 @@ const SUPABASE_KEY = 'sb_publishable_oZ1RQOpJ4BoIAq_vDAqHWw_lOnoqFo0';
 const createClient = window.supabase?.createClient || window.supabaseClient?.createClient;
 export const supabase = createClient ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
-// Google Sheet Published CSV URLs
+// Direct Published Google Sheet CSV URLs
 const TRAITS_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRUM49iGYGFrwckeq-pSZv65dVWYi7yqE2DIYcpBfZKxFTqIc-1l-CXa6U1TvmGE3oqf8NhjWq29qeC/pub?gid=0&single=true&output=csv';
 const TASKS_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRUM49iGYGFrwckeq-pSZv65dVWYi7yqE2DIYcpBfZKxFTqIc-1l-CXa6U1TvmGE3oqf8NhjWq29qeC/pub?gid=448373194&single=true&output=csv';
 
@@ -27,65 +27,81 @@ export const COMMITTEES_LIST = [
   { name: 'Finance', vp: 'VP for Finance Affairs' }
 ];
 
-// RFC-Compliant CSV Parser Helper
+// RFC-Compliant CSV Parser (Handles quoted commas & multi-line strings cleanly)
 function parseCSV(csvText) {
   if (!csvText) return [];
-  
-  const lines = csvText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  if (lines.length <= 1) return [];
 
-  const headers = lines[0].split(',').map(h => h.replace(/^["\uFEFF]|["\uFEFF]$/g, '').trim().toLowerCase());
-  const result = [];
+  // Standard character-level CSV lexer
+  const rows = [];
+  let currentRow = [];
+  let currentCell = '';
+  let inQuotes = false;
 
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i];
-    const values = [];
-    let insideQuotes = false;
-    let currentValue = '';
+  for (let i = 0; i < csvText.length; i++) {
+    const char = csvText[i];
+    const nextChar = csvText[i + 1];
 
-    for (let charIndex = 0; charIndex < line.length; charIndex++) {
-      const char = line[charIndex];
-
-      if (char === '"') {
-        insideQuotes = !insideQuotes;
-      } else if (char === ',' && !insideQuotes) {
-        values.push(currentValue.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
-        currentValue = '';
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        currentCell += '"';
+        i++; // skip escaped quote
       } else {
-        currentValue += char;
+        inQuotes = !inQuotes;
       }
+    } else if (char === ',' && !inQuotes) {
+      currentRow.push(currentCell.trim());
+      currentCell = '';
+    } else if ((char === '\r' || char === '\n') && !inQuotes) {
+      if (char === '\r' && nextChar === '\n') i++; // handle CRLF
+      currentRow.push(currentCell.trim());
+      if (currentRow.some(cell => cell.length > 0)) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+      currentCell = '';
+    } else {
+      currentCell += char;
     }
-    values.push(currentValue.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
-
-    let row = {};
-    headers.forEach((header, idx) => {
-      row[header] = values[idx] || '';
-    });
-    result.push(row);
   }
 
-  return result;
+  if (currentCell.length > 0 || currentRow.length > 0) {
+    currentRow.push(currentCell.trim());
+    rows.push(currentRow);
+  }
+
+  if (rows.length <= 1) return [];
+
+  // First row is headers
+  const headers = rows[0].map(h => h.replace(/^["\uFEFF]|["\uFEFF]$/g, '').toLowerCase());
+
+  return rows.slice(1).map(row => {
+    let obj = {};
+    headers.forEach((header, idx) => {
+      obj[header] = row[idx] || '';
+    });
+    // Also save array of raw cell values for index access
+    obj._raw = row;
+    return obj;
+  });
 }
 
-// Fetch Google Sheets Pools via CORS Proxy
+// Fetch Google Sheets Pools directly without proxy blocks
 async function fetchSheetPools() {
   try {
-    const proxyUrl = 'https://api.allorigins.win/raw?url=';
-    
     const [traitsRes, tasksRes] = await Promise.all([
-      fetch(proxyUrl + encodeURIComponent(TRAITS_SHEET_CSV_URL)).then(r => r.text()),
-      fetch(proxyUrl + encodeURIComponent(TASKS_SHEET_CSV_URL)).then(r => r.text())
+      fetch(TRAITS_SHEET_CSV_URL).then(r => r.text()),
+      fetch(TASKS_SHEET_CSV_URL).then(r => r.text())
     ]);
 
     const traits = parseCSV(traitsRes);
     const tasks = parseCSV(tasksRes);
 
-    console.log('Parsed Traits:', traits);
-    console.log('Parsed Tasks:', tasks);
+    console.log('Successfully Loaded Traits:', traits);
+    console.log('Successfully Loaded Tasks:', tasks);
 
     return { traits, tasks };
   } catch (err) {
-    console.error('Error fetching Google Sheets CSV pools:', err);
+    console.error('Error fetching Google Sheets CSV pools directly:', err);
     return { traits: [], tasks: [] };
   }
 }
@@ -94,7 +110,7 @@ async function fetchSheetPools() {
 export async function generateApplicantSignatories(userId) {
   if (!supabase || !userId) return;
 
-  // 1. Strict check: Check database FIRST. If rows exist, stop immediately!
+  // 1. Check database FIRST. If rows exist, stop immediately!
   const { data: existing } = await supabase
     .from('signatories')
     .select('id')
@@ -104,13 +120,18 @@ export async function generateApplicantSignatories(userId) {
 
   const pools = await fetchSheetPools();
 
-  // 2. Extract tasks dynamically from Column A of the tasks sheet
+  // 2. Extract task descriptions safely from task pool (ignoring headers & row numbers)
   const allTasks = pools.tasks
     .map(t => {
-      const vals = Object.values(t).map(v => String(v).trim()).filter(Boolean);
-      return vals[0] || '';
+      const text = t['task description'] || t['task_description'] || t._raw?.[0] || '';
+      return text.trim();
     })
-    .filter(val => val.length > 0 && !val.toLowerCase().includes('task description'));
+    .filter(val => {
+      // Filter out empty rows, column headers, and pure numbers
+      return val.length > 0 && 
+             !val.toLowerCase().includes('task description') && 
+             isNaN(Number(val));
+    });
 
   // Pick 25 unique random tasks for this applicant's personal choice pool
   const shuffledTasks = [...allTasks].sort(() => 0.5 - Math.random());
@@ -119,17 +140,17 @@ export async function generateApplicantSignatories(userId) {
   const newSignatories = [];
 
   COMMITTEES_LIST.forEach((comm, commIdx) => {
-    // 3. Filter traits specifically matching this committee from Google Sheet
+    // 3. Filter traits matching this committee
     const commTraits = pools.traits
       .filter(t => {
-        const rowVals = Object.values(t).map(v => String(v).trim().toLowerCase());
-        return rowVals.some(v => v.includes(comm.name.toLowerCase()));
+        const committeeVal = t['committee'] || t._raw?.[0] || '';
+        return committeeVal.toLowerCase().trim() === comm.name.toLowerCase();
       })
       .map(t => {
-        const vals = Object.values(t).map(v => String(v).trim()).filter(Boolean);
-        return vals[1] || vals[0] || '';
+        const traitVal = t['trait description'] || t['trait_description'] || t._raw?.[1] || '';
+        return traitVal.trim();
       })
-      .filter(val => val.length > 0 && !val.toLowerCase().includes(comm.name.toLowerCase()));
+      .filter(val => val.length > 0 && !val.toLowerCase().includes('trait description'));
 
     const shuffledTraits = [...commTraits].sort(() => 0.5 - Math.random());
 
