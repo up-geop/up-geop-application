@@ -9,8 +9,8 @@ const createClient = window.supabase?.createClient || window.supabaseClient?.cre
 export const supabase = createClient ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
 // Replace these two URLs with your published Google Sheet CSV URLs
-const TRAITS_SHEET_CSV_URL = 'YOUR_TRAITS_POOL_CSV_URL_HERE';
-const TASKS_SHEET_CSV_URL = 'YOUR_TASKS_POOL_CSV_URL_HERE';
+const TRAITS_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRUM49iGYGFrwckeq-pSZv65dVWYi7yqE2DIYcpBfZKxFTqIc-1l-CXa6U1TvmGE3oqf8NhjWq29qeC/pub?gid=0&single=true&output=csv';
+const TASKS_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRUM49iGYGFrwckeq-pSZv65dVWYi7yqE2DIYcpBfZKxFTqIc-1l-CXa6U1TvmGE3oqf8NhjWq29qeC/pub?gid=448373194&single=true&output=csv';
 
 async function getCurrentUserId() {
   if (!supabase) return null;
@@ -144,6 +144,21 @@ export async function selectTaskForSignatory(taskId, selectedTask) {
     .eq('id', taskId);
 
   return !error;
+}
+
+export async function toggleSignatoryTask(taskId, currentStatus) {
+  if (!supabase || !taskId) return false;
+
+  const { error } = await supabase
+    .from('signatories')
+    .update({ completed: !currentStatus })
+    .eq('id', taskId);
+
+  if (error) {
+    console.error('Error toggling signatory status:', error.message);
+    return false;
+  }
+  return true;
 }
 
 export async function verifySignatoryByMember(taskId, memberEmail) {
