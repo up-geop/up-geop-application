@@ -77,10 +77,11 @@
     <!-- ========================================== -->
     <div id="memberDashboardContent" style="display: none;">
       
-      <!-- RACOMM TAB NAVIGATION -->
-      <nav id="racommTabNav" class="tab-nav" style="display: none;">
+      <!-- RACOMM & MEMBER NAVIGATION BAR -->
+      <nav id="racommTabNav" class="tab-nav">
         <button class="tab-btn active" data-tab="racomm-roster">Applicant Roster</button>
         <button class="tab-btn" data-tab="racomm-settings">Settings & Controls</button>
+        <button class="tab-btn" data-tab="tab-schedule">Schedule & Announcements</button>
       </nav>
 
       <!-- MEMBER VALIDATION HUB -->
@@ -131,7 +132,7 @@
       </div>
 
       <!-- TAB 2: RACOMM SETTINGS -->
-      <div id="racomm-settings" class="tab-content">
+      <div id="racomm-settings" class="tab-content" style="display: none;">
         <section class="card">
           <h2 style="font-family: Georgia, serif; margin-bottom: 12px;">Global System Policies</h2>
           
@@ -233,12 +234,12 @@
       </div>
 
       <!-- TAB 2: SIGNATORIES TRACKER -->
-      <div id="tab-signatories" class="tab-content">
+      <div id="tab-signatories" class="tab-content" style="display: none;">
         <div id="signatoryList"></div>
       </div>
 
       <!-- TAB 3: TAMBAY & EVENTS -->
-      <div id="tab-tambay" class="tab-content">
+      <div id="tab-tambay" class="tab-content" style="display: none;">
         <!-- Live Active Timer Banner -->
         <div id="activeTambayBanner" style="display: none; background: var(--brand-mint-subtle); padding: 20px; border-radius: var(--radius-md); margin-bottom: 20px; border: 1px solid var(--border-medium);">
           <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -288,7 +289,7 @@
       </div>
 
       <!-- TAB 4: PERKS EXCHANGE -->
-      <div id="tab-perks" class="tab-content">
+      <div id="tab-perks" class="tab-content" style="display: none;">
         <section class="card">
           <div class="card-header">
             <h2>GEOP Perks Exchange</h2>
@@ -315,47 +316,70 @@
         </section>
       </div>
 
-      <!-- TAB 5: ANNOUNCEMENTS & WHEN2MEET SCHEDULE GRID -->
-      <div id="tab-schedule" class="tab-content">
-        <section class="card">
-          <div class="card-header">
-            <h2>Announcements & Reminders</h2>
-          </div>
-          <div id="announcementsList" style="display: flex; flex-direction: column; gap: 12px; margin-top: 12px;">
-            <p class="subtext">Loading announcements...</p>
-          </div>
-        </section>
+    </div>
 
-        <section class="card">
-          <div class="card-header">
-            <h2>Group Availability Grid (When2Meet)</h2>
-          </div>
-          <p class="subtext">Click on time slots to toggle your availability. Dark green indicates slots where multiple applicants or members are free.</p>
+    <!-- ========================================== -->
+    <!-- 3. UNIVERSAL TAB: ANNOUNCEMENTS & WHEN2MEET -->
+    <!-- Accessible by Applicants, Members & RAComm  -->
+    <!-- ========================================== -->
+    <div id="tab-schedule" class="tab-content" style="display: none;">
+      
+      <!-- ANNOUNCEMENTS BOARD -->
+      <section class="card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+          <h2>Announcements & Reminders</h2>
+          <span id="racommPostBadge" class="badge" style="display: none; background: var(--brand-forest); color: white;">RAComm Officer Control</span>
+        </div>
 
-          <div style="overflow-x: auto; margin-top: 16px;">
-            <table style="width: 100%; border-collapse: collapse; text-align: center; font-size: 0.82rem;">
-              <thead>
-                <tr style="background: var(--surface-subtle); border-bottom: 2px solid var(--border-medium);">
-                  <th style="padding: 10px;">Time</th>
-                  <th style="padding: 10px;">Mon</th>
-                  <th style="padding: 10px;">Tue</th>
-                  <th style="padding: 10px;">Wed</th>
-                  <th style="padding: 10px;">Thu</th>
-                  <th style="padding: 10px;">Fri</th>
-                </tr>
-              </thead>
-              <tbody id="availabilityGridTbody"></tbody>
-            </table>
-          </div>
+        <!-- RAComm Officer Post Form -->
+        <div id="racommAnnouncementForm" style="display: none; background: var(--surface-subtle); padding: 16px; border-radius: var(--radius-sm); border: 1px solid var(--border-medium); margin-top: 12px; margin-bottom: 16px;">
+          <h3 style="font-size: 0.95rem; margin-bottom: 8px; color: var(--brand-forest);">Post New Announcement</h3>
+          <input type="text" id="announcementTitleInput" placeholder="Announcement Title (e.g., General Assembly #2 Details)" style="width: 100%; padding: 8px; margin-bottom: 8px; border: 1px solid var(--border-subtle); border-radius: 4px;" />
+          <textarea id="announcementContentInput" placeholder="Write details, guidelines, or reminders here..." rows="3" style="width: 100%; padding: 8px; margin-bottom: 8px; border: 1px solid var(--border-subtle); border-radius: 4px; font-family: inherit;"></textarea>
+          <button id="postAnnouncementBtn" class="btn btn-checkin" style="font-size: 0.85rem; padding: 6px 14px;">Publish Announcement</button>
+        </div>
 
-          <div style="display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 14px; font-size: 0.8rem; color: var(--text-muted);">
-            <span>Legend:</span>
-            <span style="display: inline-block; width: 14px; height: 14px; background: #f5f5f5; border: 1px solid var(--border-subtle); border-radius: 3px;"></span> 0 Free
-            <span style="display: inline-block; width: 14px; height: 14px; background: #a5d6a7; border-radius: 3px;"></span> Medium
-            <span style="display: inline-block; width: 14px; height: 14px; background: #2e7d32; border-radius: 3px;"></span> High Availability
+        <div id="announcementsList" style="display: flex; flex-direction: column; gap: 12px; margin-top: 12px;">
+          <p class="subtext">Loading announcements...</p>
+        </div>
+      </section>
+
+      <!-- WHEN2MEET INTERACTIVE AVAILABILITY GRID -->
+      <section class="card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+          <h2>Group Availability Grid (When2Meet)</h2>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <label style="font-size: 0.82rem; font-weight: 600;">Week Starting:</label>
+            <input type="date" id="when2meetStartDateInput" style="padding: 6px 10px; font-size: 0.85rem; border: 1px solid var(--border-medium); border-radius: var(--radius-sm);" />
           </div>
-        </section>
-      </div>
+        </div>
+        <p class="subtext">Click on time slots (7:00 AM – 11:00 PM) to toggle your availability for the selected week. Dark green indicates slots where multiple members/applicants are free.</p>
+
+        <div style="overflow-x: auto; margin-top: 16px; max-height: 550px;">
+          <table style="width: 100%; border-collapse: collapse; text-align: center; font-size: 0.82rem;">
+            <thead style="position: sticky; top: 0; z-index: 2; background: var(--surface-subtle);">
+              <tr id="when2meetHeaderRow" style="border-bottom: 2px solid var(--border-medium);">
+                <th style="padding: 10px;">Time</th>
+                <th style="padding: 10px;">Mon</th>
+                <th style="padding: 10px;">Tue</th>
+                <th style="padding: 10px;">Wed</th>
+                <th style="padding: 10px;">Thu</th>
+                <th style="padding: 10px;">Fri</th>
+                <th style="padding: 10px;">Sat</th>
+                <th style="padding: 10px;">Sun</th>
+              </tr>
+            </thead>
+            <tbody id="availabilityGridTbody"></tbody>
+          </table>
+        </div>
+
+        <div style="display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 14px; font-size: 0.8rem; color: var(--text-muted);">
+          <span>Legend:</span>
+          <span style="display: inline-block; width: 14px; height: 14px; background: #f5f5f5; border: 1px solid var(--border-subtle); border-radius: 3px;"></span> 0 Free
+          <span style="display: inline-block; width: 14px; height: 14px; background: #a5d6a7; border-radius: 3px;"></span> Medium
+          <span style="display: inline-block; width: 14px; height: 14px; background: #2e7d32; border-radius: 3px;"></span> High Availability
+        </div>
+      </section>
 
     </div>
 
