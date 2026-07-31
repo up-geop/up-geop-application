@@ -27,11 +27,10 @@ export const COMMITTEES_LIST = [
   { name: 'Finance', vp: 'VP for Finance Affairs' }
 ];
 
-// RFC-Compliant CSV Parser (Handles quoted commas & multi-line strings cleanly)
+// RFC-Compliant CSV Parser
 function parseCSV(csvText) {
   if (!csvText) return [];
 
-  // Standard character-level CSV lexer
   const rows = [];
   let currentRow = [];
   let currentCell = '';
@@ -44,7 +43,7 @@ function parseCSV(csvText) {
     if (char === '"') {
       if (inQuotes && nextChar === '"') {
         currentCell += '"';
-        i++; // skip escaped quote
+        i++;
       } else {
         inQuotes = !inQuotes;
       }
@@ -52,7 +51,7 @@ function parseCSV(csvText) {
       currentRow.push(currentCell.trim());
       currentCell = '';
     } else if ((char === '\r' || char === '\n') && !inQuotes) {
-      if (char === '\r' && nextChar === '\n') i++; // handle CRLF
+      if (char === '\r' && nextChar === '\n') i++;
       currentRow.push(currentCell.trim());
       if (currentRow.some(cell => cell.length > 0)) {
         rows.push(currentRow);
@@ -71,7 +70,6 @@ function parseCSV(csvText) {
 
   if (rows.length <= 1) return [];
 
-  // First row is headers
   const headers = rows[0].map(h => h.replace(/^["\uFEFF]|["\uFEFF]$/g, '').toLowerCase());
 
   return rows.slice(1).map(row => {
@@ -79,13 +77,12 @@ function parseCSV(csvText) {
     headers.forEach((header, idx) => {
       obj[header] = row[idx] || '';
     });
-    // Also save array of raw cell values for index access
     obj._raw = row;
     return obj;
   });
 }
 
-// Fetch Google Sheets Pools directly without proxy blocks
+// Fetch Google Sheets Pools directly
 async function fetchSheetPools() {
   try {
     const [traitsRes, tasksRes] = await Promise.all([
@@ -96,51 +93,43 @@ async function fetchSheetPools() {
     const traits = parseCSV(traitsRes);
     const tasks = parseCSV(tasksRes);
 
-    console.log('Successfully Loaded Traits:', traits);
-    console.log('Successfully Loaded Tasks:', tasks);
-
     return { traits, tasks };
   } catch (err) {
-    console.error('Error fetching Google Sheets CSV pools directly:', err);
+    console.error('Error fetching Google Sheets CSV pools:', err);
     return { traits: [], tasks: [] };
   }
 }
 
-// Generate Applicant Signatory Matrix (STRICT 18 Items)
+// Generate Applicant Signatory Matrix (18 Items)
 export async function generateApplicantSignatories(userId) {
   if (!supabase || !userId) return;
 
-  // 1. Check database FIRST. If rows exist, stop immediately!
   const { data: existing } = await supabase
     .from('signatories')
     .select('id')
     .eq('user_id', userId);
 
-  if (existing && existing.length > 0) return; // Hard stop! Prevents duplication
+  if (existing && existing.length > 0) return;
 
   const pools = await fetchSheetPools();
 
-  // 2. Extract task descriptions safely from task pool (ignoring headers & row numbers)
   const allTasks = pools.tasks
     .map(t => {
       const text = t['task description'] || t['task_description'] || t._raw?.[0] || '';
       return text.trim();
     })
     .filter(val => {
-      // Filter out empty rows, column headers, and pure numbers
       return val.length > 0 && 
              !val.toLowerCase().includes('task description') && 
              isNaN(Number(val));
     });
 
-  // Pick 25 unique random tasks for this applicant's personal choice pool
   const shuffledTasks = [...allTasks].sort(() => 0.5 - Math.random());
   const applicant25Pool = shuffledTasks.slice(0, Math.min(25, shuffledTasks.length));
 
   const newSignatories = [];
 
   COMMITTEES_LIST.forEach((comm, commIdx) => {
-    // 3. Filter traits matching this committee
     const commTraits = pools.traits
       .filter(t => {
         const committeeVal = t['committee'] || t._raw?.[0] || '';
@@ -154,7 +143,6 @@ export async function generateApplicantSignatories(userId) {
 
     const shuffledTraits = [...commTraits].sort(() => 0.5 - Math.random());
 
-    // Distinct per-committee fallbacks in case sheet rows for a specific committee are sparse
     const defaultTraits = [
       ['owns an iPad or mechanical pencil for notes', 'has taken a GE class in AS / Palma Hall'],
       ['wearing a green shirt or carries a canvas tote bag', 'loves taking photos during org events'],
@@ -229,34 +217,27 @@ export async function selectTaskForSignatory(taskId, selectedTask) {
   return !error;
 }
 
-export async function toggleSignatoryTask(taskId, currentStatus) {
-  if (!supabase || !taskId) return false;
+export async function verifySignatoryDirectly(signatoryId, verifierEmail) {
+  if (!supabase || !signatoryId || !verifierEmail) return { success: false, message: 'Missing parameters.' };
 
-  const { error } = await supabase
-    .from('signatories')
-    .update({ completed: !currentStatus })
-    .eq('id', taskId);
+  const isMember = await checkIfResidentMember(verifierEmail);
+  const isRAComm = await checkIfRAComm(verifierEmail);
 
-  if (error) {
-    console.error('Error toggling signatory status:', error.message);
-    return false;
+  if (!isMember && !isRAComm) {
+    return { success: false, message: 'Access Denied: Only resident members or VPs can sign.' };
   }
-  return true;
-}
-
-export async function verifySignatoryByMember(taskId, memberEmail) {
-  if (!supabase || !taskId || !memberEmail) return false;
 
   const { error } = await supabase
     .from('signatories')
-    .update({ 
-      completed: true, 
-      signed_by: memberEmail, 
-      signed_at: new Date().toISOString() 
+    .update({
+      completed: true,
+      signed_by: verifierEmail,
+      signed_at: new Date().toISOString()
     })
-    .eq('id', taskId);
+    .eq('id', signatoryId);
 
-  return !error;
+  if (error) return { success: false, message: error.message };
+  return { success: true, message: 'Signatory verified and signed successfully!' };
 }
 
 // User Profile & Member Checks
@@ -363,22 +344,6 @@ export async function getTambayHours() {
   if (!userId || !supabase) return 0;
   const { data } = await supabase.from('tambay_logs').select('hours').eq('user_id', userId);
   return (data || []).reduce((sum, item) => sum + Number(item.hours), 0);
-}
-
-export async function resetTambayHours() {
-  const userId = await getCurrentUserId();
-  if (!userId || !supabase) return false;
-
-  const { error } = await supabase
-    .from('tambay_logs')
-    .delete()
-    .eq('user_id', userId);
-
-  if (error) {
-    console.error('Error resetting tambay hours:', error.message);
-    return false;
-  }
-  return true;
 }
 
 export async function getEvents() {
