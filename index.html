@@ -192,18 +192,8 @@
           </div>
         </div>
 
-        <!-- Personal Metrics Grid -->
-        <div class="stats-grid">
-          <div class="stat-box">
-            <label>GEOP Tokens</label>
-            <div class="stat-val"><span id="userCurrencyText">100</span></div>
-          </div>
-
-          <div class="stat-box">
-            <label>Overall Progress</label>
-            <div class="stat-val"><span id="overviewProgressText">0%</span></div>
-          </div>
-
+        <!-- Personal Metrics Grid (Simplified to 2 Key Cards) -->
+        <div class="stats-grid" style="grid-template-columns: repeat(2, 1fr);">
           <div class="stat-box">
             <label>Signatories</label>
             <div class="stat-val"><span id="overviewSigText">0/18</span></div>
@@ -215,13 +205,15 @@
           </div>
         </div>
 
-        <!-- Progress Bar Card -->
+        <!-- Progress Bar Card with Dynamic Progress Fill -->
         <section class="card">
           <div class="card-header">
             <h2>Overall Completion Progress</h2>
           </div>
-          <div class="progress-container">
-            <div id="progressBar" class="progress-bar">0%</div>
+          <div style="background: var(--surface-subtle); border: 1px solid var(--border-subtle); border-radius: 9999px; height: 24px; overflow: hidden; width: 100%; position: relative;">
+            <div id="progressBar" style="background: var(--brand-forest); color: white; height: 100%; width: 0%; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; transition: width 0.5s ease; border-radius: 9999px;">
+              0%
+            </div>
           </div>
           <p class="status-text" style="font-size: 0.82rem; color: var(--text-muted); margin-top: 8px;">
             Progress is updated in real time as signatories, tambay logs, and event check-ins are recorded.
@@ -313,11 +305,15 @@
         </section>
       </div>
 
-      <!-- TAB 4: PERKS EXCHANGE -->
+      <!-- TAB 4: PERKS EXCHANGE (GEOP Token moved here) -->
       <div id="tab-perks" class="tab-content">
         <section class="card">
           <div class="card-header">
             <h2>GEOP Perks Exchange</h2>
+            <div style="background: var(--surface-subtle); border: 1px solid var(--border-subtle); padding: 6px 14px; border-radius: var(--radius-sm); display: inline-block;">
+              <small style="color: var(--text-muted); font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">Token Balance:</small>
+              <strong id="userCurrencyText" style="color: var(--brand-forest); font-size: 1.1rem; margin-left: 4px;">100</strong>
+            </div>
           </div>
           <p class="subtext">Redeem flexible applicant perks using your earned tokens.</p>
           
