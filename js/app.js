@@ -15,6 +15,7 @@ import { signInWithGoogle, signOutUser, getCurrentUser, getUserProfileData, crea
 let currentUser = null;
 let timerInterval = null;
 let currentInspectedApplicantId = null;
+let activeCommitteeFilter = 'ALL';
 
 // ==========================================
 // TOAST NOTIFICATION SYSTEM
@@ -34,7 +35,6 @@ export function showToast(message, type = 'info') {
   `;
 
   toast.querySelector('button').onclick = () => toast.remove();
-
   container.appendChild(toast);
 
   setTimeout(() => {
@@ -105,30 +105,12 @@ async function calculateProgress() {
   };
 }
 
-// DYNAMIC RACOMM ROSTER RENDERER
+// RENDER APPLICANT ROSTER TABLE
 async function renderApplicantRosterTable() {
   const tbody = document.getElementById('applicantRosterTbody');
-  const totalApplicantsElem = document.getElementById('statTotalApplicants');
-  const avgProgressElem = document.getElementById('statAvgProgress');
-  const totalTambayElem = document.getElementById('statTotalTambay');
-  const activeTambayElem = document.getElementById('statActiveTambay');
-
   if (!tbody) return;
 
   const applicants = await getAllApplicantsProgress();
-
-  if (totalApplicantsElem) totalApplicantsElem.textContent = applicants.length;
-  
-  if (applicants.length > 0) {
-    const avgProg = Math.round(applicants.reduce((sum, a) => sum + a.overallPercent, 0) / applicants.length);
-    const sumTambay = applicants.reduce((sum, a) => sum + Number(a.tambayHours), 0);
-    const activeCount = applicants.filter(a => a.isTimedIn).length;
-
-    if (avgProgressElem) avgProgressElem.textContent = `${avgProg}%`;
-    if (totalTambayElem) totalTambayElem.textContent = `${sumTambay.toFixed(1)} hrs`;
-    if (activeTambayElem) activeTambayElem.textContent = activeCount;
-  }
-
   tbody.innerHTML = '';
 
   if (applicants.length === 0) {
@@ -148,20 +130,16 @@ async function renderApplicantRosterTable() {
     tr.innerHTML = `
       <td style="padding: 10px 14px;"><strong>${app.fullName}</strong> ("${app.nickname}")</td>
       <td style="padding: 10px 14px;">${app.buddyGroup}</td>
-      <td style="padding: 10px 14px; font-family: monospace;">${app.completedSigs} / ${app.totalSigs}</td>
-      <td style="padding: 10px 14px; font-family: monospace;">${app.tambayHours} hrs</td>
-      <td style="padding: 10px 14px; font-family: monospace;">
+      <td style="padding: 10px 14px; font-family: var(--font-mono);">${app.completedSigs} / ${app.totalSigs}</td>
+      <td style="padding: 10px 14px; font-family: var(--font-mono);">${app.tambayHours} hrs</td>
+      <td style="padding: 10px 14px; font-family: var(--font-mono);">
         <strong style="color: var(--brand-forest);">${app.overallPercent}%</strong>
       </td>
       <td style="padding: 10px 14px;">
-        ${app.isTimedIn ? `
-          <span class="badge" style="background: #e8f5e9; color: #1b5e20; border: 1px solid #2e7d32;">🟢 Timed In</span>
-        ` : `
-          <span class="badge">Offline</span>
-        `}
+        ${app.isTimedIn ? `<span class="badge" style="background: #e8f5e9; color: #1b5e20;">Timed In</span>` : `<span class="badge">Offline</span>`}
       </td>
       <td style="padding: 10px 14px;">
-        <button class="btn btn-secondary inspect-app-btn" data-id="${app.id}" style="padding: 4px 10px; font-size: 0.78rem;">🔍 Inspect</button>
+        <button class="btn btn-secondary inspect-app-btn" data-id="${app.id}" style="padding: 4px 10px; font-size: 0.78rem;">Inspect</button>
       </td>
     `;
     tbody.appendChild(tr);
@@ -177,7 +155,7 @@ async function openApplicantInspectionModal(applicantId) {
   if (!details || !details.profile || !modal) return;
 
   document.getElementById('inspectApplicantName').textContent = `${details.profile.full_name} ("${details.profile.nickname}")`;
-  document.getElementById('inspectApplicantEmail').textContent = `ID: ${details.profile.id} | Tokens: 🪙 ${details.profile.currency}`;
+  document.getElementById('inspectApplicantEmail').textContent = `ID: ${details.profile.id} | Tokens: ${details.profile.currency}`;
 
   const sigListElem = document.getElementById('inspectSignatoriesList');
   sigListElem.innerHTML = '';
@@ -211,11 +189,21 @@ async function openApplicantInspectionModal(applicantId) {
 export async function render() {
   const stats = await calculateProgress();
 
+  // Overview Tab Metrics Updates
   const progressBar = document.getElementById('progressBar');
   if (progressBar) {
     progressBar.style.width = `${stats.total}%`;
     progressBar.textContent = `${stats.total}%`;
   }
+
+  const overviewProg = document.getElementById('overviewProgressText');
+  if (overviewProg) overviewProg.textContent = `${stats.total}%`;
+
+  const overviewSig = document.getElementById('overviewSigText');
+  if (overviewSig) overviewSig.textContent = `${stats.sigCompleted}/${stats.sigTotal}`;
+
+  const overviewTambay = document.getElementById('overviewTambayText');
+  if (overviewTambay) overviewTambay.textContent = `${stats.tambayHours.toFixed(1)}`;
 
   const sigBadge = document.getElementById('signatoryBadge');
   if (sigBadge) sigBadge.textContent = `${stats.sigCompleted} / ${stats.sigTotal} Done`;
@@ -233,7 +221,7 @@ export async function render() {
 
     if (activeSession && activeBanner) {
       activeBanner.style.display = 'block';
-      if (memberBadge) memberBadge.textContent = `By: ${activeSession.scanned_by_in}`;
+      if (memberBadge) memberBadge.textContent = `Verified by: ${activeSession.scanned_by_in}`;
       startLiveTimer(activeSession.time_in);
     } else if (activeBanner) {
       activeBanner.style.display = 'none';
@@ -241,24 +229,28 @@ export async function render() {
     }
   }
 
+  // Render Signatories Matrix (Filterable)
   const sigList = document.getElementById('signatoryList');
   if (sigList) {
     sigList.innerHTML = '';
 
-    COMMITTEES_LIST.forEach(comm => {
+    const committeesToDisplay = activeCommitteeFilter === 'ALL' 
+      ? COMMITTEES_LIST 
+      : COMMITTEES_LIST.filter(c => c.name === activeCommitteeFilter);
+
+    committeesToDisplay.forEach(comm => {
       const commSection = document.createElement('div');
       commSection.style.marginBottom = '16px';
-      commSection.style.padding = '12px';
+      commSection.style.padding = '14px';
       commSection.style.border = '1px solid var(--border-subtle)';
       commSection.style.borderRadius = 'var(--radius-sm)';
       commSection.style.background = 'var(--surface-subtle)';
 
-      commSection.innerHTML = `<h4 style="color: var(--brand-forest); margin-bottom: 8px;">🏛️ ${comm.name} Committee</h4>`;
+      commSection.innerHTML = `<h4 style="font-family: Georgia, serif; color: var(--brand-forest); margin-bottom: 8px;">${comm.name} Committee</h4>`;
 
       const commSigs = stats.signatoriesList.filter(s => s.committee_name === comm.name);
       const member1 = commSigs.find(s => s.type === 'MEMBER_1');
       const member2 = commSigs.find(s => s.type === 'MEMBER_2');
-
       const isVpUnlocked = member1?.completed && member2?.completed;
 
       commSigs.forEach(item => {
@@ -267,17 +259,17 @@ export async function render() {
 
         const li = document.createElement('li');
         li.className = 'task-item';
-        li.style.background = isLocked ? '#f5f5f5' : 'white';
+        li.style.background = isLocked ? '#f8f8f8' : 'white';
         li.style.opacity = isLocked ? '0.6' : '1.0';
 
         li.innerHTML = `
           <div class="task-info">
-            <strong>${isVpTask ? `👑 ${comm.vp}` : `👤 Member Task (${item.type === 'MEMBER_1' ? '#1' : '#2'})`}</strong>
+            <strong>${isVpTask ? `VP Verification (${comm.vp})` : `Member Task (${item.type === 'MEMBER_1' ? '#1' : '#2'})`}</strong>
             <small style="display: block; margin-top: 2px;">${item.trait_description}</small>
             <small style="color: var(--brand-forest); font-weight: 600;">Task: ${item.task_description}</small>
           </div>
           ${isLocked ? `
-            <span class="badge" style="background: #e0e0e0; color: #666;">🔒 Locked</span>
+            <span class="badge">Locked</span>
           ` : `
             <input 
               type="checkbox" 
@@ -295,6 +287,7 @@ export async function render() {
     });
   }
 
+  // Render Event List
   const eventList = document.getElementById('eventList');
   if (eventList) {
     eventList.innerHTML = '';
@@ -304,7 +297,7 @@ export async function render() {
       li.innerHTML = `
         <div class="task-info">
           <strong>${evt.name}</strong>
-          <small>${evt.attended ? '✅ Attended' : '❌ Not Attended'}</small>
+          <small>${evt.attended ? 'Attended' : 'Pending'}</small>
         </div>
         ${!evt.attended ? `
           <div style="display: flex; gap: 4px;">
@@ -336,15 +329,22 @@ async function handleAuthState() {
   const onboardingSection = document.getElementById('onboardingSection');
   const applicantDashboard = document.getElementById('applicantDashboardContent');
   const memberDashboard = document.getElementById('memberDashboardContent');
-  const racommPanel = document.getElementById('racommPanel');
+  const racommTabNav = document.getElementById('racommTabNav');
   const userProfileBar = document.getElementById('userProfileBar');
   const userEmailText = document.getElementById('userEmailText');
+  const userAvatarHeader = document.getElementById('userAvatarHeader');
+  const userAvatarHero = document.getElementById('userAvatarHero');
   const roleBadgeHeader = document.getElementById('roleBadgeHeader');
 
   if (currentUser) {
     if (authSection) authSection.style.display = 'none';
     if (userProfileBar) userProfileBar.style.display = 'flex';
     if (userEmailText) userEmailText.textContent = currentUser.email;
+
+    // Set Google Profile Avatar or default to UP GEOP Logo
+    const avatarUrl = currentUser.user_metadata?.avatar_url || currentUser.user_metadata?.picture || 'logo.png';
+    if (userAvatarHeader) { userAvatarHeader.src = avatarUrl; }
+    if (userAvatarHero) { userAvatarHero.src = avatarUrl; }
 
     await checkAndProcessUrlValidation(currentUser);
 
@@ -359,10 +359,11 @@ async function handleAuthState() {
       if (roleBadgeHeader) {
         roleBadgeHeader.textContent = isRAComm ? 'RAComm Officer' : 'Resident Member';
         roleBadgeHeader.style.background = 'var(--brand-forest)';
+        roleBadgeHeader.style.color = '#ffffff';
       }
 
-      if (racommPanel) {
-        racommPanel.style.display = isRAComm ? 'block' : 'none';
+      if (racommTabNav) {
+        racommTabNav.style.display = isRAComm ? 'flex' : 'none';
       }
 
       if (isRAComm) {
@@ -371,7 +372,7 @@ async function handleAuthState() {
         const capText = document.getElementById('currentCapText');
 
         if (multText) multText.textContent = `${settings.multiplier}x`;
-        if (capText) capText.textContent = settings.dailyCapEnabled ? 'Active (3.0 hrs/day)' : 'Disabled (No Limit)';
+        if (capText) capText.textContent = settings.dailyCapEnabled ? 'Active (3.0 hrs/day)' : 'Disabled';
 
         await renderApplicantRosterTable();
       }
@@ -380,7 +381,8 @@ async function handleAuthState() {
 
       if (roleBadgeHeader) {
         roleBadgeHeader.textContent = 'Applicant';
-        roleBadgeHeader.style.background = '#0288d1';
+        roleBadgeHeader.style.background = 'var(--surface-subtle)';
+        roleBadgeHeader.style.color = 'var(--text-body)';
       }
 
       const profile = await getUserProfileData(currentUser.id);
@@ -392,11 +394,11 @@ async function handleAuthState() {
         if (onboardingSection) onboardingSection.style.display = 'none';
         if (applicantDashboard) applicantDashboard.style.display = 'block';
 
-        const nicknameElem = document.getElementById('userNicknameHeading');
+        const greetingElem = document.getElementById('userGreetingHeading');
         const currencyElem = document.getElementById('userCurrencyText');
         const groupNameElem = document.getElementById('buddyGroupName');
 
-        if (nicknameElem) nicknameElem.textContent = `Welcome, ${profile.nickname}! 👋`;
+        if (greetingElem) greetingElem.textContent = `Good day, ${profile.nickname}!`;
         if (currencyElem) currencyElem.textContent = profile.currency;
         if (groupNameElem) groupNameElem.textContent = profile.buddy_group_name;
 
@@ -447,6 +449,36 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // Tab Switching Logic (Applicant & RAComm)
+  document.querySelectorAll('.tab-nav').forEach(nav => {
+    nav.addEventListener('click', (e) => {
+      if (e.target.classList.contains('tab-btn')) {
+        const targetTabId = e.target.dataset.tab;
+        
+        nav.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        e.target.classList.add('active');
+
+        const parentContainer = nav.parentElement;
+        parentContainer.querySelectorAll('.tab-content').forEach(content => {
+          content.classList.remove('active');
+        });
+
+        const targetContent = document.getElementById(targetTabId);
+        if (targetContent) targetContent.classList.add('active');
+      }
+    });
+  });
+
+  // Committee Filter Chips
+  document.getElementById('committeeChips')?.addEventListener('click', async (e) => {
+    if (e.target.classList.contains('chip')) {
+      document.querySelectorAll('#committeeChips .chip').forEach(c => c.classList.remove('active'));
+      e.target.classList.add('active');
+      activeCommitteeFilter = e.target.dataset.filter;
+      await render();
+    }
+  });
+
   // Show QR Code & Short Code
   document.getElementById('showQrBtn')?.addEventListener('click', async () => {
     if (!currentUser) return;
@@ -469,7 +501,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         text: validationUrl,
         width: 180,
         height: 180,
-        colorDark: "#0d2e20",
+        colorDark: "#1b382b",
         colorLight: "#ffffff"
       });
 
@@ -482,7 +514,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (qrContainer) qrContainer.style.display = 'none';
   });
 
-  // Modal Handlers for Manual Short Code Entry
+  // Modal Handlers
   const closeModal = () => {
     const modal = document.getElementById('manualCodeModal');
     if (modal) modal.style.display = 'none';
@@ -503,7 +535,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('closeModalBtn')?.addEventListener('click', closeModal);
   document.getElementById('cancelManualCodeBtn')?.addEventListener('click', closeModal);
 
-  // Submit Short Code with Believable Friction Delay (350ms)
   document.getElementById('submitManualCodeBtn')?.addEventListener('click', async () => {
     const input = document.getElementById('manualCodeInput');
     const submitBtn = document.getElementById('submitManualCodeBtn');
@@ -527,7 +558,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (submitBtn) {
       submitBtn.disabled = false;
-      submitBtn.textContent = 'Validate Code 🚀';
+      submitBtn.textContent = 'Validate Code';
     }
 
     if (applicantId) {
@@ -536,11 +567,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       showToast(res.message, res.success ? 'success' : 'error');
       await handleAuthState();
     } else {
-      showToast('Invalid or expired code. Please ask the applicant to regenerate their code.', 'error');
+      showToast('Invalid or expired code.', 'error');
     }
   });
 
-  // Roster Inspect Button Handler
   document.getElementById('applicantRosterTbody')?.addEventListener('click', async (e) => {
     if (e.target.classList.contains('inspect-app-btn')) {
       const appId = e.target.dataset.id;
@@ -548,49 +578,44 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Close Inspection Modal
   document.getElementById('closeInspectModalBtn')?.addEventListener('click', () => {
     document.getElementById('adminInspectionModal').style.display = 'none';
   });
 
-  // Admin Toggle Signatory for Applicant
   document.getElementById('inspectSignatoriesList')?.addEventListener('change', async (e) => {
     if (e.target.classList.contains('admin-sig-toggle')) {
       const taskId = e.target.dataset.sigId;
       const currentStatus = !e.target.checked;
       await adminToggleApplicantSignatory(taskId, currentStatus);
-      showToast('Applicant signatory updated by admin!', 'success');
+      showToast('Applicant signatory updated by admin.', 'success');
       await renderApplicantRosterTable();
     }
   });
 
-  // Admin Adjust Hours
   document.getElementById('adminAddHoursBtn')?.addEventListener('click', async () => {
     if (!currentInspectedApplicantId) return;
     const input = prompt('Enter hours to add (e.g. 1.5) or deduct (e.g. -1.0):');
     if (input && !isNaN(input)) {
       await adminAdjustTambayHours(currentInspectedApplicantId, parseFloat(input));
-      showToast('Hours adjusted successfully!', 'success');
+      showToast('Hours adjusted successfully.', 'success');
       await openApplicantInspectionModal(currentInspectedApplicantId);
       await renderApplicantRosterTable();
     }
   });
 
-  // Admin Adjust Tokens
   document.getElementById('adminEditTokensBtn')?.addEventListener('click', async () => {
     if (!currentInspectedApplicantId) return;
     const input = prompt('Enter new GEOP Token balance:');
     if (input && !isNaN(input)) {
       await adminAdjustTokens(currentInspectedApplicantId, parseInt(input, 10));
-      showToast('Token balance updated!', 'success');
+      showToast('Token balance updated.', 'success');
       await openApplicantInspectionModal(currentInspectedApplicantId);
     }
   });
 
-  // Admin Delete Profile
   document.getElementById('adminDeleteApplicantBtn')?.addEventListener('click', async () => {
     if (!currentInspectedApplicantId) return;
-    if (confirm('⚠️ ARE YOU SURE? This will permanently delete this applicant profile and all their records.')) {
+    if (confirm('Are you sure you want to permanently delete this applicant profile?')) {
       await deleteApplicantProfile(currentInspectedApplicantId);
       document.getElementById('adminInspectionModal').style.display = 'none';
       showToast('Applicant profile removed.', 'info');
@@ -606,7 +631,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (currentUser && fullNameInput && nicknameInput) {
       const created = await createApplicantProfile(currentUser.id, fullNameInput.value, nicknameInput.value);
       if (created) {
-        showToast('Profile created successfully!', 'success');
+        showToast('Profile created successfully.', 'success');
         await handleAuthState();
       }
     }
@@ -617,14 +642,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('buyDeadlineBtn')?.addEventListener('click', async () => {
     if (await spendCurrency(30, 'Deadline Extension (+2 Days)')) {
-      showToast('Redeemed Deadline Extension (+2 Days)!', 'success');
+      showToast('Redeemed Deadline Extension (+2 Days).', 'success');
       await handleAuthState();
     }
   });
 
   document.getElementById('buyTaskSwapBtn')?.addEventListener('click', async () => {
     if (await spendCurrency(50, 'Signatory Task Swap')) {
-      showToast('Redeemed Signatory Task Swap!', 'success');
+      showToast('Redeemed Signatory Task Swap.', 'success');
       await handleAuthState();
     }
   });
@@ -634,7 +659,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const taskId = e.target.dataset.id;
       const currentStatus = e.target.dataset.completed === 'true';
       await toggleSignatoryTask(taskId, currentStatus);
-      showToast('Task updated!', 'info');
+      showToast('Task status updated.', 'info');
       await render();
     }
   });
@@ -659,7 +684,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('set2xBtn')?.addEventListener('click', async () => {
     if (await updateGlobalSettings('hourly_multiplier', '2.0')) {
-      showToast('⚡ Double Hours Activated! (2.0x)', 'success');
+      showToast('Double Hours Activated! (2.0x)', 'success');
       await handleAuthState();
     }
   });
@@ -673,7 +698,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('disableCapBtn')?.addEventListener('click', async () => {
     if (await updateGlobalSettings('daily_cap_enabled', 'false')) {
-      showToast('Daily Cap Removed! (Unlimited Hours)', 'success');
+      showToast('Daily Cap Removed!', 'success');
       await handleAuthState();
     }
   });
@@ -684,7 +709,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (nameInput && await createEvent(nameInput.value, passkeyInput ? passkeyInput.value : '')) {
       nameInput.value = '';
       if (passkeyInput) passkeyInput.value = '';
-      showToast('Event created successfully!', 'success');
+      showToast('Event created successfully.', 'success');
       await handleAuthState();
     }
   });
