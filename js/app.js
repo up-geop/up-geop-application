@@ -223,7 +223,7 @@ export async function render() {
     }
   }
 
-  // Render Signatories Tab directly via signatories module
+  // Render Signatories Tab directly
   const signatoriesTabContainer = document.getElementById('signatoriesTab') || document.getElementById('signatoryList');
   if (signatoriesTabContainer) {
     await renderSignatoriesTab(signatoriesTabContainer);
@@ -391,6 +391,42 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
   }
+
+  // Robust Tab Navigation Listener
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const targetTabId = btn.dataset.tab;
+
+      document.querySelectorAll('.tab-btn').forEach(b => {
+        b.classList.remove('active');
+        b.style.background = 'transparent';
+        b.style.color = '#374151';
+        b.style.fontWeight = '500';
+      });
+
+      btn.classList.add('active');
+      btn.style.background = '#ffffff';
+      btn.style.color = '#064e3b';
+      btn.style.fontWeight = '700';
+      btn.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+
+      document.querySelectorAll('.tab-content').forEach(content => {
+        content.style.display = 'none';
+        content.classList.remove('active');
+      });
+
+      const targetContent = document.getElementById(`${targetTabId}Tab`) || document.getElementById(targetTabId);
+      
+      if (targetContent) {
+        targetContent.style.display = 'block';
+        targetContent.classList.add('active');
+
+        if (targetTabId === 'signatories' || targetTabId === 'signatoriesTab') {
+          await renderSignatoriesTab(targetContent);
+        }
+      }
+    });
+  });
 
   // Tambay QR Code Modal Trigger
   document.getElementById('showQrBtn')?.addEventListener('click', async () => {
