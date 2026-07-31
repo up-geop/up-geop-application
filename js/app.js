@@ -7,7 +7,8 @@ import {
   getAllApplicantsProgress, getApplicantFullDetails, deleteApplicantProfile,
   adminAdjustTambayHours, adminAdjustTokens, adminToggleApplicantSignatory,
   getSignatories, getTambayHours, getEvents,
-  getAnnouncements, getAvailabilitySlots, toggleUserAvailabilitySlot
+  getAnnouncements, getAvailabilitySlots, toggleUserAvailabilitySlot,
+  createAnnouncement, deleteAnnouncement
 } from './storage.js';
 
 import { renderSignatoriesTab } from './signatories.js';
@@ -17,6 +18,18 @@ import { signInWithGoogle, signOutUser, getCurrentUser, getUserProfileData, crea
 let currentUser = null;
 let timerInterval = null;
 let currentInspectedApplicantId = null;
+let selectedWeekStartDate = getMondayOfCurrentWeek(new Date());
+
+function getMondayOfCurrentWeek(d) {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+  return new Date(date.setDate(diff));
+}
+
+function formatDateISO(date) {
+  return date.toISOString().split('T')[0];
+}
 
 export function showToast(message, type = 'info') {
   const container = document.getElementById('toastContainer');
@@ -72,7 +85,14 @@ function stopLiveTimer() {
 
 async function renderAnnouncements() {
   const container = document.getElementById('announcementsList');
-  if (!container) return;
+  const postForm = document.getElementById('racommAnnouncementForm');
+  const postBadge = document.getElementById('racommPostBadge');
+  if (!container || !currentUser) return;
+
+  const isRAComm = await checkIfRAComm(currentUser.email);
+
+  if (postForm) postForm.style.display = isRAComm ? 'block' : 'none';
+  if (postBadge) postBadge.style.display = isRAComm ? 'inline-block' : 'none';
 
   const announcements = await getAnnouncements();
   if (announcements.length === 0) {
@@ -81,7 +101,8 @@ async function renderAnnouncements() {
   }
 
   container.innerHTML = announcements.map(ann => `
-    <div style="background: var(--surface-subtle); border: 1px solid var(--border-subtle); padding: 14px; border-radius: var(--radius-sm);">
+    <div style="background: var(--surface-subtle); border: 1px solid var(--border-subtle); padding: 14px; border-radius: var(--radius-sm); position: relative;">
+      ${isRAComm ? `<button class="delete-announcement-btn" data-id="${ann.id}" style="position: absolute; top: 12px; right: 12px; background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; border-radius: 4px; font-size: 0.75rem; padding: 2px 8px; cursor: pointer;">Delete</button>` : ''}
       <h3 style="font-size: 1rem; color: var(--brand-forest); margin-bottom: 4px;">${ann.title}</h3>
       <p style="font-size: 0.88rem; margin-bottom: 8px; white-space: pre-line;">${ann.content}</p>
       <small style="color: var(--text-muted);">Posted by ${ann.author_email} on ${new Date(ann.created_at).toLocaleDateString()}</small>
@@ -91,11 +112,40 @@ async function renderAnnouncements() {
 
 async function renderWhen2MeetGrid() {
   const tbody = document.getElementById('availabilityGridTbody');
+  const headerRow = document.getElementById('when2meetHeaderRow');
+  const dateInput = document.getElementById('when2meetStartDateInput');
   if (!tbody || !currentUser) return;
 
+  if (dateInput && !dateInput.value) {
+    dateInput.value = formatDateISO(selectedWeekStartDate);
+  }
+
+  const weekDates = [];
+  const currentMonday = new Date(selectedWeekStartDate);
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(currentMonday);
+    d.setDate(currentMonday.getDate() + i);
+    weekDates.push(d);
+  }
+
+  if (headerRow) {
+    const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    headerRow.innerHTML = `<th style="padding: 10px; background: var(--surface-subtle);">Time</th>` +
+      weekDates.map((d, idx) => `
+        <th style="padding: 10px; background: var(--surface-subtle);">
+          ${dayNames[idx]}<br/>
+          <small style="font-weight: normal; color: var(--text-muted);">${d.getMonth() + 1}/${d.getDate()}</small>
+        </th>
+      `).join('');
+  }
+
   const allSlots = await getAvailabilitySlots();
-  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
-  const times = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
+
+  const times = [
+    '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', 
+    '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', 
+    '19:00', '20:00', '21:00', '22:00', '23:00'
+  ];
 
   const slotCounts = {};
   const userSelectedSlots = new Set();
@@ -113,10 +163,11 @@ async function renderWhen2MeetGrid() {
     const tr = document.createElement('tr');
     tr.style.borderBottom = '1px solid var(--border-subtle)';
 
-    let rowHtml = `<td style="padding: 8px; font-weight: bold; background: var(--surface-subtle);">${time}</td>`;
+    let rowHtml = `<td style="padding: 8px; font-weight: bold; background: var(--surface-subtle); position: sticky; left: 0;">${time}</td>`;
 
-    days.forEach(day => {
-      const slotKey = `${day}-${time}`;
+    weekDates.forEach(dateObj => {
+      const dateStr = formatDateISO(dateObj);
+      const slotKey = `${dateStr}-${time}`;
       const count = slotCounts[slotKey] || 0;
       const isUserAvailable = userSelectedSlots.has(slotKey);
 
@@ -130,9 +181,9 @@ async function renderWhen2MeetGrid() {
         <td class="when2meet-cell ${isUserAvailable ? 'user-selected' : ''}" 
             data-slot="${slotKey}" 
             data-available="${isUserAvailable}"
-            style="padding: 10px; background-color: ${bgColor}; cursor: pointer; border: 1px solid var(--border-subtle); transition: all 0.2s;"
-            title="${count} person(s) available">
-            ${isUserAvailable ? '<b>✓ You</b>' : (count > 0 ? `${count}` : '')}
+            style="padding: 8px; background-color: ${bgColor}; cursor: pointer; border: 1px solid var(--border-subtle); transition: all 0.2s;"
+            title="${dateStr} ${time}: ${count} person(s) available">
+            ${isUserAvailable ? '<b>✓ Free</b>' : (count > 0 ? `${count}` : '')}
         </td>
       `;
     });
@@ -386,7 +437,7 @@ async function handleAuthState() {
       }
 
       if (racommTabNav) {
-        racommTabNav.style.display = isRAComm ? 'flex' : 'none';
+        racommTabNav.style.display = 'flex';
       }
 
       if (isRAComm) {
@@ -501,6 +552,46 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
     });
+  });
+
+  document.getElementById('when2meetStartDateInput')?.addEventListener('change', async (e) => {
+    if (e.target.value) {
+      selectedWeekStartDate = getMondayOfCurrentWeek(new Date(e.target.value));
+      await renderWhen2MeetGrid();
+    }
+  });
+
+  document.getElementById('postAnnouncementBtn')?.addEventListener('click', async () => {
+    const titleInput = document.getElementById('announcementTitleInput');
+    const contentInput = document.getElementById('announcementContentInput');
+
+    if (!titleInput?.value.trim() || !contentInput?.value.trim()) {
+      showToast('Please fill out both the title and content.', 'error');
+      return;
+    }
+
+    const success = await createAnnouncement(titleInput.value.trim(), contentInput.value.trim(), currentUser.email);
+    if (success) {
+      titleInput.value = '';
+      contentInput.value = '';
+      showToast('Announcement posted successfully!', 'success');
+      await renderAnnouncements();
+    } else {
+      showToast('Failed to post announcement.', 'error');
+    }
+  });
+
+  document.getElementById('announcementsList')?.addEventListener('click', async (e) => {
+    if (e.target.classList.contains('delete-announcement-btn')) {
+      const id = e.target.dataset.id;
+      if (confirm('Are you sure you want to delete this announcement?')) {
+        const deleted = await deleteAnnouncement(id);
+        if (deleted) {
+          showToast('Announcement removed.', 'info');
+          await renderAnnouncements();
+        }
+      }
+    }
   });
 
   document.getElementById('availabilityGridTbody')?.addEventListener('click', async (e) => {
