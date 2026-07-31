@@ -189,7 +189,6 @@ async function openApplicantInspectionModal(applicantId) {
 export async function render() {
   const stats = await calculateProgress();
 
-  // Overview Tab Metrics Updates
   const progressBar = document.getElementById('progressBar');
   if (progressBar) {
     progressBar.style.width = `${stats.total}%`;
@@ -229,7 +228,6 @@ export async function render() {
     }
   }
 
-  // Render Signatories Matrix (Filterable)
   const sigList = document.getElementById('signatoryList');
   if (sigList) {
     sigList.innerHTML = '';
@@ -287,7 +285,6 @@ export async function render() {
     });
   }
 
-  // Render Event List
   const eventList = document.getElementById('eventList');
   if (eventList) {
     eventList.innerHTML = '';
@@ -353,7 +350,6 @@ async function handleAuthState() {
 
     if (isMember || isRAComm) {
       if (onboardingSection) onboardingSection.style.display = 'none';
-      if (applicantDashboard) applicantDashboard.style.display = 'none';
       if (memberDashboard) memberDashboard.style.display = 'block';
 
       if (roleBadgeHeader) {
@@ -367,6 +363,9 @@ async function handleAuthState() {
       }
 
       if (isRAComm) {
+        // Display Applicant Dashboard so RAComm Officers can also see the Tabs & Progress Bar!
+        if (applicantDashboard) applicantDashboard.style.display = 'block';
+
         const settings = await getGlobalSettings();
         const multText = document.getElementById('currentMultiplierText');
         const capText = document.getElementById('currentCapText');
@@ -375,6 +374,8 @@ async function handleAuthState() {
         if (capText) capText.textContent = settings.dailyCapEnabled ? 'Active (3.0 hrs/day)' : 'Disabled';
 
         await renderApplicantRosterTable();
+      } else {
+        if (applicantDashboard) applicantDashboard.style.display = 'none';
       }
     } else {
       if (memberDashboard) memberDashboard.style.display = 'none';
