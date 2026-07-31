@@ -484,3 +484,41 @@ export async function getBuddyGroupMembers(groupName) {
   const { data } = await supabase.from('profiles').select('full_name, nickname').eq('buddy_group_name', groupName);
   return data || [];
 }
+
+// ==========================================
+// ANNOUNCEMENTS & WHEN2MEET AVAILABILITY LOGIC
+// ==========================================
+
+export async function getAnnouncements() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('announcements')
+    .select('*')
+    .order('created_at', { ascending: false });
+  return error ? [] : data;
+}
+
+export async function getAvailabilitySlots() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('availability_slots')
+    .select('*');
+  return error ? [] : data;
+}
+
+export async function toggleUserAvailabilitySlot(userId, userName, slotKey, isAvailable) {
+  if (!supabase) return false;
+
+  if (isAvailable) {
+    await supabase
+      .from('availability_slots')
+      .delete()
+      .eq('user_id', userId)
+      .eq('time_slot', slotKey);
+  } else {
+    await supabase
+      .from('availability_slots')
+      .insert({ user_id: userId, user_name: userName, time_slot: slotKey });
+  }
+  return true;
+}
