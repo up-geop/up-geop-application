@@ -6,17 +6,16 @@ import {
   createEvent, COMMITTEES_LIST, generateApplicantShortCode, getApplicantIdByShortCode,
   getAllApplicantsProgress, getApplicantFullDetails, deleteApplicantProfile,
   adminAdjustTambayHours, adminAdjustTokens, adminToggleApplicantSignatory,
-  selectTaskForSignatory
+  selectTaskForSignatory, getSignatories, getTambayHours, getEvents
 } from './storage.js';
-import { getSignatories } from './signatories.js';
-import { getTambayHours } from './tambay.js';
-import { getEvents, checkInToEvent } from './events.js';
+
+import { renderSignatoriesTab } from './signatories.js';
+import { checkInToEvent } from './events.js';
 import { signInWithGoogle, signOutUser, getCurrentUser, getUserProfileData, createApplicantProfile } from './auth.js';
 
 let currentUser = null;
 let timerInterval = null;
 let currentInspectedApplicantId = null;
-let activeCommitteeFilter = 'ALL';
 
 export function showToast(message, type = 'info') {
   const container = document.getElementById('toastContainer');
@@ -75,20 +74,20 @@ async function calculateProgress() {
   const tambayHours = await getTambayHours();
   const events = await getEvents();
 
-  const totalTasks = signatories.length;
+  const totalTasks = signatories.length || 18;
   const completedTasks = signatories.filter(s => s.completed).length;
   const sigRatio = totalTasks > 0 ? (completedTasks / totalTasks) : 0;
 
-  const tambayRatio = Math.min(tambayHours / CONFIG.TARGET_TAMBAY_HOURS, 1);
+  const tambayRatio = Math.min(tambayHours / (CONFIG?.TARGET_TAMBAY_HOURS || 15), 1);
 
   const totalEvents = events.length;
   const attendedEvents = events.filter(e => e.attended).length;
   const eventRatio = totalEvents > 0 ? (attendedEvents / totalEvents) : 0;
 
   const total = Math.round(
-    (sigRatio * CONFIG.WEIGHTS.SIGNATORIES + 
-     tambayRatio * CONFIG.WEIGHTS.TAMBAY + 
-     eventRatio * CONFIG.WEIGHTS.EVENTS) * 100
+    (sigRatio * (CONFIG?.WEIGHTS?.SIGNATORIES || 0.50) + 
+     tambayRatio * (CONFIG?.WEIGHTS?.TAMBAY || 0.35) + 
+     eventRatio * (CONFIG?.WEIGHTS?.EVENTS || 0.15)) * 100
   );
 
   return { 
@@ -204,7 +203,7 @@ export async function render() {
   if (sigBadge) sigBadge.textContent = `${stats.sigCompleted} / ${stats.sigTotal} Done`;
 
   const tambayBadge = document.getElementById('tambayBadge');
-  if (tambayBadge) tambayBadge.textContent = `${stats.tambayHours} / ${CONFIG.TARGET_TAMBAY_HOURS} hrs`;
+  if (tambayBadge) tambayBadge.textContent = `${stats.tambayHours} / ${CONFIG?.TARGET_TAMBAY_HOURS || 15} hrs`;
 
   const eventBadge = document.getElementById('eventBadge');
   if (eventBadge) eventBadge.textContent = `${stats.eventsAttended} / ${stats.eventsTotal} Attended`;
@@ -224,79 +223,10 @@ export async function render() {
     }
   }
 
-  const sigList = document.getElementById('signatoryList');
-  if (sigList) {
-    sigList.innerHTML = '';
-
-    const committeesToDisplay = activeCommitteeFilter === 'ALL' 
-      ? COMMITTEES_LIST 
-      : COMMITTEES_LIST.filter(c => c.name === activeCommitteeFilter);
-
-    committeesToDisplay.forEach(comm => {
-      const commSection = document.createElement('div');
-      commSection.style.marginBottom = '16px';
-      commSection.style.padding = '14px';
-      commSection.style.border = '1px solid var(--border-subtle)';
-      commSection.style.borderRadius = 'var(--radius-sm)';
-      commSection.style.background = 'var(--surface-subtle)';
-
-      commSection.innerHTML = `<h4 style="font-family: Georgia, serif; color: var(--brand-forest); margin-bottom: 8px;">${comm.name} Committee</h4>`;
-
-      const commSigs = stats.signatoriesList.filter(s => s.committee_name === comm.name);
-      const member1 = commSigs.find(s => s.type === 'MEMBER_1');
-      const member2 = commSigs.find(s => s.type === 'MEMBER_2');
-      const isVpUnlocked = member1?.completed && member2?.completed;
-
-      commSigs.forEach(item => {
-        const isVpTask = item.type === 'VP';
-        const isLocked = isVpTask && !isVpUnlocked;
-
-        const li = document.createElement('li');
-        li.className = 'task-item';
-        li.style.cssText = `background: ${isLocked ? '#f8f8f8' : 'white'}; opacity: ${isLocked ? '0.6' : '1.0'}; display: block; padding: 12px 16px; margin-bottom: 8px; border-radius: 8px; border: 1px solid var(--border-subtle);`;
-
-        const usedTasks = stats.signatoriesList
-          .filter(s => s.id !== item.id && s.selected_task)
-          .map(s => s.selected_task);
-
-        const availableTasks = (item.task_pool || []).filter(t => !usedTasks.includes(t) || t === item.selected_task);
-
-        let taskDropdownHtml = '';
-        if (!item.completed && !isLocked) {
-          taskDropdownHtml = `
-            <div style="margin-top: 8px;">
-              <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Choose 1 Task from your 25-Task Pool:</label>
-              <select class="task-selector" data-task-id="${item.id}" style="width: 100%; padding: 6px 10px; font-size: 0.82rem; border-radius: 4px; border: 1px solid var(--border-medium);">
-                <option value="">-- Select a Task --</option>
-                ${availableTasks.map(t => `<option value="${t}" ${item.selected_task === t ? 'selected' : ''}>${t}</option>`).join('')}
-              </select>
-            </div>
-          `;
-        } else if (item.selected_task) {
-          taskDropdownHtml = `<p style="font-size: 0.82rem; color: var(--brand-forest); font-weight: 600; margin-top: 6px;">Selected Task: ${item.selected_task}</p>`;
-        }
-
-        li.innerHTML = `
-          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-            <div>
-              <strong style="font-size: 0.9rem;">${isVpTask ? `👑 VP Endorsement (${comm.vp})` : `👤 Member Task (${item.type === 'MEMBER_1' ? '#1' : '#2'})`}</strong>
-              <p style="font-size: 0.82rem; color: var(--text-heading); margin-top: 2px;">${item.trait_description}</p>
-              <small style="display: block; color: var(--text-muted); font-size: 0.78rem; margin-top: 2px;">💬 <strong>Questions:</strong> ${item.questions_required}</small>
-            </div>
-            <div>
-              ${item.completed 
-                ? `<span class="badge" style="background: var(--brand-mint-subtle); color: var(--brand-forest); border: 1px solid var(--brand-mint);">Signed by: ${item.signed_by || 'Member'}</span>` 
-                : (isLocked ? `<span class="badge">Locked</span>` : `<span class="badge" style="background: #fff3e0; color: #e65100;">Pending Member Sign</span>`)}
-            </div>
-          </div>
-          ${taskDropdownHtml}
-        `;
-
-        commSection.appendChild(li);
-      });
-
-      sigList.appendChild(commSection);
-    });
+  // Render Signatories Tab directly via signatories module
+  const signatoriesTabContainer = document.getElementById('signatoriesTab') || document.getElementById('signatoryList');
+  if (signatoriesTabContainer) {
+    await renderSignatoriesTab(signatoriesTabContainer);
   }
 
   const eventList = document.getElementById('eventList');
@@ -480,66 +410,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  document.getElementById('committeeChips')?.addEventListener('click', async (e) => {
-    if (e.target.classList.contains('chip')) {
-      document.querySelectorAll('#committeeChips .chip').forEach(c => c.classList.remove('active'));
-      e.target.classList.add('active');
-      activeCommitteeFilter = e.target.dataset.filter;
-      await render();
-    }
-  });
-
-  document.getElementById('signatoryList')?.addEventListener('change', async (e) => {
-    if (e.target.classList.contains('task-selector')) {
-      const taskId = e.target.dataset.taskId;
-      const selectedTask = e.target.value;
-      if (selectedTask) {
-        await selectTaskForSignatory(taskId, selectedTask);
-        showToast('Task paired with signatory requirement!', 'success');
-        await render();
-      }
-    }
-  });
-
-  document.getElementById('showQrBtn')?.addEventListener('click', async () => {
-    if (!currentUser) return;
-
-    const qrContainer = document.getElementById('qrDisplayContainer');
-    const qrCanvas = document.getElementById('qrcodeCanvas');
-    const codeText = document.getElementById('applicantShortCodeText');
-
-    if (qrContainer && qrCanvas) {
-      qrCanvas.innerHTML = '';
-      if (codeText) codeText.textContent = '...';
-
-      const shortCode = await generateApplicantShortCode();
-      if (codeText) codeText.textContent = shortCode || 'ERROR';
-
-      const baseUrl = window.location.origin + window.location.pathname;
-      const validationUrl = `${baseUrl}?validateApplicant=${currentUser.id}`;
-
-      new QRCode(qrCanvas, {
-        text: validationUrl,
-        width: 180,
-        height: 180,
-        colorDark: "#1b382b",
-        colorLight: "#ffffff"
-      });
-
-      qrContainer.style.display = 'block';
-    }
-  });
-
-  document.getElementById('closeQrBtn')?.addEventListener('click', () => {
-    const qrContainer = document.getElementById('qrDisplayContainer');
-    if (qrContainer) qrContainer.style.display = 'none';
-  });
-
-  const closeModal = () => {
-    const modal = document.getElementById('manualCodeModal');
-    if (modal) modal.style.display = 'none';
-  };
-
   document.getElementById('manualValidateBtn')?.addEventListener('click', () => {
     const modal = document.getElementById('manualCodeModal');
     const input = document.getElementById('manualCodeInput');
@@ -552,37 +422,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  document.getElementById('closeModalBtn')?.addEventListener('click', closeModal);
-  document.getElementById('cancelManualCodeBtn')?.addEventListener('click', closeModal);
+  document.getElementById('closeModalBtn')?.addEventListener('click', () => {
+    const modal = document.getElementById('manualCodeModal');
+    if (modal) modal.style.display = 'none';
+  });
 
   document.getElementById('submitManualCodeBtn')?.addEventListener('click', async () => {
     const input = document.getElementById('manualCodeInput');
-    const submitBtn = document.getElementById('submitManualCodeBtn');
     if (!input || !currentUser) return;
 
     const cleanInput = input.value.trim().toUpperCase();
-
     if (cleanInput.length < 6) {
       showToast('Please enter a valid 6-character code.', 'error');
       return;
     }
 
-    if (submitBtn) {
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Verifying Code...';
-    }
-
-    await new Promise(resolve => setTimeout(resolve, 350));
-
     const applicantId = await getApplicantIdByShortCode(cleanInput);
-
-    if (submitBtn) {
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Validate Code';
-    }
-
     if (applicantId) {
-      closeModal();
+      const modal = document.getElementById('manualCodeModal');
+      if (modal) modal.style.display = 'none';
       const res = await validateApplicantTambay(applicantId, currentUser.email);
       showToast(res.message, res.success ? 'success' : 'error');
       await handleAuthState();
@@ -659,68 +517,4 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('loginGoogleBtn')?.addEventListener('click', signInWithGoogle);
   document.getElementById('logoutBtn')?.addEventListener('click', signOutUser);
-
-  document.getElementById('buyDeadlineBtn')?.addEventListener('click', async () => {
-    if (await spendCurrency(30, 'Deadline Extension (+2 Days)')) {
-      showToast('Redeemed Deadline Extension (+2 Days).', 'success');
-      await handleAuthState();
-    }
-  });
-
-  document.getElementById('buyTaskSwapBtn')?.addEventListener('click', async () => {
-    if (await spendCurrency(50, 'Signatory Task Swap')) {
-      showToast('Redeemed Signatory Task Swap.', 'success');
-      await handleAuthState();
-    }
-  });
-
-  document.getElementById('eventList')?.addEventListener('click', async (e) => {
-    if (e.target.classList.contains('btn-checkin')) {
-      const eventId = e.target.dataset.eventId;
-      const passInput = document.getElementById(`pass-${eventId}`);
-      if (passInput && await checkInToEvent(eventId, passInput.value)) {
-        showToast('Event Attendance Verified! +2.0 hours credited.', 'success');
-        await render();
-      }
-    }
-  });
-
-  document.getElementById('set1xBtn')?.addEventListener('click', async () => {
-    if (await updateGlobalSettings('hourly_multiplier', '1.0')) {
-      showToast('Multiplier set to 1.0x (Standard)', 'info');
-      await handleAuthState();
-    }
-  });
-
-  document.getElementById('set2xBtn')?.addEventListener('click', async () => {
-    if (await updateGlobalSettings('hourly_multiplier', '2.0')) {
-      showToast('Double Hours Activated! (2.0x)', 'success');
-      await handleAuthState();
-    }
-  });
-
-  document.getElementById('enableCapBtn')?.addEventListener('click', async () => {
-    if (await updateGlobalSettings('daily_cap_enabled', 'true')) {
-      showToast('Daily Cap Enabled (3.0 Hours Max)', 'info');
-      await handleAuthState();
-    }
-  });
-
-  document.getElementById('disableCapBtn')?.addEventListener('click', async () => {
-    if (await updateGlobalSettings('daily_cap_enabled', 'false')) {
-      showToast('Daily Cap Removed!', 'success');
-      await handleAuthState();
-    }
-  });
-
-  document.getElementById('addEventBtn')?.addEventListener('click', async () => {
-    const nameInput = document.getElementById('adminEventNameInput');
-    const passkeyInput = document.getElementById('adminEventPasskeyInput');
-    if (nameInput && await createEvent(nameInput.value, passkeyInput ? passkeyInput.value : '')) {
-      nameInput.value = '';
-      if (passkeyInput) passkeyInput.value = '';
-      showToast('Event created successfully.', 'success');
-      await handleAuthState();
-    }
-  });
 });
