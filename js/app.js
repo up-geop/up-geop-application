@@ -6,7 +6,7 @@ import {
   createEvent, COMMITTEES_LIST, generateApplicantShortCode, getApplicantIdByShortCode,
   getAllApplicantsProgress, getApplicantFullDetails, deleteApplicantProfile,
   adminAdjustTambayHours, adminAdjustTokens, adminToggleApplicantSignatory,
-  selectTaskForSignatory, getSignatories, getTambayHours, getEvents
+  selectTaskForSignatory, verifySignatoryDirectly, getSignatories, getTambayHours, getEvents
 } from './storage.js';
 
 import { renderSignatoriesTab } from './signatories.js';
@@ -223,7 +223,6 @@ export async function render() {
     }
   }
 
-  // Render Signatories Tab directly
   const signatoriesTabContainer = document.getElementById('signatoriesTab') || document.getElementById('signatoryList');
   if (signatoriesTabContainer) {
     await renderSignatoriesTab(signatoriesTabContainer);
@@ -255,11 +254,26 @@ export async function render() {
 async function checkAndProcessUrlValidation(user) {
   const urlParams = new URLSearchParams(window.location.search);
   const validateApplicantId = urlParams.get('validateApplicant');
+  const verifySigId = urlParams.get('verifySig');
 
-  if (validateApplicantId && user) {
+  if (!user) return;
+
+  // 1. Process Signatory Scan Route
+  if (verifySigId) {
+    window.history.replaceState({}, document.title, window.location.pathname);
+    const result = await verifySignatoryDirectly(verifySigId, user.email);
+    showToast(result.message, result.success ? 'success' : 'error');
+    if (result.success) await render();
+    return;
+  }
+
+  // 2. Process Tambay Scan Route
+  if (validateApplicantId) {
     window.history.replaceState({}, document.title, window.location.pathname);
     const result = await validateApplicantTambay(validateApplicantId, user.email);
     showToast(result.message, result.success ? 'success' : 'error');
+    if (result.success) await render();
+    return;
   }
 }
 
@@ -392,7 +406,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // Robust Tab Navigation Listener
+  // Tab Switching Listener
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const targetTabId = btn.dataset.tab;
@@ -428,7 +442,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // Tambay QR Code Modal Trigger
+  // Tambay QR Modal
   document.getElementById('showQrBtn')?.addEventListener('click', async () => {
     if (!currentUser) return;
 
