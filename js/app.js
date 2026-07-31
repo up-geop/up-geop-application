@@ -100,14 +100,22 @@ async function renderAnnouncements() {
     return;
   }
 
-  container.innerHTML = announcements.map(ann => `
-    <div style="background: var(--surface-subtle); border: 1px solid var(--border-subtle); padding: 14px; border-radius: var(--radius-sm); position: relative;">
-      ${isRAComm ? `<button class="delete-announcement-btn" data-id="${ann.id}" style="position: absolute; top: 12px; right: 12px; background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; border-radius: 4px; font-size: 0.75rem; padding: 2px 8px; cursor: pointer;">Delete</button>` : ''}
-      <h3 style="font-size: 1rem; color: var(--brand-forest); margin-bottom: 4px;">${ann.title}</h3>
-      <p style="font-size: 0.88rem; margin-bottom: 8px; white-space: pre-line;">${ann.content}</p>
-      <small style="color: var(--text-muted);">Posted by ${ann.author_email} on ${new Date(ann.created_at).toLocaleDateString()}</small>
-    </div>
-  `).join('');
+  container.innerHTML = announcements.map(ann => {
+    const avatarUrl = ann.author_avatar || 'logo.png.jpg';
+    return `
+      <div style="background: var(--surface-subtle); border: 1px solid var(--border-subtle); padding: 16px; border-radius: var(--radius-sm); position: relative;">
+        ${isRAComm ? `<button class="delete-announcement-btn" data-id="${ann.id}" style="position: absolute; top: 12px; right: 12px; background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; border-radius: 4px; font-size: 0.75rem; padding: 2px 8px; cursor: pointer;">Delete</button>` : ''}
+        <h3 style="font-size: 1rem; color: var(--brand-forest); margin-bottom: 6px;">${ann.title}</h3>
+        <p style="font-size: 0.88rem; margin-bottom: 12px; white-space: pre-line; color: var(--text-body);">${ann.content}</p>
+        
+        <!-- AUTHOR FOOTER WITH AVATAR -->
+        <div style="display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--border-subtle); padding-top: 8px;">
+          <img src="${avatarUrl}" onerror="this.onerror=null; this.src='https://cdn-icons-png.flaticon.com/512/3135/3135715.png';" alt="Avatar" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border-medium);" />
+          <small style="color: var(--text-muted);">Posted by <strong>${ann.author_email}</strong> on ${new Date(ann.created_at).toLocaleDateString()}</small>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 async function renderWhen2MeetGrid() {
@@ -570,7 +578,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    const success = await createAnnouncement(titleInput.value.trim(), contentInput.value.trim(), currentUser.email);
+    const avatarUrl = currentUser?.user_metadata?.avatar_url || currentUser?.user_metadata?.picture || null;
+
+    const success = await createAnnouncement(titleInput.value.trim(), contentInput.value.trim(), currentUser.email, avatarUrl);
     if (success) {
       titleInput.value = '';
       contentInput.value = '';
