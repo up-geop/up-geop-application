@@ -498,12 +498,13 @@ export async function getAnnouncements() {
   return error ? [] : data;
 }
 
-export async function createAnnouncement(title, content, authorEmail) {
+export async function createAnnouncement(title, content, authorEmail, authorAvatar = null) {
   if (!supabase || !title || !content) return false;
   const { error } = await supabase.from('announcements').insert([{
     title,
     content,
-    author_email: authorEmail
+    author_email: authorEmail,
+    author_avatar: authorAvatar
   }]);
   return !error;
 }
