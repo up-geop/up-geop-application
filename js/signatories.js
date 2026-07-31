@@ -2,8 +2,6 @@ import {
   getSignatories, 
   selectTaskForSignatory, 
   generateApplicantShortCode, 
-  verifySignatoryDirectly,
-  getApplicantIdByShortCode,
   COMMITTEES_LIST,
   supabase 
 } from './storage.js';
@@ -78,14 +76,14 @@ export async function renderSignatoriesTab(container) {
       </div>
     </div>
 
-    <!-- Signatory Verification Modal -->
+    <!-- Verification Modal for Applicants -->
     <div id="verifyModal" class="modal-backdrop" style="display: none;">
       <div class="modal-box">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
           <h3 style="margin: 0; font-size: 1.1rem; color: #0f172a;">Signatory Verification</h3>
           <button id="closeModalBtn" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #94a3b8;">&times;</button>
         </div>
-        <p style="font-size: 0.8rem; color: #64748b; margin-bottom: 16px;">Show this QR code or 6-digit code to the member/VP to verify this task!</p>
+        <p style="font-size: 0.8rem; color: #64748b; margin-bottom: 16px;">Show this QR code or 6-character code to a resident member or VP to sign this task!</p>
         
         <div style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 16px; border-radius: 12px; margin-bottom: 12px; display: flex; justify-content: center;">
           <div id="qrcode"></div>
@@ -93,13 +91,7 @@ export async function renderSignatoriesTab(container) {
 
         <div class="code-display" id="modalShortCode">------</div>
 
-        <!-- Direct Email Sign-off -->
-        <div style="margin-top: 12px; border-top: 1px solid #f1f5f9; padding-top: 12px;">
-          <input type="email" id="verifierEmailInput" placeholder="Member Email to Sign" style="width:100%; padding:8px; font-size:0.8rem; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:6px; box-sizing:border-box;" />
-          <button id="confirmDirectSignBtn" class="action-btn" style="background:#0284c7;">Sign Task Now</button>
-        </div>
-
-        <button id="doneVerifyBtn" class="action-btn" style="margin-top: 8px; background:#64748b;">Close</button>
+        <button id="doneVerifyBtn" class="action-btn" style="margin-top: 8px; background:#064e3b;">Close Window</button>
       </div>
     </div>
   `;
@@ -111,7 +103,6 @@ function renderCommitteeGroup(comm, sigs, usedTasks) {
   const vpSig = sigs.find(s => s.type === 'VP');
   const memberSigs = sigs.filter(s => s.type !== 'VP');
 
-  // Lock rule: VP unlocked ONLY IF both member tasks are completed
   const allMembersCompleted = memberSigs.length > 0 && memberSigs.every(m => m.completed);
 
   const sortedSigs = [];
@@ -212,9 +203,6 @@ function renderSignatoryCard(sig, index, usedTasks) {
 }
 
 function attachSignatoryEvents(container, signatories) {
-  let activeSigIdForModal = null;
-
-  // Filter tabs
   const filterBtns = container.querySelectorAll('.comm-filter-btn');
   filterBtns.forEach(btn => {
     btn.addEventListener('click', () => {
@@ -232,7 +220,6 @@ function attachSignatoryEvents(container, signatories) {
     });
   });
 
-  // Task selection dropdown
   container.querySelectorAll('.task-select').forEach(select => {
     select.addEventListener('change', async (e) => {
       const sigId = e.target.dataset.id;
@@ -242,7 +229,6 @@ function attachSignatoryEvents(container, signatories) {
     });
   });
 
-  // Save Q&A inputs
   container.querySelectorAll('.qa-input').forEach(input => {
     input.addEventListener('blur', async (e) => {
       const sigId = e.target.dataset.sigId;
@@ -253,19 +239,16 @@ function attachSignatoryEvents(container, signatories) {
     });
   });
 
-  // Verification Modal
   const verifyModal = container.querySelector('#verifyModal');
   const closeModalBtn = container.querySelector('#closeModalBtn');
   const doneVerifyBtn = container.querySelector('#doneVerifyBtn');
   const modalShortCode = container.querySelector('#modalShortCode');
-  const confirmDirectSignBtn = container.querySelector('#confirmDirectSignBtn');
-  const verifierEmailInput = container.querySelector('#verifierEmailInput');
 
   container.querySelectorAll('.request-sign-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       if (btn.disabled) return;
 
-      activeSigIdForModal = btn.dataset.id;
+      const sigId = btn.dataset.id;
       const sigCard = e.target.closest('.sig-card');
       const selectElem = sigCard?.querySelector('.task-select');
 
@@ -274,7 +257,8 @@ function attachSignatoryEvents(container, signatories) {
         return;
       }
 
-      const code = await generateApplicantShortCode();
+      // Generate universal code flagged for SIGNATORY
+      const code = await generateApplicantShortCode(sigId, 'SIGNATORY');
       if (!code) {
         alert('Error generating verification code.');
         return;
@@ -283,47 +267,13 @@ function attachSignatoryEvents(container, signatories) {
       modalShortCode.textContent = code;
 
       const baseUrl = window.location.origin + window.location.pathname;
-      const qrData = `${baseUrl}?verifySig=${activeSigIdForModal}&code=${code}`;
+      const qrData = `${baseUrl}?verifyCode=${code}`;
 
       const qrContainer = container.querySelector('#qrcode');
       qrContainer.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qrData)}" alt="Verification QR Code" style="width:140px; height:140px; border-radius:8px;" />`;
 
       verifyModal.style.display = 'flex';
     });
-  });
-
-  confirmDirectSignBtn?.addEventListener('click', async () => {
-    const inputVal = verifierEmailInput?.value?.trim();
-    if (!inputVal) {
-      alert('Please enter member email or 6-digit code to sign.');
-      return;
-    }
-
-    if (!activeSigIdForModal) return;
-
-    // Support entering short code or member email
-    if (inputVal.length === 6 && !inputVal.includes('@')) {
-      const applicantId = await getApplicantIdByShortCode(inputVal);
-      if (!applicantId) {
-        alert('Invalid or expired 6-digit verification code.');
-        return;
-      }
-      const { data: { session } } = await supabase.auth.getSession();
-      const currentEmail = session?.user?.email || 'Resident Member';
-      const res = await verifySignatoryDirectly(activeSigIdForModal, currentEmail);
-      alert(res.message);
-      if (res.success) {
-        verifyModal.style.display = 'none';
-        renderSignatoriesTab(container);
-      }
-    } else {
-      const res = await verifySignatoryDirectly(activeSigIdForModal, inputVal);
-      alert(res.message);
-      if (res.success) {
-        verifyModal.style.display = 'none';
-        renderSignatoriesTab(container);
-      }
-    }
   });
 
   closeModalBtn?.addEventListener('click', () => verifyModal.style.display = 'none');
