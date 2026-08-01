@@ -22,18 +22,18 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
   <!-- ONESIGNAL WEB PUSH SDK -->
-  <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
-  <script>
-    window.OneSignalDeferred = window.OneSignalDeferred || [];
-    OneSignalDeferred.push(async function(OneSignal) {
-      await OneSignal.init({
-        appId: "84954b0d-fb1c-4c2b-a406-1e5828d8c74c",
-        allowLocalhostAsSecureOrigin: true,
-      });
+<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+<script>
+  window.OneSignalDeferred = window.OneSignalDeferred || [];
+  OneSignalDeferred.push(async function(OneSignal) {
+    await OneSignal.init({
+      appId: "84954b0d-fb1c-4c2b-a406-1e5828d8c74c",
+      allowLocalhostAsSecureOrigin: true,
+      serviceWorkerParam: { scope: "/up-geop-application/" },
+      serviceWorkerPath: "up-geop-application/OneSignalSDKWorker.js"
     });
-  </script>
-</head>
-<body>
+  });
+</script>
 
   <!-- HEADER WITH UP GEOP LOGO -->
   <header class="header">
