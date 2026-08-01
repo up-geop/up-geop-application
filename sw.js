@@ -1,10 +1,10 @@
-const CACHE_NAME = 'geop-portal-cache-v1';
+const CACHE_NAME = 'geop-portal-cache-v2';
 const ASSETS = [
   './',
   './index.html',
   './styles.css',
   './manifest.json',
-  './logo.png.jpg'
+  './geop.png'
 ];
 
 self.addEventListener('install', (e) => {
@@ -32,7 +32,26 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
+  const url = new URL(e.request.url);
+
+  // SKIP SERVICE WORKER INTERCEPTION FOR EXTERNAL SERVICES & CDNS (OneSignal, Supabase, etc.)
+  if (url.origin !== location.origin) {
+    return;
+  }
+
   e.respondWith(
-    fetch(e.request).catch(() => caches.match(e.request))
+    caches.match(e.request).then((cachedResponse) => {
+      if (cachedResponse) {
+        return cachedResponse;
+      }
+      return fetch(e.request).catch(() => {
+        // Fallback for failed local assets
+        return new Response('Offline content unavailable.', {
+          status: 503,
+          statusText: 'Service Unavailable',
+          headers: new Headers({ 'Content-Type': 'text/plain' })
+        });
+      });
+    })
   );
 });
