@@ -31,6 +31,37 @@ function formatDateISO(date) {
   return date.toISOString().split('T')[0];
 }
 
+// ==========================================
+// QOL HELPERS: NOTIFICATIONS & CALENDAR
+// ==========================================
+
+export function requestNotificationPermission() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
+
+export function sendBrowserNotification(title, body) {
+  if ('Notification' in window && Notification.permission === 'granted') {
+    new Notification(title, {
+      body: body,
+      icon: 'geop.png'
+    });
+  }
+}
+
+export function generateGoogleCalendarUrl(eventName, eventDetails = 'UP GEOP Official Event') {
+  const title = encodeURIComponent(`UP GEOP: ${eventName}`);
+  const details = encodeURIComponent(eventDetails);
+  const location = encodeURIComponent('UP Diliman');
+  
+  const now = new Date();
+  const start = new Date(now.setHours(17, 0, 0, 0)).toISOString().replace(/-|:|\.\d\d\d/g, '');
+  const end = new Date(now.setHours(19, 0, 0, 0)).toISOString().replace(/-|:|\.\d\d\d/g, '');
+
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${details}&location=${location}&dates=${start}/${end}`;
+}
+
 export function showToast(message, type = 'info') {
   const container = document.getElementById('toastContainer');
   if (!container) {
@@ -101,7 +132,7 @@ async function renderAnnouncements() {
   }
 
   container.innerHTML = announcements.map(ann => {
-    const avatarUrl = ann.author_avatar || 'logo.png.jpg';
+    const avatarUrl = ann.author_avatar || 'geop.png';
     return `
       <div style="background: var(--surface-subtle); border: 1px solid var(--border-subtle); padding: 16px; border-radius: var(--radius-sm); position: relative;">
         ${isRAComm ? `<button class="delete-announcement-btn" data-id="${ann.id}" style="position: absolute; top: 12px; right: 12px; background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; border-radius: 4px; font-size: 0.75rem; padding: 2px 8px; cursor: pointer;">Delete</button>` : ''}
@@ -367,23 +398,31 @@ export async function render() {
     await renderSignatoriesTab(signatoriesTabContainer);
   }
 
+  // RENDER EVENTS WITH ADD TO GOOGLE CALENDAR BUTTONS
   const eventList = document.getElementById('eventList');
   if (eventList) {
     eventList.innerHTML = '';
     stats.eventsList.forEach(evt => {
+      const gcalUrl = generateGoogleCalendarUrl(evt.name);
       const li = document.createElement('li');
       li.className = 'task-item';
+      li.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid var(--border-subtle); flex-wrap: wrap; gap: 8px;';
       li.innerHTML = `
         <div class="task-info">
           <strong>${evt.name}</strong>
-          <small>${evt.attended ? 'Attended' : 'Pending'}</small>
-        </div>
-        ${!evt.attended ? `
-          <div style="display: flex; gap: 4px;">
-            <input type="text" id="pass-${evt.id}" placeholder="Passcode" style="width: 100px; padding: 4px;" />
-            <button class="btn btn-checkin" data-event-id="${evt.id}">Check In</button>
+          <div>
+            <small style="color: var(--text-muted);">${evt.attended ? 'Status: Attended' : 'Status: Pending'}</small>
           </div>
-        ` : '<span>Done</span>'}
+        </div>
+        <div style="display: flex; gap: 6px; align-items: center;">
+          <a href="${gcalUrl}" target="_blank" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+            📅 Google Calendar
+          </a>
+          ${!evt.attended ? `
+            <input type="text" id="pass-${evt.id}" placeholder="Passcode" style="width: 90px; padding: 4px; font-size: 0.8rem;" />
+            <button class="btn btn-checkin" data-event-id="${evt.id}" style="padding: 4px 10px; font-size: 0.8rem;">Check In</button>
+          ` : '<span class="badge" style="background: #e8f5e9; color: #1b5e20;">Done</span>'}
+        </div>
       `;
       eventList.appendChild(li);
     });
@@ -397,7 +436,13 @@ function setupRealtimeListeners() {
     .channel('public-db-changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'signatories' }, async () => {
       showToast('Signatory matrix updated live!', 'success');
+      sendBrowserNotification('UP GEOP Signatory Updated', 'One of your signatory tasks was verified!');
       await render();
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, async (payload) => {
+      showToast('New announcement published!', 'info');
+      sendBrowserNotification('UP GEOP Announcement', payload.new?.title || 'Check the portal for updates.');
+      await renderAnnouncements();
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tambay_sessions' }, async () => {
       await render();
@@ -432,11 +477,13 @@ async function handleAuthState() {
   const roleBadgeHeader = document.getElementById('roleBadgeHeader');
 
   if (currentUser) {
+    requestNotificationPermission();
+
     if (authSection) authSection.style.display = 'none';
     if (userProfileBar) userProfileBar.style.display = 'flex';
     if (userEmailText) userEmailText.textContent = currentUser.email;
 
-    const avatarUrl = currentUser.user_metadata?.avatar_url || currentUser.user_metadata?.picture || 'logo.png.jpg';
+    const avatarUrl = currentUser.user_metadata?.avatar_url || currentUser.user_metadata?.picture || 'geop.png';
     if (userAvatarHeader) userAvatarHeader.src = avatarUrl;
     if (userAvatarHero) userAvatarHero.src = avatarUrl;
 
@@ -804,6 +851,83 @@ document.addEventListener('DOMContentLoaded', async () => {
       showToast('Token balance updated.', 'success');
       await openApplicantInspectionModal(currentInspectedApplicantId);
     }
+  });
+
+  // PDF EXPORT TRIGGER INSIDE INSPECTION MODAL
+  document.getElementById('adminExportPdfBtn')?.addEventListener('click', async () => {
+    if (!currentInspectedApplicantId) return;
+    const details = await getApplicantFullDetails(currentInspectedApplicantId);
+    if (!details || !details.profile) return;
+
+    const p = details.profile;
+    const sigs = details.signatories || [];
+    const logs = details.tambayLogs || [];
+    const completedSigs = sigs.filter(s => s.completed).length;
+    const totalTambay = logs.reduce((a, b) => a + Number(b.hours), 0);
+
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Applicant Summary - ${p.full_name}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 30px; color: #333; line-height: 1.5; }
+            h1 { color: #2e7d32; border-bottom: 2px solid #2e7d32; padding-bottom: 8px; }
+            .meta-box { background: #f5f5f5; padding: 15px; border-radius: 6px; margin-bottom: 20px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 13px; }
+            th { background: #e8f5e9; color: #1b5e20; }
+          </style>
+        </head>
+        <body>
+          <h1>UP GEOP Applicant Summary Report</h1>
+          <div class="meta-box">
+            <p><strong>Full Name:</strong> ${p.full_name} ("${p.nickname}")</p>
+            <p><strong>Buddy Group:</strong> ${p.buddy_group_name || 'Unassigned'}</p>
+            <p><strong>Signatories Verified:</strong> ${completedSigs} / ${sigs.length || 18}</p>
+            <p><strong>Tambay Hours Logged:</strong> ${totalTambay.toFixed(1)} Hours</p>
+            <p><strong>Token Balance:</strong> ${p.currency || 0} Tokens</p>
+          </div>
+
+          <h3>Signatory Task Matrix</h3>
+          <table>
+            <thead>
+              <tr><th>Committee</th><th>Type</th><th>Requirement</th><th>Status</th><th>Signed By</th></tr>
+            </thead>
+            <tbody>
+              ${sigs.map(s => `
+                <tr>
+                  <td>${s.committee_name}</td>
+                  <td>${s.type}</td>
+                  <td>${s.trait_description}</td>
+                  <td>${s.completed ? 'COMPLETED' : 'PENDING'}</td>
+                  <td>${s.signed_by || 'N/A'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <h3 style="margin-top: 20px;">Tambay Log History</h3>
+          <table>
+            <thead>
+              <tr><th>Hours</th><th>Date Logged</th></tr>
+            </thead>
+            <tbody>
+              ${logs.map(l => `
+                <tr>
+                  <td>+${l.hours} hrs</td>
+                  <td>${new Date(l.created_at).toLocaleString()}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <script>
+            window.onload = function() { window.print(); }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   });
 
   document.getElementById('adminDeleteApplicantBtn')?.addEventListener('click', async () => {
