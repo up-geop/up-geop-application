@@ -1,0 +1,24 @@
+{
+  "name": "UP GEOP Applicant Portal",
+  "short_name": "GEOP Portal",
+  "description": "UP Society of Geodetic Engineering Majors Applicant Progress & Management Portal",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#2e7d32",
+  "icons": [
+    {
+      "src": "logo.png.jpg",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "logo.png.jpg",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
