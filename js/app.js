@@ -155,7 +155,6 @@ async function renderWhen2MeetGrid() {
     '19:00', '20:00', '21:00', '22:00', '23:00'
   ];
 
-  // Map slot keys to arrays of available user names/nicknames
   const slotUsers = {};
   const userSelectedSlots = new Set();
 
@@ -186,14 +185,12 @@ async function renderWhen2MeetGrid() {
       const count = availablePeople.length;
       const isUserAvailable = userSelectedSlots.has(slotKey);
 
-      // Preserve dynamic shading mechanism
       let bgColor = '#f5f5f5';
       if (count > 0) {
         const intensity = Math.min(count * 25, 100);
         bgColor = `hsl(123, 45%, ${85 - (intensity * 0.4)}%)`;
       }
 
-      // Display nicknames directly inside the cell
       const namesDisplay = count > 0 
         ? `<div style="font-size: 0.72rem; line-height: 1.2; word-break: break-word; font-weight: ${isUserAvailable ? 'bold' : 'normal'};">${availablePeople.join(', ')}</div>` 
         : '';
@@ -536,6 +533,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   await handleAuthState();
   setupRealtimeListeners();
 
+  // REGISTER SERVICE WORKER FOR PWA SUPPORT
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js')
+      .then(() => console.log('GEOP Portal PWA Service Worker Active'))
+      .catch((err) => console.log('PWA Service Worker registration failed:', err));
+  }
+
   if (supabase) {
     supabase.auth.onAuthStateChange(async (event) => {
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
@@ -624,7 +628,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const slotKey = cell.dataset.slot;
     const isAvailable = cell.dataset.available === 'true';
 
-    // Get user's nickname or email prefix for the grid record
     const userDisplayName = currentUser.user_metadata?.nickname || currentUser.email.split('@')[0];
 
     await toggleUserAvailabilitySlot(currentUser.id, userDisplayName, slotKey, isAvailable);
