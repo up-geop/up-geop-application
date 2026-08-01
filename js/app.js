@@ -155,11 +155,17 @@ async function renderWhen2MeetGrid() {
     '19:00', '20:00', '21:00', '22:00', '23:00'
   ];
 
-  const slotCounts = {};
+  // Map slot keys to arrays of available user names/nicknames
+  const slotUsers = {};
   const userSelectedSlots = new Set();
 
   allSlots.forEach(slot => {
-    slotCounts[slot.time_slot] = (slotCounts[slot.time_slot] || 0) + 1;
+    if (!slotUsers[slot.time_slot]) {
+      slotUsers[slot.time_slot] = [];
+    }
+    const displayName = slot.user_name ? slot.user_name.split('@')[0] : 'User';
+    slotUsers[slot.time_slot].push(displayName);
+
     if (slot.user_id === currentUser.id) {
       userSelectedSlots.add(slot.time_slot);
     }
@@ -176,22 +182,29 @@ async function renderWhen2MeetGrid() {
     weekDates.forEach(dateObj => {
       const dateStr = formatDateISO(dateObj);
       const slotKey = `${dateStr}-${time}`;
-      const count = slotCounts[slotKey] || 0;
+      const availablePeople = slotUsers[slotKey] || [];
+      const count = availablePeople.length;
       const isUserAvailable = userSelectedSlots.has(slotKey);
 
+      // Preserve dynamic shading mechanism
       let bgColor = '#f5f5f5';
       if (count > 0) {
         const intensity = Math.min(count * 25, 100);
         bgColor = `hsl(123, 45%, ${85 - (intensity * 0.4)}%)`;
       }
 
+      // Display nicknames directly inside the cell
+      const namesDisplay = count > 0 
+        ? `<div style="font-size: 0.72rem; line-height: 1.2; word-break: break-word; font-weight: ${isUserAvailable ? 'bold' : 'normal'};">${availablePeople.join(', ')}</div>` 
+        : '';
+
       rowHtml += `
         <td class="when2meet-cell ${isUserAvailable ? 'user-selected' : ''}" 
             data-slot="${slotKey}" 
             data-available="${isUserAvailable}"
-            style="padding: 8px; background-color: ${bgColor}; cursor: pointer; border: 1px solid var(--border-subtle); transition: all 0.2s;"
-            title="${dateStr} ${time}: ${count} person(s) available">
-            ${isUserAvailable ? '<b>✓ Free</b>' : (count > 0 ? `${count}` : '')}
+            style="padding: 6px; background-color: ${bgColor}; cursor: pointer; border: 1px solid var(--border-subtle); transition: all 0.2s; min-width: 70px; height: 38px; vertical-align: middle;"
+            title="${dateStr} ${time}: ${count} person(s) (${availablePeople.join(', ')})">
+            ${namesDisplay}
         </td>
       `;
     });
@@ -611,7 +624,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const slotKey = cell.dataset.slot;
     const isAvailable = cell.dataset.available === 'true';
 
-    await toggleUserAvailabilitySlot(currentUser.id, currentUser.email, slotKey, isAvailable);
+    // Get user's nickname or email prefix for the grid record
+    const userDisplayName = currentUser.user_metadata?.nickname || currentUser.email.split('@')[0];
+
+    await toggleUserAvailabilitySlot(currentUser.id, userDisplayName, slotKey, isAvailable);
     await renderWhen2MeetGrid();
   });
 
