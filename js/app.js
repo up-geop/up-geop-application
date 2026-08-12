@@ -8,7 +8,8 @@ import {
   adminAdjustTambayHours, adminAdjustTokens, adminToggleApplicantSignatory,
   getSignatories, getTambayHours, getEvents,
   getAnnouncements, getAvailabilitySlots, toggleUserAvailabilitySlot,
-  createAnnouncement, deleteAnnouncement
+  createAnnouncement, deleteAnnouncement,
+  getBiddingState, getBuddyFams, placeBid, adminUpdateBiddingState, adminFinalizeBidding
 } from './storage.js';
 
 import { renderSignatoriesTab } from './signatories.js';
@@ -242,16 +243,69 @@ async function renderWhen2MeetGrid() {
   });
 }
 
+async function renderBiddingTab() {
+  const container = document.getElementById('biddingFamiliesContainer');
+  const statusBanner = document.getElementById('biddingStatusBanner');
+  if (!container || !currentUser) return;
+
+  const state = await getBiddingState();
+  
+  if (!state.is_active) {
+    statusBanner.style.display = 'block';
+    container.style.opacity = '0.6';
+    container.style.pointerEvents = 'none';
+  } else {
+    statusBanner.style.display = 'none';
+    container.style.opacity = '1';
+    container.style.pointerEvents = 'auto';
+  }
+
+  const families = await getBuddyFams();
+  const profile = await getUserProfileData(currentUser.id);
+  const userAC = profile?.currency ?? 100;
+  
+  const acText = document.getElementById('biddingCurrencyText');
+  if (acText) acText.textContent = `${userAC} AC`;
+
+  container.innerHTML = families.map(fam => {
+    const isLocked = fam.is_locked;
+    const isMyBid = fam.highest_bidder_id === currentUser.id;
+    const minRequiredBid = Math.max(state.min_bid, fam.highest_bid + 1);
+
+    return `
+      <div style="border: 2px solid ${isMyBid ? 'var(--brand-mint)' : 'var(--border-medium)'}; padding: 16px; border-radius: var(--radius-sm); background: var(--surface-white);">
+        <h3 style="font-family: Georgia, serif; color: var(--brand-forest); font-size: 1.1rem; margin-bottom: 2px;">${fam.name}</h3>
+        <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 12px;">Mems: ${fam.resident_members}</p>
+        
+        <div style="margin-bottom: 12px; padding: 10px; background: ${isMyBid ? 'var(--brand-mint-subtle)' : 'var(--surface-subtle)'}; border-radius: 4px;">
+          <span style="font-size: 0.75rem; font-weight: bold; text-transform: uppercase;">Highest Bid:</span>
+          <span style="font-size: 1.2rem; color: var(--brand-forest); font-weight: 900; float: right;">${fam.highest_bid} AC</span>
+          ${isMyBid ? `<div style="font-size: 0.7rem; color: var(--brand-mint); font-weight: bold; margin-top: 4px;">✓ You hold the highest bid</div>` : ''}
+        </div>
+
+        ${isLocked ? `
+          <div style="text-align: center; padding: 8px; background: #e0e0e0; border-radius: 4px; font-weight: bold; font-size: 0.8rem;">Round Finalized</div>
+        ` : `
+          <div style="display: flex; gap: 8px;">
+            <input type="number" id="bid-input-${fam.id}" placeholder="Min: ${minRequiredBid}" min="${minRequiredBid}" style="flex: 1; padding: 8px; border: 1px solid var(--border-medium); border-radius: 4px;" />
+            <button class="btn btn-checkin submit-bid-btn" data-fam-id="${fam.id}" data-min-bid="${minRequiredBid}" style="padding: 8px 12px; font-size: 0.8rem;">Bid</button>
+          </div>
+        `}
+      </div>
+    `;
+  }).join('');
+}
+
 async function calculateProgress() {
   const signatories = await getSignatories();
   const tambayHours = await getTambayHours();
   const events = await getEvents();
 
-  const totalTasks = signatories.length || 18;
+  const totalTasks = signatories.length || 23;
   const completedTasks = signatories.filter(s => s.completed).length;
   const sigRatio = totalTasks > 0 ? (completedTasks / totalTasks) : 0;
 
-  const tambayRatio = Math.min(tambayHours / (CONFIG?.TARGET_TAMBAY_HOURS || 15), 1);
+  const tambayRatio = Math.min(tambayHours / (CONFIG?.TARGET_TAMBAY_HOURS || 24), 1);
 
   const totalEvents = events.length;
   const attendedEvents = events.filter(e => e.attended).length;
@@ -373,7 +427,7 @@ export async function render() {
   if (sigBadge) sigBadge.textContent = `${stats.sigCompleted} / ${stats.sigTotal} Done`;
 
   const tambayBadge = document.getElementById('tambayBadge');
-  if (tambayBadge) tambayBadge.textContent = `${stats.tambayHours} / ${CONFIG?.TARGET_TAMBAY_HOURS || 15} hrs`;
+  if (tambayBadge) tambayBadge.textContent = `${stats.tambayHours} / ${CONFIG?.TARGET_TAMBAY_HOURS || 24} hrs`;
 
   const eventBadge = document.getElementById('eventBadge');
   if (eventBadge) eventBadge.textContent = `${stats.eventsAttended} / ${stats.eventsTotal} Attended`;
@@ -446,6 +500,12 @@ function setupRealtimeListeners() {
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tambay_sessions' }, async () => {
       await render();
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'buddy_fams' }, async () => {
+      if (document.getElementById('tab-bidding')?.classList.contains('active')) await renderBiddingTab();
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'bidding_state' }, async () => {
+      if (document.getElementById('tab-bidding')?.classList.contains('active')) await renderBiddingTab();
     })
     .subscribe();
 }
@@ -621,9 +681,53 @@ document.addEventListener('DOMContentLoaded', async () => {
         } else if (targetTabId === 'tab-schedule') {
           await renderAnnouncements();
           await renderWhen2MeetGrid();
+        } else if (targetTabId === 'tab-bidding') {
+          await renderBiddingTab();
         }
       }
     });
+  });
+
+  // Handle Applicant Bids
+  document.getElementById('biddingFamiliesContainer')?.addEventListener('click', async (e) => {
+    if (e.target.classList.contains('submit-bid-btn')) {
+      const famId = e.target.dataset.famId;
+      const minRequired = parseInt(e.target.dataset.minBid, 10);
+      const input = document.getElementById(`bid-input-${famId}`);
+      const bidAmount = parseInt(input.value, 10);
+
+      if (isNaN(bidAmount)) return;
+      const res = await placeBid(famId, bidAmount, minRequired);
+      showToast(res.message, res.success ? 'success' : 'error');
+      if (res.success) {
+        input.value = '';
+        await renderBiddingTab();
+      }
+    }
+  });
+
+  // Handle RAComm Controls
+  document.getElementById('startBiddingBtn')?.addEventListener('click', async () => {
+    if (await adminUpdateBiddingState(true, null)) showToast('Round started!', 'success');
+  });
+
+  document.getElementById('stopBiddingBtn')?.addEventListener('click', async () => {
+    if (await adminUpdateBiddingState(false, null)) showToast('Round stopped.', 'info');
+  });
+
+  document.getElementById('updateMinBidBtn')?.addEventListener('click', async () => {
+    const minBid = document.getElementById('adminMinBidInput').value;
+    if (await adminUpdateBiddingState(null, parseInt(minBid, 10))) {
+      showToast(`Starting fee increased to ${minBid} AC.`, 'success');
+    }
+  });
+
+  document.getElementById('finalizeWinnersBtn')?.addEventListener('click', async () => {
+    if(!confirm("Finalize round? This deducts AC from winners and assigns buddy groups.")) return;
+    if (await adminFinalizeBidding()) {
+      showToast('Round finalized!', 'success');
+      await handleAuthState(); // Refresh data globally
+    }
   });
 
   document.getElementById('when2meetStartDateInput')?.addEventListener('change', async (e) => {
@@ -913,7 +1017,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           <div class="meta-box">
             <p><strong>Full Name:</strong> ${p.full_name} ("${p.nickname}")</p>
             <p><strong>Buddy Group:</strong> ${p.buddy_group_name || 'Unassigned'}</p>
-            <p><strong>Signatories Verified:</strong> ${completedSigs} / ${sigs.length || 18}</p>
+            <p><strong>Signatories Verified:</strong> ${completedSigs} / ${sigs.length || 23}</p>
             <p><strong>Tambay Hours Logged:</strong> ${totalTambay.toFixed(1)} Hours</p>
             <p><strong>Token Balance:</strong> ${p.currency || 0} Tokens</p>
           </div>
