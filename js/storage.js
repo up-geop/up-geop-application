@@ -438,8 +438,8 @@ export async function getAllApplicantsProgress() {
     const userTambay = (allTambay || []).filter(t => t.user_id === profile.id);
     const totalTambayHours = userTambay.reduce((sum, item) => sum + Number(item.hours), 0);
 
-    const sigRatio = completedSigs / (userSigs.length || 18);
-    const tambayRatio = Math.min(totalTambayHours / 15, 1);
+    const sigRatio = completedSigs / (userSigs.length || 23);
+    const tambayRatio = Math.min(totalTambayHours / 24, 1);
     const overallPercent = Math.round((sigRatio * 0.50 + tambayRatio * 0.35) * 100);
     const isTimedIn = (activeSessions || []).some(s => s.applicant_id === profile.id);
 
@@ -449,7 +449,7 @@ export async function getAllApplicantsProgress() {
       nickname: profile.nickname || 'N/A',
       buddyGroup: profile.buddy_group_name || 'Unassigned',
       completedSigs,
-      totalSigs: userSigs.length || 18,
+      totalSigs: userSigs.length || 23,
       tambayHours: totalTambayHours.toFixed(1),
       overallPercent,
       isTimedIn
@@ -565,5 +565,57 @@ export async function toggleUserAvailabilitySlot(userId, userName, slotKey, isAv
       .from('availability_slots')
       .insert({ user_id: userId, user_name: userName, time_slot: slotKey });
   }
+  return true;
+}
+
+// ==========================================
+// BUDDY BIDDING AUCTION Logic
+// ==========================================
+export async function getBiddingState() {
+  if (!supabase) return { is_active: false, min_bid: 10 };
+  const { data } = await supabase.from('bidding_state').select('*').eq('id', 1).single();
+  return data || { is_active: false, min_bid: 10 };
+}
+
+export async function getBuddyFams() {
+  if (!supabase) return [];
+  const { data } = await supabase.from('buddy_fams').select('*').order('name');
+  return data || [];
+}
+
+export async function placeBid(famId, bidAmount, minRequired) {
+  const userId = await getCurrentUserId();
+  if (!userId || !supabase) return { success: false, message: 'Not authenticated.' };
+
+  const { data: profile } = await supabase.from('profiles').select('currency').eq('id', userId).single();
+  if (!profile || profile.currency < bidAmount) return { success: false, message: 'Insufficient AC.' };
+
+  const { data: fam } = await supabase.from('buddy_fams').select('highest_bid').eq('id', famId).single();
+  if (bidAmount <= fam.highest_bid || bidAmount < minRequired) return { success: false, message: 'Bid too low. Someone might have just outbid you.' };
+
+  const { error } = await supabase.from('buddy_fams').update({ highest_bid: bidAmount, highest_bidder_id: userId }).eq('id', famId);
+  return { success: !error, message: error ? error.message : 'Bid placed!' };
+}
+
+export async function adminUpdateBiddingState(isActive, minBid) {
+  const updates = {};
+  if (isActive !== null) updates.is_active = isActive;
+  if (minBid !== null) updates.min_bid = minBid;
+  const { error } = await supabase.from('bidding_state').update(updates).eq('id', 1);
+  return !error;
+}
+
+export async function adminFinalizeBidding() {
+  const { data: fams } = await supabase.from('buddy_fams').select('*').eq('is_locked', false);
+  for (const fam of fams) {
+    if (fam.highest_bidder_id && fam.highest_bid > 0) {
+      const { data: profile } = await supabase.from('profiles').select('currency').eq('id', fam.highest_bidder_id).single();
+      const newAC = (profile.currency || 100) - fam.highest_bid;
+      
+      await supabase.from('profiles').update({ currency: newAC, buddy_group_name: fam.name }).eq('id', fam.highest_bidder_id);
+      await supabase.from('buddy_fams').update({ is_locked: true }).eq('id', fam.id);
+    }
+  }
+  await supabase.from('bidding_state').update({ is_active: false }).eq('id', 1);
   return true;
 }
