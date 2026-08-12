@@ -635,7 +635,7 @@ export async function adminUpdateBiddingState(isActive) {
 export async function adminResolveBidding() {
   const { data: allBids } = await supabase.from('bids').select('*').order('amount', { ascending: false });
   const { data: fams } = await supabase.from('buddy_fams').select('*').eq('is_locked', false);
-  const { data: applicants } = await supabase.from('profiles').select('id, currency, buddy_group_name').is('racomm', null);
+  const { data: applicants } = await supabase.from('profiles').select('id, currency, buddy_group_name');
 
   if (!fams || !applicants || !allBids) return false;
 
