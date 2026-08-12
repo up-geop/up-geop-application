@@ -195,15 +195,15 @@
             <button id="addEventBtn" class="btn btn-checkin">Add Event</button>
           </div>
 
-          <!-- NEW: RACOMM BUDDY BIDDING CONTROLS -->
+          <!-- RACOMM BUDDY BIDDING CONTROLS -->
           <hr style="margin: 20px 0; border: none; border-top: 1px dashed var(--border-subtle);" />
           <h2 style="font-family: Georgia, serif; margin-bottom: 8px;">Blind Buddy Bidding Controls</h2>
           <div style="background: var(--brand-mint-subtle); padding: 16px; border-radius: var(--radius-sm); border: 2px solid var(--brand-forest); margin-bottom: 24px;">
-            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">Start the timer. When finalized, the top 3 bids per group are locked in. Losing bids are refunded, and unassigned applicants are randomly autofilled.</p>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">When finalized, the top 3 bids per group are locked in. Losing bids are refunded, and unassigned applicants are randomly autofilled.</p>
             <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-              <button id="startBiddingBtn" class="btn btn-checkin" style="font-size: 0.85rem;">Open Bidding Round</button>
-              <button id="stopBiddingBtn" class="btn btn-secondary" style="font-size: 0.85rem;">Pause Bidding</button>
-              <button id="finalizeWinnersBtn" class="btn" style="background: #8f5322; color: white; font-size: 0.85rem;">Finalize & Auto-Fill Groups</button>
+              <button id="startBiddingBtn" class="btn btn-checkin" style="font-size: 0.85rem;">Open Bidding</button>
+              <button id="stopBiddingBtn" class="btn btn-secondary" style="font-size: 0.85rem;">Close Bidding</button>
+              <button id="finalizeWinnersBtn" class="btn" style="background: #8f5322; color: white; font-size: 0.85rem;">Finalize Bidding & Auto-Fill</button>
             </div>
           </div>
           <!-- END BUDDY BIDDING CONTROLS -->
@@ -223,7 +223,7 @@
         <button class="tab-btn" data-tab="tab-signatories">Signatories</button>
         <button class="tab-btn" data-tab="tab-tambay">Tambay & Events</button>
         <button class="tab-btn" data-tab="tab-perks">Perks Exchange</button>
-        <button class="tab-btn" data-tab="tab-bidding">Buddy Bidding</button> <!-- NEW BUDDY BIDDING NAV BUTTON -->
+        <button class="tab-btn" data-tab="tab-bidding">Buddy Bidding</button>
         <button class="tab-btn" data-tab="tab-schedule">Schedule & Announcements</button>
       </nav>
 
@@ -363,7 +363,7 @@
         </section>
       </div>
 
-      <!-- NEW: TAB 5: BUDDY BIDDING -->
+      <!-- TAB 5: BUDDY BIDDING -->
       <div id="tab-bidding" class="tab-content" style="display: none;">
         <section class="card">
           <div class="card-header" style="flex-wrap: wrap; gap: 10px;">
@@ -379,10 +379,10 @@
               </div>
             </div>
           </div>
-          <p class="subtext">Top 3 bids per group win! You can bid on multiple groups. Your AC is locked in escrow while your bid is active. Losing bids are fully refunded when RAComm finalizes the round.</p>
+          <p class="subtext">Top 3 bids per group win! You can bid on multiple groups. Your AC is locked in escrow while your bid is active. Losing bids are fully refunded when RAComm finalizes the bidding.</p>
           
           <div id="biddingStatusBanner" style="display: none; margin-bottom: 16px; padding: 12px; background: #ffebee; color: #c62828; border-radius: var(--radius-sm); font-weight: bold; text-align: center;">
-            Bidding is currently closed. Wait for the next round.
+            Bidding is currently closed.
           </div>
 
           <div id="biddingFamiliesContainer" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 12px;">
