@@ -20,38 +20,60 @@ export async function renderSignatoriesTab(container) {
 
   container.innerHTML = `
     <style>
-      .sig-matrix-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px; font-family: system-ui, -apple-system, sans-serif; color: #1e293b; }
-      .sig-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #f1f5f9; padding-bottom: 16px; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
-      .sig-title { font-size: 1.5rem; font-weight: 700; color: #064e3b; margin: 0; }
-      .sig-badge { background: #ecfdf5; color: #047857; font-size: 0.85rem; font-weight: 600; padding: 6px 16px; border-radius: 9999px; border: 1px solid #a7f3d0; }
+      .sig-matrix-card { background: var(--surface-white, #fffdf8); border: 1px solid var(--border-subtle, #e9dfc9); border-radius: var(--radius-md, 16px); padding: 24px; font-family: var(--font-body, system-ui, sans-serif); color: var(--text-body, #3d3327); }
+      .sig-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-subtle, #e9dfc9); padding-bottom: 16px; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+      .sig-title { font-family: var(--font-display, Georgia, serif); font-size: 1.5rem; font-weight: 700; color: var(--brand-forest, #1b382b); margin: 0; }
+      .sig-badge { background: var(--brand-clay-light, #f4e6d2); color: var(--brand-clay-deep, #8f5322); font-size: 0.85rem; font-weight: 600; padding: 6px 16px; border-radius: 9999px; border: 1px solid var(--brand-clay, #b5702f); }
+      .sig-limit-note { font-size: 0.78rem; color: var(--text-muted, #7d6c56); background: var(--surface-subtle, #f3ecdd); border: 1px solid var(--border-subtle, #e9dfc9); border-radius: 10px; padding: 8px 14px; margin-bottom: 18px; }
       .filter-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px; }
-      .filter-btn { background: #f8fafc; border: 1px solid #e2e8f0; color: #475569; font-size: 0.78rem; font-weight: 600; padding: 6px 14px; border-radius: 9999px; cursor: pointer; transition: all 0.2s ease; }
-      .filter-btn.active { background: #064e3b; color: #ffffff; border-color: #064e3b; }
-      .committee-group { border: 1px solid #e2e8f0; background: #fafafa; border-radius: 14px; padding: 20px; margin-bottom: 20px; }
-      .committee-title { font-size: 1.1rem; font-weight: 700; color: #065f46; margin-top: 0; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid #a7f3d0; }
-      .sig-card { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-      .sig-card.completed { border-color: #34d399; background: #f0fdf4; }
-      .sig-card.locked { opacity: 0.6; background: #f8fafc; border-color: #e2e8f0; }
+      .filter-btn { background: var(--surface-subtle, #f3ecdd); border: 1px solid var(--border-subtle, #e9dfc9); color: var(--text-muted, #7d6c56); font-size: 0.78rem; font-weight: 600; padding: 6px 14px; border-radius: 9999px; cursor: pointer; transition: all 0.22s cubic-bezier(0.22,1,0.36,1); }
+      .filter-btn:hover { border-color: var(--brand-clay, #b5702f); color: var(--brand-clay-deep, #8f5322); }
+      .filter-btn.active { background: var(--brand-forest, #1b382b); color: #ffffff; border-color: var(--brand-forest, #1b382b); }
+      .committee-group { border: 1px solid var(--border-subtle, #e9dfc9); background: var(--surface-bg, #faf5ea); border-radius: 14px; padding: 20px; margin-bottom: 20px; animation: sigFadeUp 0.5s cubic-bezier(0.22,1,0.36,1) both; }
+      .committee-title { font-family: var(--font-display, Georgia, serif); font-size: 1.1rem; font-weight: 700; color: var(--brand-forest, #1b382b); margin-top: 0; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid var(--brand-clay-light, #f4e6d2); }
+      .sig-card { background: var(--surface-white, #fffdf8); border: 1px solid var(--border-medium, #d8c8a8); border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(74,52,26,0.05); transition: transform 0.22s cubic-bezier(0.22,1,0.36,1), box-shadow 0.22s ease; animation: sigFadeUp 0.4s cubic-bezier(0.22,1,0.36,1) both; }
+      .sig-card:hover { transform: translateY(-2px); box-shadow: 0 8px 18px rgba(74,52,26,0.1); }
+      .sig-card.completed { border-color: var(--brand-clay, #b5702f); background: var(--brand-clay-light, #f4e6d2); }
+      .sig-card.locked { opacity: 0.65; background: var(--surface-subtle, #f3ecdd); border-color: var(--border-subtle, #e9dfc9); }
       .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
       .type-tag { display: inline-block; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; margin-bottom: 4px; }
-      .type-member { background: #dbeafe; color: #1e40af; }
+      .type-member { background: var(--brand-mint-subtle, #eef3ea); color: var(--brand-forest, #1b382b); }
       .type-vp { background: #fef3c7; color: #92400e; }
-      .status-pill { font-size: 0.75rem; font-weight: 600; padding: 4px 10px; border-radius: 9999px; }
-      .status-pending { background: #fff7ed; color: #c2410c; border: 1px solid #ffedd5; }
-      .status-signed { background: #d1fae5; color: #065f46; }
-      .status-locked { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
-      .dropdown-label { font-size: 0.75rem; font-weight: 600; color: #475569; display: block; margin-bottom: 4px; }
-      .custom-select { width: 100%; padding: 8px 12px; font-size: 0.8rem; border: 1px solid #cbd5e1; border-radius: 8px; background: #ffffff; color: #1e293b; outline: none; margin-bottom: 12px; cursor: pointer; }
-      .qa-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
-      .qa-box-header { font-size: 0.75rem; font-weight: 700; color: #334155; margin-bottom: 8px; display: block; }
+      .status-pill { font-size: 0.75rem; font-weight: 600; padding: 4px 10px; border-radius: 9999px; transition: transform 0.2s ease; }
+      .status-pending { background: #fff3e6; color: var(--brand-clay-deep, #8f5322); border: 1px solid var(--brand-clay-light, #f4e6d2); }
+      .status-signed { background: var(--brand-clay, #b5702f); color: #fffdf8; animation: sigPulse 1.8s cubic-bezier(0.22,1,0.36,1) infinite; }
+      .status-locked { background: var(--surface-subtle, #f3ecdd); color: var(--text-muted, #7d6c56); border: 1px solid var(--border-subtle, #e9dfc9); }
+      .dropdown-label { font-size: 0.75rem; font-weight: 600; color: var(--text-muted, #7d6c56); display: block; margin-bottom: 4px; }
+      .custom-select { width: 100%; padding: 8px 12px; font-size: 0.8rem; border: 1px solid var(--border-medium, #d8c8a8); border-radius: 8px; background: var(--surface-white, #fffdf8); color: var(--text-body, #3d3327); outline: none; margin-bottom: 12px; cursor: pointer; transition: border-color 0.2s ease; }
+      .custom-select:focus { border-color: var(--brand-clay, #b5702f); }
+      .qa-box { background: var(--surface-subtle, #f3ecdd); border: 1px solid var(--border-subtle, #e9dfc9); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+      .qa-box-header { font-size: 0.75rem; font-weight: 700; color: var(--text-body, #3d3327); margin-bottom: 8px; display: block; }
       .qa-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
-      .qa-field label { display: block; font-size: 0.7rem; color: #64748b; margin-bottom: 2px; }
-      .qa-field input { width: 100%; padding: 6px 10px; font-size: 0.78rem; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; }
-      .action-btn { width: 100%; background: #064e3b; color: #ffffff; font-size: 0.82rem; font-weight: 600; padding: 10px; border: none; border-radius: 8px; cursor: pointer; transition: background 0.2s ease; }
-      .action-btn:disabled { background: #94a3b8; cursor: not-allowed; }
-      .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; display: flex; align-items: center; justify-content: center; padding: 16px; }
-      .modal-box { background: #ffffff; border-radius: 16px; max-width: 400px; width: 100%; padding: 24px; text-align: center; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
-      .code-display { background: #ecfdf5; border: 1px dashed #059669; color: #064e3b; font-family: monospace; font-size: 1.8rem; font-weight: 700; padding: 12px; border-radius: 8px; letter-spacing: 4px; margin: 12px 0; }
+      .qa-field label { display: block; font-size: 0.7rem; color: var(--text-muted, #7d6c56); margin-bottom: 2px; }
+      .qa-field input { width: 100%; padding: 6px 10px; font-size: 0.78rem; border: 1px solid var(--border-medium, #d8c8a8); border-radius: 6px; box-sizing: border-box; transition: border-color 0.2s ease; }
+      .qa-field input:focus { border-color: var(--brand-clay, #b5702f); outline: none; }
+      .action-btn { width: 100%; background: var(--brand-forest, #1b382b); color: #ffffff; font-size: 0.82rem; font-weight: 600; padding: 10px; border: none; border-radius: 8px; cursor: pointer; transition: background 0.22s ease, transform 0.15s ease; }
+      .action-btn:hover:not(:disabled) { background: var(--brand-forest-light, #2d5442); transform: translateY(-1px); }
+      .action-btn:active:not(:disabled) { transform: translateY(0) scale(0.98); }
+      .action-btn:disabled { background: var(--border-medium, #d8c8a8); cursor: not-allowed; }
+      .modal-backdrop { position: fixed; inset: 0; background: rgba(30, 22, 12, 0.55); backdrop-filter: blur(4px); z-index: 999; display: flex; align-items: center; justify-content: center; padding: 16px; animation: sigFadeUp 0.25s ease both; }
+      .modal-box { background: var(--surface-white, #fffdf8); border-radius: 16px; max-width: 400px; width: 100%; padding: 24px; text-align: center; box-shadow: 0 20px 40px -8px rgba(74,52,26,0.3); animation: sigPopIn 0.3s cubic-bezier(0.22,1,0.36,1) both; }
+      .code-display { background: var(--brand-clay-light, #f4e6d2); border: 1px dashed var(--brand-clay, #b5702f); color: var(--brand-clay-deep, #8f5322); font-family: monospace; font-size: 1.8rem; font-weight: 700; padding: 12px; border-radius: 8px; letter-spacing: 4px; margin: 12px 0; }
+      #committeesContainer .committee-group:nth-of-type(1) { animation-delay: 0.04s; }
+      #committeesContainer .committee-group:nth-of-type(2) { animation-delay: 0.08s; }
+      #committeesContainer .committee-group:nth-of-type(3) { animation-delay: 0.12s; }
+      #committeesContainer .committee-group:nth-of-type(4) { animation-delay: 0.16s; }
+      #committeesContainer .committee-group:nth-of-type(5) { animation-delay: 0.2s; }
+      #committeesContainer .committee-group:nth-of-type(n+6) { animation-delay: 0.24s; }
+      .sig-card:nth-of-type(1) { animation-delay: 0.05s; }
+      .sig-card:nth-of-type(2) { animation-delay: 0.1s; }
+      .sig-card:nth-of-type(3) { animation-delay: 0.15s; }
+      @keyframes sigFadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes sigPopIn { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: scale(1); } }
+      @keyframes sigPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(181,112,47,0.4); } 50% { box-shadow: 0 0 0 5px rgba(181,112,47,0); } }
+      @media (prefers-reduced-motion: reduce) {
+        .sig-card, .committee-group, .modal-backdrop, .modal-box, .status-signed { animation: none !important; }
+      }
     </style>
 
     <div class="sig-matrix-card">
@@ -62,6 +84,8 @@ export async function renderSignatoriesTab(container) {
         </div>
         <div class="sig-badge">${completedCount} / ${totalCount} Signed</div>
       </div>
+
+      <p class="sig-limit-note">💡 Heads up: each resident member can personally sign up to <strong>4</strong> signatory tasks — spread yours across different members instead of relying on one. (This limit doesn't apply to tambay hour verification.)</p>
 
       <div class="filter-bar">
         <button class="filter-btn comm-filter-btn active" data-filter="ALL">All (${totalCount})</button>
