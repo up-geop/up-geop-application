@@ -45,7 +45,10 @@
       <img src="geop.png" onerror="this.onerror=null; this.src='https://scontent.fmnl17-6.fna.fbcdn.net/v/t39.30808-6/327302970_581424596742436_6769795875572468795_n.png?stp=dst-jpg_tt6&cstp=mx2048x1662&ctp=s2048x1662&_nc_cat=107&_nc_map=urlgen_bucketless&ccb=1-7&_nc_sid=a5f93a&_nc_ohc=bRgFwvlnzP0Q7kNvwEgbxPn&_nc_oc=AdqLggSOmdIGl3zbwwZAjDNn0NUCwcsDhjjdc9eNgXvx0sByKW7WAk80C6eLspJpsY4&_nc_zt=23&_nc_ht=scontent.fmnl17-6.fna&_nc_gid=P4T_mJqIezo-DK2vFa2Sfw&_nc_ss=7b2a8&oh=00_AQEme-t2zjnpx-317inttj2rOT_mUSWJnL4zVbGuFckCDQ&oe=6A726CDF';" alt="UP GEOP Logo" style="width: 52px; height: 52px; object-fit: contain; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.25));" />
       <div style="text-align: left;">
         <h1 style="margin-bottom: 0;">GEOP Applicant Portal</h1>
-        <p style="margin-top: 2px;">UP Society of Geodetic Engineering Majors</p>
+        <svg class="headline-squiggle" viewBox="0 0 220 16" width="150" height="11" aria-hidden="true">
+          <path d="M2 9 C 20 2, 35 14, 54 8 S 88 2, 108 9 S 142 15, 162 7 S 198 2, 218 9" />
+        </svg>
+        <p style="margin-top: 4px;">UP Society of Geodetic Engineering Majors</p>
       </div>
     </div>
   </header>
@@ -293,9 +296,12 @@
             
             <div id="qrcodeCanvas" style="display: flex; justify-content: center; padding: 12px; background: white; width: fit-content; margin: 0 auto 16px; border-radius: 8px; border: 1px solid var(--border-subtle);"></div>
             
-            <div style="margin-bottom: 16px; padding: 12px 20px; background: white; border: 2px dashed var(--brand-forest); border-radius: var(--radius-sm); display: inline-block;">
-              <small style="color: var(--text-muted); display: block; font-weight: 600; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.8px;">Manual Short Code (Valid 10 mins)</small>
-              <span id="applicantShortCodeText" style="color: var(--brand-forest); font-weight: 800;">------</span>
+            <div style="margin-bottom: 16px; padding: 12px 20px; background: white; border: 2px dashed var(--brand-forest); border-radius: var(--radius-sm); display: inline-flex; align-items: center; gap: 12px;">
+              <div>
+                <small style="color: var(--text-muted); display: block; font-weight: 600; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.8px;">Manual Short Code (Valid 10 mins)</small>
+                <span id="applicantShortCodeText" style="color: var(--brand-forest); font-weight: 800;">------</span>
+              </div>
+              <button type="button" class="copy-btn" data-copy-target="applicantShortCodeText" title="Copy code" aria-label="Copy code">📋</button>
             </div>
 
             <div>
@@ -461,5 +467,37 @@
   </main>
 
   <script type="module" src="js/app.js"></script>
+
+  <!-- Global copy-to-clipboard for any .copy-btn (works for dynamically rendered ones too) -->
+  <script>
+    document.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.copy-btn');
+      if (!btn) return;
+
+      const targetId = btn.dataset.copyTarget;
+      const targetEl = targetId && document.getElementById(targetId);
+      const text = targetEl?.textContent?.trim();
+      if (!text || text === '------') return;
+
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        const temp = document.createElement('textarea');
+        temp.value = text;
+        document.body.appendChild(temp);
+        temp.select();
+        document.execCommand('copy');
+        document.body.removeChild(temp);
+      }
+
+      const original = btn.textContent;
+      btn.textContent = '✓ Copied!';
+      btn.classList.add('copy-btn-done');
+      setTimeout(() => {
+        btn.textContent = original;
+        btn.classList.remove('copy-btn-done');
+      }, 1400);
+    });
+  </script>
 </body>
 </html>
