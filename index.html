@@ -194,6 +194,21 @@
             <input type="text" id="adminEventPasskeyInput" placeholder="Passcode" style="width: 140px;" />
             <button id="addEventBtn" class="btn btn-checkin">Add Event</button>
           </div>
+
+          <hr style="margin: 20px 0; border: none; border-top: 1px dashed var(--border-subtle);" />
+          <h2 style="font-family: Georgia, serif; margin-bottom: 8px;">Buddy Bidding Controls</h2>
+          <div style="background: var(--surface-subtle); padding: 16px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+            <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 12px;">
+              <label style="font-size: 0.85rem; font-weight: bold;">Starting Fee (AC):</label>
+              <input type="number" id="adminMinBidInput" value="10" style="width: 80px; padding: 4px; border-radius: 4px; border: 1px solid var(--border-medium);" />
+              <button id="updateMinBidBtn" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;">Update Fee</button>
+            </div>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+              <button id="startBiddingBtn" class="btn btn-checkin" style="font-size: 0.85rem;">Start Round</button>
+              <button id="stopBiddingBtn" class="btn btn-secondary" style="font-size: 0.85rem;">Stop Round</button>
+              <button id="finalizeWinnersBtn" class="btn" style="background: #8f5322; color: white; font-size: 0.85rem;">Finalize Round</button>
+            </div>
+          </div>
         </section>
       </div>
 
@@ -210,6 +225,7 @@
         <button class="tab-btn" data-tab="tab-signatories">Signatories</button>
         <button class="tab-btn" data-tab="tab-tambay">Tambay & Events</button>
         <button class="tab-btn" data-tab="tab-perks">Perks Exchange</button>
+        <button class="tab-btn" data-tab="tab-bidding">Buddy Bidding</button>
         <button class="tab-btn" data-tab="tab-schedule">Schedule & Announcements</button>
       </nav>
 
@@ -228,7 +244,7 @@
         <div class="stats-grid" style="grid-template-columns: repeat(2, 1fr);">
           <div class="stat-box">
             <label>Signatories</label>
-            <div class="stat-val"><span id="overviewSigText">0/18</span></div>
+            <div class="stat-val"><span id="overviewSigText">0/23</span></div>
           </div>
 
           <div class="stat-box">
@@ -284,7 +300,7 @@
         <section class="card">
           <div class="card-header">
             <h2>Tambay Hours Log</h2>
-            <span class="badge" id="tambayBadge">0 / 15 hrs</span>
+            <span class="badge" id="tambayBadge">0 / 24 hrs</span>
           </div>
           <p class="subtext">Generate a 6-character short code or display your QR code to an active resident member or RAComm officer.</p>
 
@@ -328,7 +344,7 @@
             <h2>GEOP Perks Exchange</h2>
             <div style="background: var(--surface-subtle); border: 1px solid var(--border-subtle); padding: 6px 14px; border-radius: var(--radius-sm); display: inline-block;">
               <small style="color: var(--text-muted); font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">Token Balance:</small>
-              <strong id="userCurrencyText" style="color: var(--brand-forest); font-size: 1.1rem; margin-left: 4px;">100</strong>
+              <strong id="userCurrencyText" style="color: var(--brand-forest); font-size: 1.1rem; margin-left: 4px;">100 AC</strong>
             </div>
           </div>
           <p class="subtext">Redeem flexible applicant perks using your earned tokens.</p>
@@ -345,6 +361,28 @@
               <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 14px;">Replace 1 signatory task requirement</p>
               <button class="btn btn-checkin" id="buyTaskSwapBtn">Redeem (50 Tokens)</button>
             </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- TAB 5: BUDDY BIDDING -->
+      <div id="tab-bidding" class="tab-content" style="display: none;">
+        <section class="card">
+          <div class="card-header">
+            <h2>Live Buddy Bidding</h2>
+            <div style="background: var(--surface-subtle); border: 1px solid var(--border-subtle); padding: 6px 14px; border-radius: var(--radius-sm); display: inline-block;">
+              <small style="color: var(--text-muted); font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">Your AC Balance:</small>
+              <strong id="biddingCurrencyText" style="color: var(--brand-forest); font-size: 1.1rem; margin-left: 4px;">100 AC</strong>
+            </div>
+          </div>
+          <p class="subtext">Bid your APPgrade Currency (AC) to join a Buddy Fam. The highest bidder at the end of the round wins. The starting fee may increase in subsequent rounds.</p>
+          
+          <div id="biddingStatusBanner" style="display: none; margin-bottom: 16px; padding: 12px; background: #ffebee; color: #c62828; border-radius: var(--radius-sm); font-weight: bold; text-align: center;">
+            Bidding is currently closed.
+          </div>
+
+          <div id="biddingFamiliesContainer" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; margin-top: 12px;">
+            <p class="subtext">Loading Buddy Families...</p>
           </div>
         </section>
       </div>
