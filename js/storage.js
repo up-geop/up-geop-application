@@ -229,6 +229,21 @@ export async function generateApplicantShortCode(sigId = null, type = 'TAMBAY') 
   return shortCode;
 }
 
+// Counts how many signatory tasks this person has personally verified/signed
+export async function getMemberSignatureCount(email) {
+  if (!supabase || !email) return 0;
+  const { count } = await supabase
+    .from('signatories')
+    .select('id', { count: 'exact', head: true })
+    .ilike('signed_by', email.trim())
+    .eq('completed', true);
+  return count || 0;
+}
+
+// Resident members may only personally sign this many signatory tasks total.
+// (Tambay hour verification is NOT subject to this cap.) RAComm officers are exempt.
+export const MEMBER_SIGNATORY_LIMIT = 4;
+
 // Universal All-in-One Code & QR Verification for Members
 export async function verifyUniversalCode(code, verifierEmail) {
   if (!supabase || !code || !verifierEmail) {
@@ -254,6 +269,19 @@ export async function verifyUniversalCode(code, verifierEmail) {
 
   // 1. Process Signatory Request
   if (profile.code_type === 'SIGNATORY' && profile.pending_sig_id) {
+    // Plain resident members (not RAComm officers) can only sign up to
+    // MEMBER_SIGNATORY_LIMIT tasks total, so applicants are pushed to meet
+    // different members instead of relying on the same one every time.
+    if (isMember && !isRAComm) {
+      const signedCount = await getMemberSignatureCount(verifierEmail);
+      if (signedCount >= MEMBER_SIGNATORY_LIMIT) {
+        return {
+          success: false,
+          message: `You've already signed ${MEMBER_SIGNATORY_LIMIT} signatory tasks — that's your limit. Ask a RAComm officer to verify this one instead.`
+        };
+      }
+    }
+
     const { error } = await supabase
       .from('signatories')
       .update({
