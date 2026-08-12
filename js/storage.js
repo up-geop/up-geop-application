@@ -208,7 +208,6 @@ export async function selectTaskForSignatory(taskId, selectedTask) {
   return !error;
 }
 
-// Universal Shortcode Generator (Handles both Tambay and Signatories)
 export async function generateApplicantShortCode(sigId = null, type = 'TAMBAY') {
   const userId = await getCurrentUserId();
   if (!supabase || !userId) return null;
@@ -229,7 +228,6 @@ export async function generateApplicantShortCode(sigId = null, type = 'TAMBAY') 
   return shortCode;
 }
 
-// Counts how many signatory tasks this person has personally verified/signed
 export async function getMemberSignatureCount(email) {
   if (!supabase || !email) return 0;
   const { count } = await supabase
@@ -240,11 +238,8 @@ export async function getMemberSignatureCount(email) {
   return count || 0;
 }
 
-// Resident members may only personally sign this many signatory tasks total.
-// (Tambay hour verification is NOT subject to this cap.) RAComm officers are exempt.
 export const MEMBER_SIGNATORY_LIMIT = 4;
 
-// Universal All-in-One Code & QR Verification for Members
 export async function verifyUniversalCode(code, verifierEmail) {
   if (!supabase || !code || !verifierEmail) {
     return { success: false, message: 'Invalid verification parameters.' };
@@ -267,11 +262,7 @@ export async function verifyUniversalCode(code, verifierEmail) {
     return { success: false, message: 'Invalid or expired verification code.' };
   }
 
-  // 1. Process Signatory Request
   if (profile.code_type === 'SIGNATORY' && profile.pending_sig_id) {
-    // Plain resident members (not RAComm officers) can only sign up to
-    // MEMBER_SIGNATORY_LIMIT tasks total, so applicants are pushed to meet
-    // different members instead of relying on the same one every time.
     if (isMember && !isRAComm) {
       const signedCount = await getMemberSignatureCount(verifierEmail);
       if (signedCount >= MEMBER_SIGNATORY_LIMIT) {
@@ -301,7 +292,6 @@ export async function verifyUniversalCode(code, verifierEmail) {
     };
   } 
   
-  // 2. Process Tambay Request
   const res = await validateApplicantTambay(profile.id, verifierEmail);
   await supabase.from('profiles').update({ temp_code: null }).eq('id', profile.id);
   return res;
@@ -627,7 +617,7 @@ export async function placeBid(famId, newBidAmount) {
 export async function adminUpdateBiddingState(isActive) {
   const { error } = await supabase.from('bidding_state').update({ is_active: isActive }).eq('id', 1);
   if (isActive === true) {
-    await supabase.from('bids').delete().neq('amount', -1); 
+    await supabase.from('bids').delete().gt('amount', -1); 
   }
   return !error;
 }
@@ -681,7 +671,8 @@ export async function adminResolveBidding() {
     await supabase.from('buddy_fams').update({ is_locked: true }).eq('id', f.id);
   }
   await supabase.from('bidding_state').update({ is_active: false }).eq('id', 1);
-  await supabase.from('bids').delete().neq('amount', -1); 
+  
+  await supabase.from('bids').delete().gt('amount', -1); 
 
   return true;
 }
