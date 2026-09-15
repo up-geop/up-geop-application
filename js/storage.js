@@ -676,3 +676,13 @@ export async function adminResolveBidding() {
 
   return true;
 }
+
+export async function updateSignatoryAnswer(sigId, fieldName, fieldValue) {
+  if (!supabase || !sigId || !fieldName) return false;
+  const { error } = await supabase
+    .from('signatories')
+    .update({ [fieldName]: fieldValue })
+    .eq('id', sigId);
+  return !error;
+}
+
