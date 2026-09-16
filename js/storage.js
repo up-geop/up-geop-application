@@ -270,12 +270,17 @@ export async function getApplicantFullDetails(applicantId) {
 
 export async function deleteApplicantProfile(applicantId) {
   if (!supabase || !applicantId) return false;
-  await supabase.from('signatories').delete().eq('user_id', applicantId);
-  await supabase.from('tambay_logs').delete().eq('user_id', applicantId);
-  await supabase.from('tambay_sessions').delete().eq('applicant_id', applicantId);
-  await supabase.from('events').delete().eq('user_id', applicantId);
-  const { error } = await supabase.from('profiles').delete().eq('id', applicantId);
-  return !error;
+
+  const { data, error } = await supabase.rpc('admin_delete_applicant', {
+    p_applicant_id: String(applicantId).trim()
+  });
+
+  if (error || !data?.success) {
+    console.error('Delete applicant error:', error || data?.message);
+    return false;
+  }
+
+  return true;
 }
 
 export async function adminAdjustTambayHours(applicantId, hours) {
