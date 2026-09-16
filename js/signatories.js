@@ -2,9 +2,10 @@ import {
   getSignatories,
   selectTaskForSignatory,
   generateApplicantShortCode,
-  updateSignatoryAnswer,
-  COMMITTEES_LIST
+  updateSignatoryAnswer
 } from './storage.js';
+
+import { COMMITTEES_LIST } from './config.js';
 
 export async function renderSignatoriesTab(container) {
   const signatories = await getSignatories();
