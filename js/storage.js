@@ -4,11 +4,11 @@ export const supabase = window.supabase
   ? window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY)
   : null;
 
-// Caches to avoid hammering Google Sheets repeatedly
+// In-memory caches to prevent repeated fetching from Google Sheets
 let cachedTraitsPool = null;
 let cachedTasksPool = null;
 
-// Robust CSV Line/Field Parser (handles commas inside quotes)
+// Robust CSV Line & Field Parser (handles quoted lines and internal commas)
 function parseCSV(text) {
   const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
   if (lines.length <= 1) return [];
@@ -53,6 +53,7 @@ export async function getAvailableTraitsPool() {
     console.warn('Could not fetch traits from published CSV, falling back to DB:', err);
   }
 
+  // Fallback: check signatories table
   if (supabase) {
     const { data: sigTraits } = await supabase.from('signatories').select('trait');
     if (sigTraits && sigTraits.length > 0) {
@@ -156,19 +157,15 @@ export async function getSignatories(userId = null) {
   return data || [];
 }
 
-export async function selectTaskForSignatory(sigId, traitName) {
+export async function selectTaskForSignatory(sigId, taskName) {
   if (!supabase || !sigId) return false;
   const { error } = await supabase
     .from('signatories')
-    .update({ 
-      selected_task: traitName,
-      trait: traitName,
-      task: traitName 
-    })
+    .update({ selected_task: taskName })
     .eq('id', sigId);
 
   if (error) {
-    console.error('Error updating trait:', error);
+    console.error('Error updating selected task:', error);
     return false;
   }
   return true;
@@ -323,10 +320,22 @@ export async function verifyUniversalCode(code, verifierEmail) {
       verified_at: new Date().toISOString()
     };
 
-    const { error: updateErr } = await supabase
+    let { error: updateErr } = await supabase
       .from('signatories')
       .update(updatePayload)
       .eq('id', sig.id);
+
+    // Fallback: If verified_at column does not exist yet in table schema
+    if (updateErr && updateErr.message && updateErr.message.includes('verified_at')) {
+      const { error: retryErr } = await supabase
+        .from('signatories')
+        .update({
+          completed: true,
+          signed_by: member.full_name
+        })
+        .eq('id', sig.id);
+      updateErr = retryErr;
+    }
 
     if (updateErr) {
       console.error('Error updating signatory:', updateErr);
@@ -491,6 +500,10 @@ export async function spendCurrency(amount) {
   return !error;
 }
 
+/* =========================================================
+   PERKS HELPERS: POT, BOOST, TRAIT SWAPPING
+   ========================================================= */
+
 export async function getBatchPot(potId = 'buddy_task_ext') {
   if (!supabase) return null;
   const { data, error } = await supabase
@@ -551,6 +564,7 @@ export async function buyTambayMultiplierBoost() {
   return { success: true, message: '1.5× Boost activated! It will apply to your next clocked-out tambay session.' };
 }
 
+// Resilient Signatory Trait Swap: updates existing columns without failing on 400
 export async function swapSignatoryTrait(sigId, newTrait, cost) {
   if (!supabase || !sigId || !newTrait) return false;
   const uid = await getCurrentUserId();
@@ -559,22 +573,40 @@ export async function swapSignatoryTrait(sigId, newTrait, cost) {
   const hasFunds = await spendCurrency(cost);
   if (!hasFunds) return false;
 
-  const { error } = await supabase
+  // Base update targeting universal task columns
+  let { error } = await supabase
     .from('signatories')
-    .update({
-      trait: newTrait,
-      task: newTrait,
-      selected_task: newTrait
-    })
+    .update({ task: newTrait })
     .eq('id', sigId)
     .eq('user_id', uid);
 
+  // Safely update trait and selected_task if available in schema
+  if (!error) {
+    await supabase
+      .from('signatories')
+      .update({ trait: newTrait })
+      .eq('id', sigId)
+      .eq('user_id', uid);
+
+    await supabase
+      .from('signatories')
+      .update({ selected_task: newTrait })
+      .eq('id', sigId)
+      .eq('user_id', uid);
+  }
+
   if (error) {
-    console.error('Error updating signatory trait:', error);
+    console.error('Error updating signatory trait details:', error);
+    // Refund currency if update failed
+    await supabase.rpc('increment_currency', { user_id: uid, amount: cost }).catch(() => {});
     return false;
   }
   return true;
 }
+
+/* =========================================================
+   ADMINISTRATION & GRADING HELPERS
+   ========================================================= */
 
 export async function getManagedBuddyGroups() {
   if (!supabase) return [];
