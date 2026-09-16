@@ -39,7 +39,8 @@ import {
   createBuddyTask,
   deleteBuddyTask,
   getApplicantBuddyTaskCompletions,
-  toggleBuddyTaskCompletion
+  toggleBuddyTaskCompletion,
+  updateOfficialEventDate
 } from './storage.js';
 
 import { renderSignatoriesTab } from './signatories.js';
@@ -96,6 +97,19 @@ function startTimer(timeIn) {
 
 function stopTimer() {
   if (timerInterval) clearInterval(timerInterval);
+}
+
+function updateSettingsButtons(mult, capEnabled) {
+  const btn1x = document.getElementById('set1xBtn');
+  const btn2x = document.getElementById('set2xBtn');
+  const btnEn = document.getElementById('enableCapBtn');
+  const btnDis = document.getElementById('disableCapBtn');
+
+  if (btn1x) btn1x.className = mult === 1.0 ? 'btn btn-checkin' : 'btn btn-secondary';
+  if (btn2x) btn2x.className = mult === 2.0 ? 'btn btn-checkin' : 'btn btn-secondary';
+  
+  if (btnEn) btnEn.className = capEnabled ? 'btn btn-checkin' : 'btn btn-secondary';
+  if (btnDis) btnDis.className = !capEnabled ? 'btn btn-checkin' : 'btn btn-secondary';
 }
 
 function computeEffectiveDeadline(rawIso, isPotUnlocked) {
@@ -460,6 +474,43 @@ async function renderBuddyGroupBoard() {
   `;
 }
 
+async function renderOfficerEventSchedules() {
+  const container = document.getElementById('racommEventScheduleManager');
+  if (!container) return;
+  
+  const [events, settingsRes] = await Promise.all([
+    getEvents(),
+    supabase.from('global_settings').select('key, value').ilike('key', 'event_date_%')
+  ]);
+
+  const savedDates = {};
+  if (settingsRes.data) {
+    settingsRes.data.forEach(s => savedDates[s.key] = s.value);
+  }
+
+  container.innerHTML = events.map(e => {
+    const savedIso = savedDates[`event_date_${e.id}`];
+    
+    // Format UTC time to local datetime-local format
+    let localDateStr = '';
+    if (savedIso) {
+      const d = new Date(savedIso);
+      d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+      localDateStr = d.toISOString().slice(0, 16);
+    }
+    
+    return `
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border-subtle); flex-wrap: wrap; gap: 8px;">
+        <strong style="color: var(--brand-forest); font-size: 0.95rem;">${e.name}</strong>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <input type="datetime-local" id="eventDate-${e.id}" value="${localDateStr}" style="padding: 4px 8px; font-size: 0.8rem;" />
+          <button class="btn btn-secondary save-event-date-btn" data-id="${e.id}" style="min-height: 28px; padding: 4px 10px; font-size: 0.75rem;">Save</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
 async function renderDashboard() {
   const [signatories, tambayHours, events, profile] = await Promise.all([
     getSignatories(),
@@ -574,7 +625,7 @@ async function openInspection(appId) {
   const p = details.profile;
 
   document.getElementById('inspectApplicantName').textContent = `${p.full_name} ("${p.nickname}")`;
-  document.getElementById('inspectApplicantEmail').textContent = `ID: ${p.id} | Balance: ${p.currency ?? 100} AC`;
+  document.getElementById('inspectApplicantEmail').textContent = `ID: ${p.id} | Balance: ${p.currency ?? 0} AC`;
 
   const groups = await getManagedBuddyGroups();
   const select = document.getElementById('inspectBuddyGroupSelect');
@@ -792,9 +843,13 @@ async function handleAuth() {
         const capText = document.getElementById('currentCapText');
         if (multText) multText.textContent = `${settings.multiplier}x`;
         if (capText) capText.textContent = settings.dailyCapEnabled ? 'Active' : 'Disabled';
+
+        updateSettingsButtons(settings.multiplier, settings.dailyCapEnabled);
+
         await renderRoster();
         await renderBuddyGroupBoard();
         await renderOfficerBuddyTasksManager();
+        await renderOfficerEventSchedules();
       } else {
         document.querySelectorAll('#racommTabNav .tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelector('[data-tab="member-hub-view"]')?.classList.add('active');
@@ -837,7 +892,7 @@ async function handleAuth() {
         }
 
         if (greeting) greeting.textContent = `Good day, ${profile.nickname || profile.full_name}!`;
-        const bal = profile.currency ?? 100;
+        const bal = profile.currency ?? 0;
         if (curr) curr.textContent = bal;
         if (currPot) currPot.textContent = bal;
         if (group) group.textContent = profile.buddy_group_name || 'Unassigned';
@@ -1061,7 +1116,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   /* Shop Handlers */
   document.getElementById('dynamicPotsContainer')?.addEventListener('click', async (e) => {
     if (e.target.classList.contains('chip-in-btn')) {
-      const taskId = e.target.dataset.taskId;
+      const taskId = e.target.taskId;
       const input = document.getElementById(`chipInAmt-${taskId}`);
       const amount = parseInt(input?.value, 10);
       if (!amount || amount <= 0) return;
@@ -1075,7 +1130,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (e.target.classList.contains('withdraw-btn')) {
-      const taskId = e.target.dataset.taskId;
+      const taskId = e.target.taskId;
       const input = document.getElementById(`withdrawAmt-${taskId}`);
       const amount = parseInt(input?.value, 10);
       if (!amount || amount <= 0) return;
@@ -1183,28 +1238,54 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('set1xBtn')?.addEventListener('click', async () => {
     if (await updateGlobalSettings('hourly_multiplier', '1.0')) {
       showToast('Multiplier set to 1.0x', 'info');
-      await handleAuth();
+      const settings = await getGlobalSettings();
+      updateSettingsButtons(settings.multiplier, settings.dailyCapEnabled);
     }
   });
 
   document.getElementById('set2xBtn')?.addEventListener('click', async () => {
     if (await updateGlobalSettings('hourly_multiplier', '2.0')) {
       showToast('Multiplier set to 2.0x', 'success');
-      await handleAuth();
+      const settings = await getGlobalSettings();
+      updateSettingsButtons(settings.multiplier, settings.dailyCapEnabled);
     }
   });
 
   document.getElementById('enableCapBtn')?.addEventListener('click', async () => {
     if (await updateGlobalSettings('daily_cap_enabled', 'true')) {
       showToast('Daily cap enabled', 'info');
-      await handleAuth();
+      const settings = await getGlobalSettings();
+      updateSettingsButtons(settings.multiplier, settings.dailyCapEnabled);
     }
   });
 
   document.getElementById('disableCapBtn')?.addEventListener('click', async () => {
     if (await updateGlobalSettings('daily_cap_enabled', 'false')) {
       showToast('Daily cap removed', 'info');
-      await handleAuth();
+      const settings = await getGlobalSettings();
+      updateSettingsButtons(settings.multiplier, settings.dailyCapEnabled);
+    }
+  });
+
+  /* Save Event Dates Handler */
+  document.getElementById('racommEventScheduleManager')?.addEventListener('click', async (e) => {
+    if (e.target.classList.contains('save-event-date-btn')) {
+      const eventId = e.target.dataset.id;
+      const input = document.getElementById(`eventDate-${eventId}`);
+      
+      if (!input.value) {
+        return showToast('Please select a valid date and time.', 'error');
+      }
+
+      const isoDate = new Date(input.value).toISOString();
+      const ok = await updateOfficialEventDate(eventId, isoDate);
+      
+      if (ok) {
+        showToast('Event schedule updated!', 'success');
+        await renderOfficerEventSchedules();
+      } else {
+        showToast('Failed to update event schedule.', 'error');
+      }
     }
   });
 
