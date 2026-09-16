@@ -1,6 +1,7 @@
 import { COMMITTEES_LIST } from './config.js';
 import {
   getSignatories,
+  getAllMembersList,
   selectTaskForSignatory,
   updateSignatoryAnswer,
   generateApplicantShortCode
@@ -14,11 +15,8 @@ function cleanTraitText(text) {
   let cleaned = text
     .replace(/\u00a0/g, ' ')
     .trim()
-    // Strip prefixes like "Find a/the/another member/person who/na/that"
     .replace(/^find\s+(an?|the|another|other)?\s*(member|person|someone)?\s*(who|na|that)?\s*/i, '')
-    // Strip standalone prefixes like "Another member who", "Other member", "Member who"
     .replace(/^(another|other)?\s*member\s*(who|na|that)?\s*/i, '')
-    // Strip standalone leading connectors
     .replace(/^(who|na|that)\s+/i, '')
     .trim();
 
@@ -28,7 +26,10 @@ function cleanTraitText(text) {
 
 export async function renderSignatoriesTab(container) {
   if (!container) return;
-  const signatories = await getSignatories();
+  const [signatories, membersList] = await Promise.all([
+    getSignatories(),
+    getAllMembersList()
+  ]);
 
   const total = signatories.length || 18;
   const completed = signatories.filter(s => s.completed).length;
@@ -86,20 +87,30 @@ export async function renderSignatoriesTab(container) {
                 ${comm.name} Committee
               </h2>
 
-              <!-- VP Endorsement Task -->
+              <!-- VP Endorsement Task with Photo and Pre-filled Name -->
               ${vpTask ? `
                 <div class="card" style="margin-bottom: 16px; border-color: ${vpTask.completed ? 'var(--brand-mint)' : 'var(--border-medium)'}; background: ${vpTask.completed ? 'var(--brand-mint-subtle)' : 'var(--surface)'};">
-                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                     <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">VP Endorsement</span>
                     <span class="badge" style="background: ${vpTask.completed ? 'var(--brand-mint)' : 'var(--surface-subtle)'}; color: ${vpTask.completed ? '#fff' : 'inherit'};">
                       ${vpTask.completed ? 'Completed' : (membersDone ? 'Unlocked' : 'Locked')}
                     </span>
                   </div>
-                  <strong style="display: block; font-size: 0.95rem; margin-bottom: 12px;">Official Endorsement by ${comm.vp}</strong>
+
+                  <div style="display: flex; gap: 14px; align-items: center; margin-bottom: 14px;">
+                    <img src="${comm.photo}" 
+                         alt="${comm.vp}" 
+                         onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(comm.vp)}&background=1b382b&color=fff';"
+                         style="width: 58px; height: 58px; border-radius: 50%; object-fit: cover; border: 2px solid var(--brand-forest); flex-shrink: 0;" />
+                    <div>
+                      <strong style="font-size: 1rem; color: var(--brand-forest); display: block;">${comm.vp}</strong>
+                      <small style="color: var(--text-muted);">${comm.vpTitle}</small>
+                      <div><small style="font-size: 0.75rem; color: var(--brand-clay-deep);">${comm.vpEmail}</small></div>
+                    </div>
+                  </div>
 
                   ${!vpTask.completed ? `
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 12px;">
-                      <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="member_name" placeholder="Member Name" value="${vpTask.member_name || ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
                       <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="nickname" placeholder="Nickname" value="${vpTask.nickname || ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
                       <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="favorite_spot" placeholder="Favorite Spot" value="${vpTask.favorite_spot || ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
                       <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="least_liked_sub" placeholder="Least Liked Sub" value="${vpTask.least_liked_sub || ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
@@ -108,12 +119,12 @@ export async function renderSignatoriesTab(container) {
                       ${membersDone ? 'Generate Signatory Code' : 'Complete Member Tasks to Unlock'}
                     </button>
                   ` : `
-                    <small style="color: var(--brand-forest); font-weight: 600;">Signed by ${vpTask.signed_by || comm.vp}</small>
+                    <small style="color: var(--brand-forest); font-weight: 600;">Officially endorsed by ${vpTask.signed_by || comm.vp}</small>
                   `}
                 </div>
               ` : ''}
 
-              <!-- Member Tasks -->
+              <!-- Member Tasks with Dropdown -->
               <div style="display: flex; flex-direction: column; gap: 12px;">
                 ${memberTasks.map((task, idx) => {
                   const rawTrait = task.trait_description || task.task || 'Committee Member';
@@ -128,7 +139,6 @@ export async function renderSignatoriesTab(container) {
                         </span>
                       </div>
 
-                      <!-- Pure Trait Display without Prefixes -->
                       <div style="margin-bottom: 10px;">
                         <strong style="display: block; font-size: 0.92rem; color: var(--brand-forest); margin-bottom: 4px;">
                           ${cleanedTrait}
@@ -140,7 +150,6 @@ export async function renderSignatoriesTab(container) {
                         ` : ''}
                       </div>
 
-                      <!-- Task Pool Selection Dropdown -->
                       ${task.task_pool && task.task_pool.length > 0 && !task.selected_task && !task.completed ? `
                         <div style="margin-bottom: 10px;">
                           <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Assign a Task:</label>
@@ -153,7 +162,16 @@ export async function renderSignatoriesTab(container) {
 
                       ${!task.completed ? `
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 10px;">
-                          <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="member_name" placeholder="Member Name" value="${task.member_name || ''}" style="font-size: 0.8rem; padding: 6px;" />
+                          <!-- Member Name Dropdown -->
+                          <select class="sig-input" data-sig-id="${task.id}" data-field="member_name" style="font-size: 0.8rem; padding: 6px;">
+                            <option value="">-- Select Member --</option>
+                            ${membersList.map(m => `
+                              <option value="${m.full_name}" ${task.member_name === m.full_name ? 'selected' : ''}>
+                                ${m.full_name}
+                              </option>
+                            `).join('')}
+                          </select>
+
                           <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="nickname" placeholder="Nickname" value="${task.nickname || ''}" style="font-size: 0.8rem; padding: 6px;" />
                           <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="favorite_spot" placeholder="Favorite Spot" value="${task.favorite_spot || ''}" style="font-size: 0.8rem; padding: 6px;" />
                           <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="least_liked_sub" placeholder="Least Liked Sub" value="${task.least_liked_sub || ''}" style="font-size: 0.8rem; padding: 6px;" />
