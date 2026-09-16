@@ -1465,20 +1465,36 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   document.getElementById('adminExportPdfBtn')?.addEventListener('click', async () => {
-    const details = await getApplicantFullDetails(inspectedApplicantId);
-    if (!details) return;
-    const p = details.profile;
+    // 1. Open the tab IMMEDIATELY before awaiting anything to bypass popup blockers
     const win = window.open('', '_blank');
+    if (!win) {
+      showToast('Popup blocked! Please allow popups for this site.', 'error');
+      return;
+    }
+    
+    win.document.write('<h3 style="font-family: sans-serif; color: #1b382b;">Loading report...</h3>');
+
+    // 2. Fetch the data
+    const details = await getApplicantFullDetails(inspectedApplicantId);
+    if (!details) {
+      win.close();
+      return;
+    }
+    
+    const p = details.profile;
+    
+    // 3. Overwrite the loading text with the real data
+    win.document.open();
     win.document.write(`
       <html>
         <head>
           <title>Applicant Report - ${p.full_name}</title>
           <style>
             body { font-family: sans-serif; padding: 24px; color: #2a2016; }
-            h2 { color: #1b382b; border-bottom: 2px solid #b5702f; padding-bottom: 6px; }
+            h2 { color: #C1272D; border-bottom: 2px solid #FBB03B; padding-bottom: 6px; }
             table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 0.85rem; }
-            th, td { border: 1px solid #d8c8a8; padding: 8px; text-align: left; }
-            th { background: #f3ecdd; }
+            th, td { border: 1px solid #DCD4C5; padding: 8px; text-align: left; }
+            th { background: #EBE5DA; }
           </style>
         </head>
         <body>
