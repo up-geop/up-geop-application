@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>UP GEOP - Applicant Progress Portal</title>
+  <title>UP GEOP - Applicants Portal</title>
   
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="geop.png" />
@@ -53,11 +53,11 @@
       <form id="onboardingForm" style="display: flex; flex-direction: column; gap: 14px; text-align: left;">
         <div>
           <label style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 4px;">Full Name</label>
-          <input type="text" id="onboardFullName" required style="width: 100%;" placeholder="e.g. Juan De La Cruz" />
+          <input type="text" id="onboardFullName" required style="width: 100%;" placeholder="e.g. Sandra de Buhangin" />
         </div>
         <div>
           <label style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 4px;">Preferred Nickname</label>
-          <input type="text" id="onboardNickname" required style="width: 100%;" placeholder="e.g. Juan" />
+          <input type="text" id="onboardNickname" required style="width: 100%;" placeholder="e.g. Sandy" />
         </div>
         <button type="submit" class="btn btn-checkin" style="margin-top: 8px;">Save Profile</button>
       </form>
@@ -77,7 +77,7 @@
       <div id="member-hub-view" class="tab-content active">
         <section class="card">
           <div class="card-header">
-            <h2>Member Verification Hub</h2>
+            <h2>Member Verification </h2>
             <span class="badge" style="background: var(--brand-forest); color: white;">Verifier</span>
           </div>
           <p class="subtext">Verify applicant tasks or record time-in and time-out logs.</p>
@@ -132,7 +132,7 @@
       <!-- RAComm: Settings & Global Policies -->
       <div id="racomm-settings" class="tab-content">
         <section class="card">
-          <h2>Global Policies</h2>
+          <h2>Global Settings</h2>
           <div style="display: flex; gap: 12px; margin: 12px 0 24px; flex-wrap: wrap;">
             <div class="card" style="flex: 1; min-width: 200px; margin: 0; padding: 14px;">
               <strong>Multiplier: <span id="currentMultiplierText">1.0x</span></strong>
@@ -166,7 +166,7 @@
         <button class="tab-btn active" data-tab="tab-overview">Overview</button>
         <button class="tab-btn" data-tab="tab-signatories">Signatories</button>
         <button class="tab-btn" data-tab="tab-tambay">Tambay & Events</button>
-        <button class="tab-btn" data-tab="tab-perks">Perks</button>
+        <button class="tab-btn" data-tab="tab-perks">Shop</button>
         <button class="tab-btn" data-tab="tab-schedule">Schedule</button>
       </nav>
 
@@ -192,7 +192,7 @@
 
         <section class="card">
           <div class="card-header">
-            <h2>Overall Progress</h2>
+            <h2>Your Grade</h2>
             <span id="progressBarLabel" class="badge">0%</span>
           </div>
           <div style="background: var(--surface-subtle); height: 16px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border-medium);">
@@ -225,7 +225,7 @@
             <h2>Tambay Hours</h2>
             <span class="badge" id="tambayBadge">0 / 10 hrs</span>
           </div>
-          <button id="showQrBtn" class="btn btn-checkin">Generate Validation Code</button>
+          <button id="showQrBtn" class="btn btn-checkin">Generate Code</button>
 
           <div id="qrDisplayContainer" style="display: none; text-align: center; margin-top: 16px; padding: 16px; background: var(--surface-subtle); border-radius: var(--radius-sm);">
             <div id="qrcodeCanvas" style="display: flex; flex-direction: column; align-items: center; margin-bottom: 12px;"></div>
@@ -285,7 +285,7 @@
 
       <section class="card">
         <div class="card-header">
-          <h2>When2Meet Grid</h2>
+          <h2>When2Meet</h2>
           <input type="date" id="when2meetStartDateInput" style="min-height: 36px; padding: 4px 8px;" />
         </div>
         <div class="table-responsive" style="max-height: 480px;">
@@ -308,7 +308,7 @@
         <p class="subtext">Enter applicant 6-character code.</p>
         <input type="text" id="manualCodeInput" maxlength="6" style="width: 100%; text-align: center; font-family: var(--font-mono); font-size: 1.4rem; font-weight: 700; letter-spacing: 4px; text-transform: uppercase; margin-bottom: 14px;" />
         <div style="display: flex; gap: 8px;">
-          <button id="submitManualCodeBtn" class="btn btn-checkin" style="flex: 1;">Validate</button>
+          <button id="submitManualCodeBtn" class="btn btn-checkin" style="flex: 1;">Enter</button>
           <button id="cancelManualCodeBtn" class="btn btn-secondary" style="flex: 1;">Cancel</button>
         </div>
       </div>
