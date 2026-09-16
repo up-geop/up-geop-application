@@ -1,4 +1,4 @@
-import { CONFIG } from './config.js?';
+import { CONFIG } from './config.js';
 import {
   supabase,
   getSignatories,
@@ -41,10 +41,11 @@ import {
   getApplicantBuddyTaskCompletions,
   toggleBuddyTaskCompletion,
   updateOfficialEventDate
-} from './storage.js?';
-import { renderSignatoriesTab } from './signatories.js?';
-import { getEvents, adminToggleEventAttendance, generateGoogleCalendarUrl } from './events.js?';
-import { signInWithGoogle, signOutUser, getCurrentUser, getUserProfileData, createApplicantProfile } from './auth.js?';
+} from './storage.js';
+
+import { renderSignatoriesTab } from './signatories.js';
+import { getEvents, adminToggleEventAttendance, generateGoogleCalendarUrl } from './events.js';
+import { signInWithGoogle, signOutUser, getCurrentUser, getUserProfileData, createApplicantProfile } from './auth.js';
 
 let currentUser = null;
 let timerInterval = null;
@@ -934,11 +935,19 @@ async function handleAuth() {
 document.addEventListener('DOMContentLoaded', async () => {
   await handleAuth();
 
+  // Hunt down and destroy any existing Service Workers to prevent caching
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').catch(err => console.error('SW Error:', err));
+    navigator.serviceWorker.getRegistrations().then(function(registrations) {
+      for (let registration of registrations) {
+        registration.unregister();
+      }
+    });
   }
 
-  if (supabase) {
+  // Strict Singleton check to ensure Realtime doesn't double-subscribe
+  if (supabase && !window.hasRealtimeSubscribed) {
+    window.hasRealtimeSubscribed = true;
+    
     supabase.channel('app-db-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async () => {
         await renderRoster();
@@ -1115,7 +1124,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   /* Shop Handlers */
   document.getElementById('dynamicPotsContainer')?.addEventListener('click', async (e) => {
     if (e.target.classList.contains('chip-in-btn')) {
-      const taskId = e.target.taskId;
+      const taskId = e.target.dataset.taskId;
       const input = document.getElementById(`chipInAmt-${taskId}`);
       const amount = parseInt(input?.value, 10);
       if (!amount || amount <= 0) return;
@@ -1129,7 +1138,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (e.target.classList.contains('withdraw-btn')) {
-      const taskId = e.target.taskId;
+      const taskId = e.target.dataset.taskId;
       const input = document.getElementById(`withdrawAmt-${taskId}`);
       const amount = parseInt(input?.value, 10);
       if (!amount || amount <= 0) return;
