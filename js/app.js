@@ -33,7 +33,7 @@ import {
 } from './storage.js';
 
 import { renderSignatoriesTab } from './signatories.js';
-import { getEvents, checkInToEvent, createEvent, generateGoogleCalendarUrl } from './events.js';
+import { getEvents, adminToggleEventAttendance, generateGoogleCalendarUrl } from './events.js';
 import { signInWithGoogle, signOutUser, getCurrentUser, getUserProfileData, createApplicantProfile } from './auth.js';
 
 let currentUser = null;
@@ -280,7 +280,7 @@ async function renderDashboard() {
   const attendedEvents = events.filter(e => e.attended).length;
 
   // Grade Breakdown (Total: 100%)
-  const eventPoints = attendedEvents * 5;                                    // Max 25%
+  const eventPoints = attendedEvents * 5;                                    // Max 25% (5% each)
   const sigPoints = Number((sigRatio * 15).toFixed(2));                      // Max 15%
   const tambayPoints = Number((tambayRatio * 5).toFixed(2));                 // Max 5%
   const interviewPoints = parseFloat(profile?.grade_interview) || 0;         // Max 15%
@@ -323,20 +323,22 @@ async function renderDashboard() {
   const sigContainer = document.getElementById('signatoryList');
   if (sigContainer) await renderSignatoriesTab(sigContainer);
 
+  // Official Events List (Read-only status for applicants)
   const eventList = document.getElementById('eventList');
   if (eventList) {
     eventList.innerHTML = events.map(evt => `
-      <li class="task-item" style="flex-wrap: wrap; gap: 8px;">
+      <li class="task-item" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; margin-bottom: 8px;">
         <div>
-          <strong>${evt.name}</strong>
-          <div><small style="color:var(--text-muted);">${evt.attended ? 'Status: Attended (+5.0%)' : 'Status: Pending (+0%)'}</small></div>
+          <strong style="color: var(--brand-forest); font-size: 0.95rem;">${evt.name}</strong>
+          <div style="margin-top: 2px;">
+            <small style="color: var(--text-muted);">Weight: 5.0% • Officer-verified</small>
+          </div>
         </div>
-        <div style="display:flex; align-items:center; gap:6px;">
-          <a href="${generateGoogleCalendarUrl(evt.name)}" target="_blank" class="btn btn-secondary" style="min-height:36px; padding:4px 8px; font-size:0.75rem;">📅 Google Calendar</a>
-          ${!evt.attended ? `
-            <input type="text" id="pass-${evt.id}" placeholder="Passcode" style="width:90px; min-height:36px; padding:4px 8px; font-size:0.8rem;" />
-            <button class="btn btn-checkin event-checkin-btn" data-id="${evt.id}" style="min-height:36px; padding:4px 10px; font-size:0.8rem;">Check In</button>
-          ` : '<span class="badge" style="background:var(--brand-mint); color:white;">Attended (5%)</span>'}
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <a href="${generateGoogleCalendarUrl(evt.name)}" target="_blank" class="btn btn-secondary" style="min-height: 32px; padding: 4px 8px; font-size: 0.75rem;">📅 Add to Calendar</a>
+          <span class="badge" style="background: ${evt.attended ? 'var(--brand-mint)' : 'var(--surface-subtle)'}; color: ${evt.attended ? '#ffffff' : 'inherit'}; font-weight: 600;">
+            ${evt.attended ? 'Attended (+5%)' : 'Pending'}
+          </span>
         </div>
       </li>
     `).join('');
@@ -369,10 +371,14 @@ async function renderRoster() {
 async function openInspection(appId) {
   inspectedApplicantId = appId;
   const modal = document.getElementById('adminInspectionModal');
-  const details = await getApplicantFullDetails(appId);
-  if (!details || !modal) return;
+  const [details, events] = await Promise.all([
+    getApplicantFullDetails(appId),
+    getEvents(appId)
+  ]);
 
+  if (!details || !modal) return;
   const p = details.profile;
+
   document.getElementById('inspectApplicantName').textContent = `${p.full_name} ("${p.nickname}")`;
   document.getElementById('inspectApplicantEmail').textContent = `ID: ${p.id} | Balance: ${p.currency} AC`;
 
@@ -385,14 +391,51 @@ async function openInspection(appId) {
     `;
   }
 
-  // Populate or inject officer manual evaluation inputs
+  // 1. Official Events Attendance Box (RAComm Officer Check-off)
+  let eventBox = document.getElementById('inspectEventsContainer');
+  if (!eventBox) {
+    eventBox = document.createElement('div');
+    eventBox.id = 'inspectEventsContainer';
+    eventBox.style = 'margin: 14px 0; padding: 12px; background: var(--surface-subtle); border-radius: 6px;';
+    const sigParent = document.getElementById('inspectSignatoriesList')?.parentElement;
+    if (sigParent) sigParent.parentElement.insertBefore(eventBox, sigParent);
+  }
+
+  eventBox.innerHTML = `
+    <h4 style="margin: 0 0 8px 0; color: var(--brand-forest); font-size: 0.9rem;">Official Events Attendance (5% each)</h4>
+    <div style="display: flex; flex-direction: column; gap: 6px; font-size: 0.82rem;">
+      ${events.map(evt => `
+        <label style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #fff; border-radius: 4px; border: 1px solid var(--border-subtle); cursor: pointer;">
+          <span>${evt.name}</span>
+          <input type="checkbox" class="admin-event-check" data-event-id="${evt.id}" ${evt.attended ? 'checked' : ''} />
+        </label>
+      `).join('')}
+    </div>
+  `;
+
+  eventBox.querySelectorAll('.admin-event-check').forEach(chk => {
+    chk.addEventListener('change', async (e) => {
+      const eventId = e.target.dataset.eventId;
+      const checked = e.target.checked;
+      const success = await adminToggleEventAttendance(inspectedApplicantId, eventId, checked, currentUser.email);
+      if (success) {
+        showToast(`Attendance ${checked ? 'credited (+5%)' : 'removed'}.`, 'success');
+        await renderRoster();
+      } else {
+        showToast('Failed to update event attendance. Check permissions.', 'error');
+        e.target.checked = !checked;
+      }
+    });
+  });
+
+  // 2. Evaluation Scores (Manual Grade Inputs)
   let gradeBox = document.getElementById('inspectGradesContainer');
   if (!gradeBox) {
     gradeBox = document.createElement('div');
     gradeBox.id = 'inspectGradesContainer';
     gradeBox.style = 'margin: 14px 0; padding: 12px; background: var(--surface-subtle); border-radius: 6px;';
-    const insertBeforeElem = document.getElementById('inspectSignatoriesList')?.parentElement;
-    if (insertBeforeElem) insertBeforeElem.parentElement.insertBefore(gradeBox, insertBeforeElem);
+    const sigParent = document.getElementById('inspectSignatoriesList')?.parentElement;
+    if (sigParent) sigParent.parentElement.insertBefore(gradeBox, sigParent);
   }
 
   gradeBox.innerHTML = `
@@ -431,6 +474,7 @@ async function openInspection(appId) {
     }
   });
 
+  // 3. Signatories Checkboxes
   const sigList = document.getElementById('inspectSignatoriesList');
   if (sigList) {
     sigList.innerHTML = (details.signatories || []).map(s => `
@@ -441,6 +485,7 @@ async function openInspection(appId) {
     `).join('');
   }
 
+  // 4. Tambay Logs
   const logList = document.getElementById('inspectTambayLogsList');
   if (logList) {
     logList.innerHTML = (details.tambayLogs || []).map(l => `
@@ -596,6 +641,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         showToast('Signatory matrix updated.', 'info');
         await renderDashboard();
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'event_attendees' }, async () => {
+        showToast('Event attendance updated.', 'info');
+        await renderDashboard();
+        await renderRoster();
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, async () => {
         showToast('New announcement posted.', 'info');
         await renderAnnouncementsBoard();
@@ -607,7 +657,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       .subscribe();
   }
 
-  // Clipboard Handler
+  // Clipboard Copy Handler
   document.addEventListener('click', async (e) => {
     const btn = e.target.closest('.copy-btn');
     if (!btn) return;
@@ -631,7 +681,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => { btn.textContent = orig; }, 1400);
   });
 
-  // Header Nav Tab Delegation
+  // Tab Delegation
   document.querySelectorAll('#racommTabNav .tab-btn, #applicantTabNav .tab-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const tabId = btn.dataset.tab;
@@ -674,7 +724,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // Manual Universal Code Verification Modal
+  // Manual Code Verification Modal
   const valModal = document.getElementById('manualCodeModal');
   document.getElementById('manualValidateBtn')?.addEventListener('click', () => {
     if (valModal) {
@@ -701,7 +751,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await handleAuth();
   });
 
-  // Tambay QR Trigger
+  // Tambay QR Validation
   document.getElementById('showQrBtn')?.addEventListener('click', async () => {
     const container = document.getElementById('qrDisplayContainer');
     const canvas = document.getElementById('qrcodeCanvas');
@@ -754,20 +804,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Events Attendance Passcode
-  document.getElementById('eventList')?.addEventListener('click', async (e) => {
-    if (e.target.classList.contains('event-checkin-btn')) {
-      const id = e.target.dataset.id;
-      const inp = document.getElementById(`pass-${id}`);
-      if (inp && await checkInToEvent(id, inp.value)) {
-        showToast('Attendance recorded! +5.0% added to overall grade.', 'success');
-        await renderDashboard();
-      } else {
-        showToast('Invalid event passcode.', 'error');
-      }
-    }
-  });
-
   // Global Settings Controls
   document.getElementById('set1xBtn')?.addEventListener('click', async () => {
     if (await updateGlobalSettings('hourly_multiplier', '1.0')) {
@@ -797,18 +833,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  document.getElementById('addEventBtn')?.addEventListener('click', async () => {
-    const nameIn = document.getElementById('adminEventNameInput');
-    const passIn = document.getElementById('adminEventPasskeyInput');
-    if (nameIn && passIn && await createEvent(nameIn.value.trim(), passIn.value.trim())) {
-      nameIn.value = '';
-      passIn.value = '';
-      showToast('Event created successfully.', 'success');
-      await handleAuth();
-    }
-  });
-
-  // Buddy Groups Board Controls
+  // Buddy Groups Controls
   document.getElementById('refreshBuddyGroupsBtn')?.addEventListener('click', async () => {
     await renderBuddyGroupBoard();
     showToast('Buddy groups refreshed.', 'info');
@@ -894,7 +919,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Availability / When2Meet
+  // When2Meet
   document.getElementById('when2meetStartDateInput')?.addEventListener('change', async (e) => {
     if (e.target.value) {
       currentMonday = getMonday(new Date(e.target.value));
