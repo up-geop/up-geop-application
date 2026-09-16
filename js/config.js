@@ -12,8 +12,9 @@ export const CONFIG = {
     BUDDY_TASKS: 0.10    // 10%
   },
   SHEETS: {
-    // Direct CORS-friendly Google Visualization CSV endpoints using Sheet ID: 1FOLXlBFMwV9gv2GcTmMZqfOrjU8GJNFwgwgV4a7ZBnc
-    TRAITS_CSV_URL: 'https://docs.google.com/spreadsheets/d/1FOLXlBFMwV9gv2GcTmMZqfOrjU8GJNFwgwgV4a7ZBnc/gviz/tq?tqx=out:csv&sheet=Traits_Pool',
+    // Explicitly select Column B from Traits_Pool to extract trait descriptions
+    TRAITS_CSV_URL: 'https://docs.google.com/spreadsheets/d/1FOLXlBFMwV9gv2GcTmMZqfOrjU8GJNFwgwgV4a7ZBnc/gviz/tq?tqx=out:csv&sheet=Traits_Pool&tq=select%20B',
+    // Tasks_Pool endpoint
     TASKS_CSV_URL: 'https://docs.google.com/spreadsheets/d/1FOLXlBFMwV9gv2GcTmMZqfOrjU8GJNFwgwgV4a7ZBnc/gviz/tq?tqx=out:csv&sheet=Tasks_Pool'
   }
 };
