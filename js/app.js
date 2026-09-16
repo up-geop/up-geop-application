@@ -135,28 +135,38 @@ async function renderWhen2Meet() {
 
   const allSlots = await getAvailabilitySlots();
   const times = ['07:00','08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00','23:00'];
-  const map = {};
-  const userSlots = new Set();
+  
+  const countMap = {};
+  const mySlots = new Set();
 
   allSlots.forEach(s => {
-    if (!map[s.time_slot]) map[s.time_slot] = [];
-    map[s.time_slot].push(s.user_name || 'User');
-    if (s.user_id === currentUser.id) userSlots.add(s.time_slot);
+    if (!countMap[s.time_slot]) countMap[s.time_slot] = [];
+    countMap[s.time_slot].push(s.user_name || 'User');
+    if (s.user_id === currentUser.id) {
+      mySlots.add(s.time_slot);
+    }
   });
 
   tbody.innerHTML = times.map(time => {
     let row = `<tr><td style="font-weight:600; background:var(--surface-subtle);">${time}</td>`;
     dates.forEach(d => {
       const key = `${formatDate(d)}-${time}`;
-      const people = map[key] || [];
+      const people = countMap[key] || [];
       const count = people.length;
-      const isMine = userSlots.has(key);
-      const intensity = Math.min(count * 25, 100);
-      const bg = count > 0 ? `hsl(123, 45%, ${85 - (intensity * 0.4)}%)` : 'transparent';
+      const isMine = mySlots.has(key);
+
+      const bg = count > 0 ? `rgba(46, 125, 90, ${Math.min(0.2 + count * 0.2, 0.85)})` : 'transparent';
+      const textColor = count >= 3 ? '#ffffff' : 'inherit';
 
       row += `
-        <td class="w2m-cell" data-slot="${key}" data-mine="${isMine}" style="background-color: ${bg}; cursor:pointer; text-align:center; padding:4px;" title="${people.join(', ')}">
-          <small style="font-weight:${isMine ? '700' : 'normal'}; font-size:0.75rem;">${count > 0 ? `${count} free` : ''}</small>
+        <td class="w2m-cell" 
+            data-slot="${key}" 
+            data-mine="${isMine ? 'true' : 'false'}" 
+            style="background-color: ${bg}; color: ${textColor}; cursor: pointer; text-align: center; padding: 6px; border: ${isMine ? '2px solid var(--brand-forest)' : '1px solid var(--border-subtle)'};" 
+            title="${people.length > 0 ? people.join(', ') : 'No one available'}">
+          <div style="font-size: 0.75rem; font-weight: ${isMine ? '700' : '500'};">
+            ${count > 0 ? `${count} free` : '-'}
+          </div>
         </td>
       `;
     });
@@ -279,14 +289,13 @@ async function renderDashboard() {
   const tambayRatio = Math.min(tambayHours / CONFIG.TARGET_TAMBAY_HOURS, 1);
   const attendedEvents = events.filter(e => e.attended).length;
 
-  // Grade Breakdown (100% total)
-  const eventPoints = attendedEvents * 5;                                    // Max 25% (5% each)
-  const sigPoints = Number((sigRatio * 15).toFixed(2));                      // Max 15%
-  const tambayPoints = Number((tambayRatio * 5).toFixed(2));                 // Max 5%
-  const interviewPoints = parseFloat(profile?.grade_interview) || 0;         // Max 15%
-  const ogtPoints = parseFloat(profile?.grade_ogt) || 0;                     // Max 20%
-  const constiPoints = parseFloat(profile?.grade_consti_quiz) || 0;          // Max 10%
-  const buddyTaskPoints = parseFloat(profile?.grade_buddy_tasks) || 0;       // Max 10%
+  const eventPoints = attendedEvents * 5;
+  const sigPoints = Number((sigRatio * 15).toFixed(2));
+  const tambayPoints = Number((tambayRatio * 5).toFixed(2));
+  const interviewPoints = parseFloat(profile?.grade_interview) || 0;
+  const ogtPoints = parseFloat(profile?.grade_ogt) || 0;
+  const constiPoints = parseFloat(profile?.grade_consti_quiz) || 0;
+  const buddyTaskPoints = parseFloat(profile?.grade_buddy_tasks) || 0;
 
   const totalPercent = Math.min(
     100,
@@ -390,11 +399,9 @@ async function openInspection(appId) {
     `;
   }
 
-  // Retrieve responsive wrapper
   const panelsWrapper = document.getElementById('inspectPanelsWrapper');
   if (panelsWrapper) {
     panelsWrapper.innerHTML = `
-      <!-- Official Events Attendance Block -->
       <div style="padding: 12px; background: var(--surface-subtle); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); width: 100%;">
         <h4 style="margin: 0 0 8px 0; color: var(--brand-forest); font-size: 0.88rem;">Official Events Attendance (5% each)</h4>
         <div style="display: flex; flex-direction: column; gap: 6px; font-size: 0.82rem;">
@@ -407,7 +414,6 @@ async function openInspection(appId) {
         </div>
       </div>
 
-      <!-- Evaluation Scores Block -->
       <div style="padding: 12px; background: var(--surface-subtle); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); width: 100%;">
         <h4 style="margin: 0 0 8px 0; color: var(--brand-forest); font-size: 0.88rem;">Evaluation Scores (Manual)</h4>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.8rem;">
@@ -434,7 +440,6 @@ async function openInspection(appId) {
       </div>
     `;
 
-    // Checkbox Attendance Handler
     panelsWrapper.querySelectorAll('.admin-event-check').forEach(chk => {
       chk.addEventListener('change', async (e) => {
         const eventId = e.target.dataset.eventId;
@@ -450,7 +455,6 @@ async function openInspection(appId) {
       });
     });
 
-    // Save Scores Handler
     document.getElementById('saveManualGradesBtn')?.addEventListener('click', async () => {
       const grades = {
         interview: document.getElementById('gradeInterviewInput').value,
@@ -467,7 +471,6 @@ async function openInspection(appId) {
     });
   }
 
-  // Signatories Checkboxes
   const sigList = document.getElementById('inspectSignatoriesList');
   if (sigList) {
     sigList.innerHTML = (details.signatories || []).map(s => `
@@ -478,7 +481,6 @@ async function openInspection(appId) {
     `).join('');
   }
 
-  // Tambay Logs
   const logList = document.getElementById('inspectTambayLogsList');
   if (logList) {
     logList.innerHTML = (details.tambayLogs || []).map(l => `
@@ -619,7 +621,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     navigator.serviceWorker.register('./sw.js').catch(err => console.error('SW Error:', err));
   }
 
-  // Realtime Subscriptions
   if (supabase) {
     supabase.channel('app-db-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async () => {
@@ -643,6 +644,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         showToast('New announcement posted.', 'info');
         await renderAnnouncementsBoard();
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'availability_slots' }, async () => {
+        await renderWhen2Meet();
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tambay_sessions' }, async () => {
         await renderDashboard();
         await renderRoster();
@@ -650,7 +654,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       .subscribe();
   }
 
-  // Clipboard Copy Handler
   document.addEventListener('click', async (e) => {
     const btn = e.target.closest('.copy-btn');
     if (!btn) return;
@@ -674,7 +677,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => { btn.textContent = orig; }, 1400);
   });
 
-  // Tab Delegation
   document.querySelectorAll('#racommTabNav .tab-btn, #applicantTabNav .tab-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const tabId = btn.dataset.tab;
@@ -717,7 +719,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // Manual Code Verification Modal
   const valModal = document.getElementById('manualCodeModal');
   document.getElementById('manualValidateBtn')?.addEventListener('click', () => {
     if (valModal) {
@@ -744,7 +745,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     await handleAuth();
   });
 
-  // Tambay QR Validation
   document.getElementById('showQrBtn')?.addEventListener('click', async () => {
     const container = document.getElementById('qrDisplayContainer');
     const canvas = document.getElementById('qrcodeCanvas');
@@ -778,7 +778,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (container) container.style.display = 'none';
   });
 
-  // Perks
   document.getElementById('buyDeadlineBtn')?.addEventListener('click', async () => {
     if (await spendCurrency(30)) {
       showToast('Redeemed +2 days deadline extension.', 'success');
@@ -797,7 +796,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Global Settings Controls
   document.getElementById('set1xBtn')?.addEventListener('click', async () => {
     if (await updateGlobalSettings('hourly_multiplier', '1.0')) {
       showToast('Multiplier set to 1.0x', 'info');
@@ -826,7 +824,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Buddy Groups Controls
   document.getElementById('refreshBuddyGroupsBtn')?.addEventListener('click', async () => {
     await renderBuddyGroupBoard();
     showToast('Buddy groups refreshed.', 'info');
@@ -887,7 +884,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Announcements
   document.getElementById('postAnnouncementBtn')?.addEventListener('click', async () => {
     const titleIn = document.getElementById('announcementTitleInput');
     const contentIn = document.getElementById('announcementContentInput');
@@ -912,7 +908,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // When2Meet
   document.getElementById('when2meetStartDateInput')?.addEventListener('change', async (e) => {
     if (e.target.value) {
       currentMonday = getMonday(new Date(e.target.value));
@@ -923,14 +918,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('availabilityGridTbody')?.addEventListener('click', async (e) => {
     const cell = e.target.closest('.w2m-cell');
     if (!cell || !currentUser) return;
+
     const slot = cell.dataset.slot;
     const isMine = cell.dataset.mine === 'true';
-    const name = currentUser.email.split('@')[0];
-    await toggleUserAvailabilitySlot(currentUser.id, name, slot, isMine);
+
+    const profile = await getUserProfileData(currentUser.id);
+    const displayName = profile?.nickname || profile?.full_name || currentUser.email.split('@')[0];
+
+    const ok = await toggleUserAvailabilitySlot(currentUser.id, displayName, slot, isMine);
+    if (!ok) {
+      showToast('Could not update slot. Please check your connection.', 'error');
+    }
     await renderWhen2Meet();
   });
 
-  // Roster Search & Inspection
   document.getElementById('searchApplicantInput')?.addEventListener('input', (e) => {
     const term = e.target.value.toLowerCase().trim();
     document.querySelectorAll('#applicantRosterTbody tr').forEach(row => {
@@ -1028,7 +1029,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     win.document.close();
   });
 
-  // Onboarding Submission
   document.getElementById('onboardingForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = document.getElementById('onboardFullName')?.value.trim();
