@@ -34,6 +34,13 @@ export async function renderSignatoriesTab(container) {
   const total = signatories.length || 18;
   const completed = signatories.filter(s => s.completed).length;
 
+  // Track tasks that the applicant has ALREADY completed so they are stripped from pools
+  const completedTasksSet = new Set(
+    signatories
+      .filter(s => s.completed && s.selected_task)
+      .map(s => s.selected_task.trim())
+  );
+
   const categories = [
     { label: `All (${total})`, value: 'ALL' },
     { label: 'Academics', value: 'Academics' },
@@ -62,7 +69,7 @@ export async function renderSignatoriesTab(container) {
         </small>
       </div>
 
-      <!-- Committee Filter Pills -->
+      <!-- Committee Filter Bar -->
       <div id="committeeFilterBar" style="display: flex; gap: 8px; overflow-x: auto; padding-bottom: 12px; margin-bottom: 20px;">
         ${categories.map(cat => `
           <button type="button" 
@@ -87,7 +94,7 @@ export async function renderSignatoriesTab(container) {
                 ${comm.name} Committee
               </h2>
 
-              <!-- VP Endorsement Task with Photo and Pre-filled Name -->
+              <!-- VP Endorsement Task -->
               ${vpTask ? `
                 <div class="card" style="margin-bottom: 16px; border-color: ${vpTask.completed ? 'var(--brand-mint)' : 'var(--border-medium)'}; background: ${vpTask.completed ? 'var(--brand-mint-subtle)' : 'var(--surface)'};">
                   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -124,11 +131,17 @@ export async function renderSignatoriesTab(container) {
                 </div>
               ` : ''}
 
-              <!-- Member Tasks with Dropdown -->
+              <!-- Member Tasks -->
               <div style="display: flex; flex-direction: column; gap: 12px;">
                 ${memberTasks.map((task, idx) => {
                   const rawTrait = task.trait_description || task.task || 'Committee Member';
                   const cleanedTrait = cleanTraitText(rawTrait);
+
+                  // Available tasks in this pool, excluding tasks already completed in other cards
+                  const pool = (task.task_pool || []).filter(t => {
+                    if (task.selected_task && t === task.selected_task) return true; // keep currently selected task visible
+                    return !completedTasksSet.has(t.trim()); // exclude completed ones
+                  });
 
                   return `
                     <div class="card" style="margin: 0; border-color: ${task.completed ? 'var(--brand-mint)' : 'var(--border-subtle)'}; background: ${task.completed ? 'var(--brand-mint-subtle)' : 'var(--surface)'};">
@@ -143,26 +156,37 @@ export async function renderSignatoriesTab(container) {
                         <strong style="display: block; font-size: 0.92rem; color: var(--brand-forest); margin-bottom: 4px;">
                           ${cleanedTrait}
                         </strong>
-                        ${task.selected_task ? `
-                          <div style="font-size: 0.82rem; color: var(--text-muted); background: var(--surface-subtle); padding: 6px 10px; border-radius: 4px; margin-top: 4px;">
-                            <strong>Selected Task:</strong> ${task.selected_task}
-                          </div>
-                        ` : ''}
                       </div>
 
-                      ${task.task_pool && task.task_pool.length > 0 && !task.selected_task && !task.completed ? `
+                      <!-- Re-selectable Task Pool Dropdown (Won't permanently lock on accidental click) -->
+                      ${!task.completed && pool.length > 0 ? `
                         <div style="margin-bottom: 10px;">
-                          <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Assign a Task:</label>
+                          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                            <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted);">
+                              ${task.selected_task ? 'Selected Task (Click to change):' : 'Assign a Task:'}
+                            </label>
+                            ${task.selected_task ? `
+                              <button type="button" class="clear-task-btn" data-sig-id="${task.id}" style="background: none; border: none; color: var(--brand-clay-deep); font-size: 0.75rem; cursor: pointer; text-decoration: underline;">
+                                Reset
+                              </button>
+                            ` : ''}
+                          </div>
                           <select class="sig-task-select" data-sig-id="${task.id}" style="width: 100%; font-size: 0.82rem; padding: 6px;">
                             <option value="">-- Choose a task from pool --</option>
-                            ${task.task_pool.map(t => `<option value="${t}">${t}</option>`).join('')}
+                            ${pool.map(t => `
+                              <option value="${t}" ${task.selected_task === t ? 'selected' : ''}>${t}</option>
+                            `).join('')}
                           </select>
                         </div>
-                      ` : ''}
+                      ` : (task.completed ? `
+                        <div style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 10px;">
+                          <strong>Completed Task:</strong> ${task.selected_task || task.task}
+                        </div>
+                      ` : '')}
 
                       ${!task.completed ? `
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 10px;">
-                          <!-- Member Name Dropdown -->
+                          <!-- Member Name Selection -->
                           <select class="sig-input" data-sig-id="${task.id}" data-field="member_name" style="font-size: 0.8rem; padding: 6px;">
                             <option value="">-- Select Member --</option>
                             ${membersList.map(m => `
@@ -195,6 +219,7 @@ export async function renderSignatoriesTab(container) {
 
   filterCommitteeCards(activeCategory);
 
+  // Committee Filter Navigation
   const filterBar = container.querySelector('#committeeFilterBar');
   if (filterBar) {
     filterBar.addEventListener('click', (e) => {
@@ -225,18 +250,32 @@ export async function renderSignatoriesTab(container) {
     });
   }
 
+  // Task Selection & Re-selection
   container.querySelectorAll('.sig-task-select').forEach(select => {
     select.addEventListener('change', async (e) => {
       const val = e.target.value;
       const sigId = e.target.dataset.sigId;
-      if (val && sigId) {
-        await selectTaskForSignatory(sigId, val);
-        showToast('Task assigned!', 'info');
+      if (sigId) {
+        await selectTaskForSignatory(sigId, val || null);
+        showToast(val ? 'Task selected!' : 'Task reset.', 'info');
         await renderSignatoriesTab(container);
       }
     });
   });
 
+  // Reset Button to clear accidental selection back to placeholder
+  container.querySelectorAll('.clear-task-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const sigId = e.target.dataset.sigId;
+      if (sigId) {
+        await selectTaskForSignatory(sigId, null);
+        showToast('Task selection cleared.', 'info');
+        await renderSignatoriesTab(container);
+      }
+    });
+  });
+
+  // Inputs Change Handler
   container.querySelectorAll('.sig-input').forEach(inp => {
     inp.addEventListener('change', async (e) => {
       const sigId = e.target.dataset.sigId;
@@ -248,6 +287,7 @@ export async function renderSignatoriesTab(container) {
     });
   });
 
+  // Generate Signatory Code Button Handler
   container.querySelectorAll('.trigger-sig-code-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const sigId = e.target.dataset.sigId;
