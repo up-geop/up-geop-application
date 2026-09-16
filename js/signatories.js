@@ -1,4 +1,4 @@
-import { COMMITTEES_LIST } from './config.js';
+import { COMMITTEES_LIST, PES_LIST } from './config.js';
 import {
   getSignatories,
   getAllMembersList,
@@ -31,10 +31,16 @@ export async function renderSignatoriesTab(container) {
     getAllMembersList()
   ]);
 
-  const total = signatories.length || 18;
+  const total = signatories.length || 21;
   const completed = signatories.filter(s => s.completed).length;
 
-  // Track tasks that the applicant has ALREADY completed so they are stripped from pools
+  const pesTasks = signatories.filter(s => 
+    s.role === 'PES' || s.type === 'PES' || (s.committee_name || '').toUpperCase() === 'PES'
+  );
+  const committeeTasks = signatories.filter(s => !pesTasks.includes(s));
+
+  const allCommitteesCompleted = committeeTasks.length > 0 && committeeTasks.every(s => s.completed);
+
   const completedTasksSet = new Set(
     signatories
       .filter(s => s.completed && s.selected_task)
@@ -42,7 +48,7 @@ export async function renderSignatoriesTab(container) {
   );
 
   const categories = [
-    { label: `All (${total})`, value: 'ALL' },
+    { label: `All (${committeeTasks.length})`, value: 'ALL' },
     { label: 'Academics', value: 'Academics' },
     { label: 'Publicity', value: 'Publicity' },
     { label: 'RAComm', value: 'RAComm' },
@@ -56,11 +62,70 @@ export async function renderSignatoriesTab(container) {
       <div class="card-header">
         <div>
           <h2>Signatories Matrix</h2>
-          <p class="subtext">Fulfill member tasks and receive official VP endorsements.</p>
+          <p class="subtext">Fulfill member tasks, obtain VP endorsements, and gain executive PES approval.</p>
         </div>
         <span class="badge" style="background: var(--brand-forest); color: white; font-weight: 700;">
           ${completed} / ${total} Signed
         </span>
+      </div>
+
+      <!-- PES EXECUTIVE APPOINTMENTS (PINNED TO TOP) -->
+      <div class="card" style="margin: 0 0 24px 0; border: 2px solid var(--brand-clay); background: var(--surface-subtle);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <div>
+            <h3 style="font-family: var(--font-display); color: var(--brand-clay-deep); margin: 0;">
+              Executive Clearance (PES)
+            </h3>
+            <small style="color: var(--text-muted);">President • Executive Vice President • Secretary-General</small>
+          </div>
+          <span class="badge" style="background: ${allCommitteesCompleted ? 'var(--brand-mint)' : '#b33a2b'}; color: #fff;">
+            ${allCommitteesCompleted ? 'Unlocked' : 'Locked (Finish All Committee Tasks)'}
+          </span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+          ${PES_LIST.map(pes => {
+            const task = pesTasks.find(s => 
+              (s.member_name || '').toLowerCase() === pes.fullName.toLowerCase() ||
+              (s.task || '').toLowerCase() === pes.title.toLowerCase()
+            ) || { id: null, completed: false, nickname: '', favorite_spot: '', least_liked_sub: '', signed_by: null };
+
+            return `
+              <div class="card" style="margin: 0; background: #ffffff; border-color: ${task.completed ? 'var(--brand-mint)' : 'var(--border-subtle)'};">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">${pes.title}</span>
+                  <span class="badge" style="background: ${task.completed ? 'var(--brand-mint)' : 'var(--surface-subtle)'}; color: ${task.completed ? '#fff' : 'inherit'};">
+                    ${task.completed ? 'Completed' : (allCommitteesCompleted ? 'Unlocked' : 'Locked')}
+                  </span>
+                </div>
+
+                <div style="display: flex; gap: 14px; align-items: center; margin-bottom: 12px;">
+                  <img src="${pes.photo}" 
+                       alt="${pes.fullName}" 
+                       onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(pes.fullName)}&background=1b382b&color=fff';"
+                       style="width: 54px; height: 54px; border-radius: 50%; object-fit: cover; border: 2px solid var(--brand-clay); flex-shrink: 0;" />
+                  <div>
+                    <strong style="font-size: 0.95rem; color: var(--text-heading); display: block;">${pes.fullName}</strong>
+                    <small style="color: var(--brand-clay-deep);">${pes.email}</small>
+                  </div>
+                </div>
+
+                ${!task.completed ? `
+                  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 10px;">
+                    <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="nickname" placeholder="Nickname" value="${task.nickname || ''}" ${!allCommitteesCompleted || !task.id ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
+                    <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="favorite_spot" placeholder="Favorite Spot" value="${task.favorite_spot || ''}" ${!allCommitteesCompleted || !task.id ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
+                    <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="least_liked_sub" placeholder="Least Liked Sub" value="${task.least_liked_sub || ''}" ${!allCommitteesCompleted || !task.id ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
+                  </div>
+                  <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${task.id}" ${!allCommitteesCompleted || !task.id ? 'disabled style="opacity: 0.55; cursor: not-allowed;"' : ''} style="width: 100%;">
+                    ${allCommitteesCompleted ? 'Generate PES Verification Code' : 'Unlock After All Committee Signatories'}
+                  </button>
+                ` : `
+                  <small style="color: var(--brand-forest); font-weight: 600;">Officially endorsed by ${task.signed_by || pes.fullName}</small>
+                `}
+              </div>
+            `;
+          }).join('')}
+        </div>
       </div>
 
       <div style="background: var(--surface-subtle); border-left: 4px solid var(--brand-clay); padding: 12px 16px; border-radius: var(--radius-sm); margin-bottom: 20px;">
@@ -69,7 +134,7 @@ export async function renderSignatoriesTab(container) {
         </small>
       </div>
 
-      <!-- Committee Filter Bar -->
+      <!-- COMMITTEE FILTER PILLS -->
       <div id="committeeFilterBar" style="display: flex; gap: 8px; overflow-x: auto; padding-bottom: 12px; margin-bottom: 20px;">
         ${categories.map(cat => `
           <button type="button" 
@@ -81,9 +146,10 @@ export async function renderSignatoriesTab(container) {
         `).join('')}
       </div>
 
+      <!-- COMMITTEE CARDS MATRIX -->
       <div id="committeesDisplayContainer" style="display: flex; flex-direction: column; gap: 20px;">
         ${COMMITTEES_LIST.map(comm => {
-          const commSigs = signatories.filter(s => (s.committee_name || '').toLowerCase() === comm.name.toLowerCase());
+          const commSigs = committeeTasks.filter(s => (s.committee_name || '').toLowerCase() === comm.name.toLowerCase());
           const vpTask = commSigs.find(s => s.role === 'VP' || s.type === 'VP');
           const memberTasks = commSigs.filter(s => s !== vpTask);
           const membersDone = memberTasks.length > 0 && memberTasks.every(s => s.completed);
@@ -108,9 +174,9 @@ export async function renderSignatoriesTab(container) {
                     <img src="${comm.photo}" 
                          alt="${comm.vp}" 
                          onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(comm.vp)}&background=1b382b&color=fff';"
-                         style="width: 58px; height: 58px; border-radius: 50%; object-fit: cover; border: 2px solid var(--brand-forest); flex-shrink: 0;" />
+                         style="width: 54px; height: 54px; border-radius: 50%; object-fit: cover; border: 2px solid var(--brand-forest); flex-shrink: 0;" />
                     <div>
-                      <strong style="font-size: 1rem; color: var(--brand-forest); display: block;">${comm.vp}</strong>
+                      <strong style="font-size: 0.95rem; color: var(--brand-forest); display: block;">${comm.vp}</strong>
                       <small style="color: var(--text-muted);">${comm.vpTitle}</small>
                       <div><small style="font-size: 0.75rem; color: var(--brand-clay-deep);">${comm.vpEmail}</small></div>
                     </div>
@@ -137,10 +203,9 @@ export async function renderSignatoriesTab(container) {
                   const rawTrait = task.trait_description || task.task || 'Committee Member';
                   const cleanedTrait = cleanTraitText(rawTrait);
 
-                  // Available tasks in this pool, excluding tasks already completed in other cards
                   const pool = (task.task_pool || []).filter(t => {
-                    if (task.selected_task && t === task.selected_task) return true; // keep currently selected task visible
-                    return !completedTasksSet.has(t.trim()); // exclude completed ones
+                    if (task.selected_task && t === task.selected_task) return true;
+                    return !completedTasksSet.has(t.trim());
                   });
 
                   return `
@@ -158,12 +223,12 @@ export async function renderSignatoriesTab(container) {
                         </strong>
                       </div>
 
-                      <!-- Re-selectable Task Pool Dropdown (Won't permanently lock on accidental click) -->
+                      <!-- Non-locking Task Pool Dropdown -->
                       ${!task.completed && pool.length > 0 ? `
                         <div style="margin-bottom: 10px;">
                           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                             <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted);">
-                              ${task.selected_task ? 'Selected Task (Click to change):' : 'Assign a Task:'}
+                              ${task.selected_task ? 'Selected Task (Click to reassign):' : 'Assign a Task:'}
                             </label>
                             ${task.selected_task ? `
                               <button type="button" class="clear-task-btn" data-sig-id="${task.id}" style="background: none; border: none; color: var(--brand-clay-deep); font-size: 0.75rem; cursor: pointer; text-decoration: underline;">
@@ -186,7 +251,7 @@ export async function renderSignatoriesTab(container) {
 
                       ${!task.completed ? `
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 10px;">
-                          <!-- Member Name Selection -->
+                          <!-- Member Selection Dropdown -->
                           <select class="sig-input" data-sig-id="${task.id}" data-field="member_name" style="font-size: 0.8rem; padding: 6px;">
                             <option value="">-- Select Member --</option>
                             ${membersList.map(m => `
@@ -219,7 +284,6 @@ export async function renderSignatoriesTab(container) {
 
   filterCommitteeCards(activeCategory);
 
-  // Committee Filter Navigation
   const filterBar = container.querySelector('#committeeFilterBar');
   if (filterBar) {
     filterBar.addEventListener('click', (e) => {
@@ -250,7 +314,6 @@ export async function renderSignatoriesTab(container) {
     });
   }
 
-  // Task Selection & Re-selection
   container.querySelectorAll('.sig-task-select').forEach(select => {
     select.addEventListener('change', async (e) => {
       const val = e.target.value;
@@ -263,7 +326,6 @@ export async function renderSignatoriesTab(container) {
     });
   });
 
-  // Reset Button to clear accidental selection back to placeholder
   container.querySelectorAll('.clear-task-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const sigId = e.target.dataset.sigId;
@@ -275,7 +337,6 @@ export async function renderSignatoriesTab(container) {
     });
   });
 
-  // Inputs Change Handler
   container.querySelectorAll('.sig-input').forEach(inp => {
     inp.addEventListener('change', async (e) => {
       const sigId = e.target.dataset.sigId;
@@ -287,11 +348,13 @@ export async function renderSignatoriesTab(container) {
     });
   });
 
-  // Generate Signatory Code Button Handler
   container.querySelectorAll('.trigger-sig-code-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const sigId = e.target.dataset.sigId;
-      if (!sigId) return;
+      if (!sigId || sigId === 'null') {
+        showToast('Signatory record not initialized.', 'error');
+        return;
+      }
 
       const code = await generateApplicantShortCode(sigId, 'SIGNATORY');
       if (!code) {
