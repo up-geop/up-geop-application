@@ -1,3 +1,5 @@
+import { COMMITTEES_LIST } from './config.js';
+
 const SUPABASE_URL = 'https://cwbrzxqmlzgedaisaour.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_oZ1RQOpJ4BoIAq_vDAqHWw_lOnoqFo0';
 
@@ -6,8 +8,6 @@ export const supabase = createClient ? createClient(SUPABASE_URL, SUPABASE_KEY) 
 
 const TRAITS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRUM49iGYGFrwckeq-pSZv65dVWYi7yqE2DIYcpBfZKxFTqIc-1l-CXa6U1TvmGE3oqf8NhjWq29qeC/pub?gid=0&single=true&output=csv';
 const TASKS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRUM49iGYGFrwckeq-pSZv65dVWYi7yqE2DIYcpBfZKxFTqIc-1l-CXa6U1TvmGE3oqf8NhjWq29qeC/pub?gid=448373194&single=true&output=csv';
-
-import { COMMITTEES_LIST } from './config.js';
 
 export async function getCurrentUserId() {
   if (!supabase) return null;
@@ -306,9 +306,66 @@ export async function spendCurrency(cost) {
 }
 
 export async function getBuddyGroupMembers(groupName) {
-  if (!groupName || !supabase) return [];
-  const { data } = await supabase.from('profiles').select('full_name, nickname').eq('buddy_group_name', groupName);
+  if (!groupName || !supabase || groupName === 'Unassigned') return [];
+
+  const { data: applicants } = await supabase
+    .from('profiles')
+    .select('full_name, nickname')
+    .eq('buddy_group_name', groupName);
+
+  const { data: members } = await supabase
+    .from('members')
+    .select('full_name')
+    .eq('buddy_group_name', groupName);
+
+  const formattedApplicants = (applicants || []).map(a => ({
+    name: a.full_name,
+    nickname: a.nickname,
+    role: 'Applicant'
+  }));
+
+  const formattedMembers = (members || []).map(m => ({
+    name: m.full_name,
+    nickname: '',
+    role: 'Member'
+  }));
+
+  return [...formattedMembers, ...formattedApplicants];
+}
+
+export async function getManagedBuddyGroups() {
+  if (!supabase) return [];
+  const { data } = await supabase
+    .from('buddy_groups')
+    .select('*')
+    .order('name', { ascending: true });
   return data || [];
+}
+
+export async function createBuddyGroup(name, description = '') {
+  if (!supabase || !name) return false;
+  const { error } = await supabase
+    .from('buddy_groups')
+    .insert([{ name: name.trim(), description: description.trim() }]);
+  return !error;
+}
+
+export async function deleteBuddyGroup(groupId) {
+  if (!supabase || !groupId) return false;
+  const { error } = await supabase
+    .from('buddy_groups')
+    .delete()
+    .eq('id', groupId);
+  return !error;
+}
+
+export async function assignApplicantBuddyGroup(applicantId, groupName) {
+  if (!supabase || !applicantId || !groupName) return false;
+  const { error } = await supabase
+    .from('profiles')
+    .update({ buddy_group_name: groupName })
+    .eq('id', applicantId);
+  return !error;
 }
 
 export async function getAnnouncements() {
@@ -342,107 +399,5 @@ export async function toggleUserAvailabilitySlot(userId, userName, slotKey, isAv
   } else {
     await supabase.from('availability_slots').insert([{ user_id: userId, user_name: userName, time_slot: slotKey }]);
   }
-  return true;
-}
-
-export async function getBiddingState() {
-  if (!supabase) return { is_active: false };
-  const { data } = await supabase.from('bidding_state').select('is_active').eq('id', 1).single();
-  return data || { is_active: false };
-}
-
-export async function getBuddyFams() {
-  if (!supabase) return [];
-  const { data } = await supabase.from('buddy_fams').select('*').order('name');
-  return data || [];
-}
-
-export async function getTopBidsForFam(famId) {
-  if (!supabase) return [];
-  const { data } = await supabase.from('bids').select('amount').eq('fam_id', famId).order('amount', { ascending: false }).limit(3);
-  return data || [];
-}
-
-export async function getAvailableAC(userId) {
-  if (!supabase || !userId) return { totalAC: 0, availableAC: 0 };
-  const { data: profile } = await supabase.from('profiles').select('currency').eq('id', userId).single();
-  const { data: bids } = await supabase.from('bids').select('amount').eq('applicant_id', userId);
-  const totalAC = profile?.currency || 100;
-  const escrowed = (bids || []).reduce((sum, b) => sum + b.amount, 0);
-  return { totalAC, availableAC: totalAC - escrowed };
-}
-
-export async function placeBid(famId, amount) {
-  const userId = await getCurrentUserId();
-  if (!userId || !supabase) return { success: false, message: 'Not authenticated.' };
-
-  const { availableAC } = await getAvailableAC(userId);
-  const { data: existing } = await supabase.from('bids').select('amount').eq('applicant_id', userId).eq('fam_id', famId).maybeSingle();
-  const prevAmount = existing ? existing.amount : 0;
-  const diff = amount - prevAmount;
-
-  if (diff > availableAC) return { success: false, message: 'Insufficient AC available in escrow.' };
-
-  if (amount <= 0) {
-    await supabase.from('bids').delete().eq('applicant_id', userId).eq('fam_id', famId);
-    return { success: true, message: 'Bid retracted.' };
-  }
-
-  const { error } = await supabase.from('bids').upsert({ applicant_id: userId, fam_id: famId, amount });
-  return { success: !error, message: error ? error.message : 'Bid registered in escrow!' };
-}
-
-export async function adminUpdateBiddingState(isActive) {
-  if (!supabase) return false;
-  const { error } = await supabase.from('bidding_state').update({ is_active: isActive }).eq('id', 1);
-  if (isActive) await supabase.from('bids').delete().gt('amount', -1);
-  return !error;
-}
-
-export async function adminResolveBidding() {
-  if (!supabase) return false;
-  const { data: allBids } = await supabase.from('bids').select('*').order('amount', { ascending: false });
-  const { data: fams } = await supabase.from('buddy_fams').select('*').eq('is_locked', false);
-  const { data: applicants } = await supabase.from('profiles').select('id, currency, buddy_group_name');
-
-  if (!fams || !applicants || !allBids) return false;
-
-  const assignments = {};
-  const famCounts = {};
-  const spentAc = {};
-  fams.forEach(f => famCounts[f.id] = 0);
-
-  for (const bid of allBids) {
-    if (!assignments[bid.applicant_id] && famCounts[bid.fam_id] < 3) {
-      assignments[bid.applicant_id] = bid.fam_id;
-      famCounts[bid.fam_id]++;
-      spentAc[bid.applicant_id] = bid.amount;
-    }
-  }
-
-  const openSlots = [];
-  for (const f of fams) {
-    const left = 3 - famCounts[f.id];
-    for (let i = 0; i < left; i++) openSlots.push(f.id);
-  }
-  openSlots.sort(() => Math.random() - 0.5);
-
-  const unassigned = applicants.filter(a => !assignments[a.id] && (a.buddy_group_name === 'Unassigned' || !a.buddy_group_name));
-  unassigned.forEach(u => {
-    if (openSlots.length > 0) assignments[u.id] = openSlots.pop();
-  });
-
-  for (const app of applicants) {
-    const famId = assignments[app.id];
-    if (famId) {
-      const famName = fams.find(f => f.id === famId)?.name;
-      const finalAc = app.currency - (spentAc[app.id] || 0);
-      await supabase.from('profiles').update({ buddy_group_name: famName, currency: finalAc }).eq('id', app.id);
-    }
-  }
-
-  for (const f of fams) await supabase.from('buddy_fams').update({ is_locked: true }).eq('id', f.id);
-  await supabase.from('bidding_state').update({ is_active: false }).eq('id', 1);
-  await supabase.from('bids').delete().gt('amount', -1);
   return true;
 }
