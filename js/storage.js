@@ -8,7 +8,7 @@ export const supabase = window.supabase
 let cachedTraitsPool = null;
 let cachedTasksPool = null;
 
-// Robust CSV Line & Field Parser (handles quoted lines and internal commas)
+// Robust CSV Line & Field Parser (handles quoted lines, line breaks, and internal commas)
 function parseCSV(text) {
   const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
   if (lines.length <= 1) return [];
@@ -29,7 +29,7 @@ function parseCSV(text) {
   return rows;
 }
 
-// Fetches live Traits Pool (gid=0)
+// Fetches live Traits Pool directly from Google Sheets
 export async function getAvailableTraitsPool() {
   if (cachedTraitsPool && cachedTraitsPool.length > 0) {
     return cachedTraitsPool;
@@ -43,14 +43,15 @@ export async function getAvailableTraitsPool() {
 
     const traits = rows
       .map(r => r.trait || r.traits || r.name || Object.values(r)[0])
-      .filter(t => t && t.trim().length > 0);
+      .map(t => typeof t === 'string' ? t.trim() : '')
+      .filter(t => t.length > 0 && !t.toLowerCase().startsWith('trait'));
 
     if (traits.length > 0) {
       cachedTraitsPool = [...new Set(traits)];
       return cachedTraitsPool;
     }
   } catch (err) {
-    console.warn('Could not fetch traits from published CSV, falling back to DB:', err);
+    console.warn('Could not fetch traits from Google Sheets, checking database fallback:', err);
   }
 
   // Fallback: check signatories table
@@ -68,7 +69,7 @@ export async function getAvailableTraitsPool() {
   return [];
 }
 
-// Fetches live Tasks Pool (gid=448373194)
+// Fetches live Tasks Pool directly from Google Sheets
 export async function getAvailableTasksPool() {
   if (cachedTasksPool && cachedTasksPool.length > 0) {
     return cachedTasksPool;
@@ -82,14 +83,15 @@ export async function getAvailableTasksPool() {
 
     const tasks = rows
       .map(r => r.task || r.tasks || r.name || Object.values(r)[0])
-      .filter(t => t && t.trim().length > 0);
+      .map(t => typeof t === 'string' ? t.trim() : '')
+      .filter(t => t.length > 0 && !t.toLowerCase().startsWith('task'));
 
     if (tasks.length > 0) {
       cachedTasksPool = [...new Set(tasks)];
       return cachedTasksPool;
     }
   } catch (err) {
-    console.warn('Could not fetch tasks from published CSV:', err);
+    console.warn('Could not fetch tasks from Google Sheets:', err);
   }
 
   return [];
@@ -325,7 +327,7 @@ export async function verifyUniversalCode(code, verifierEmail) {
       .update(updatePayload)
       .eq('id', sig.id);
 
-    // Fallback: If verified_at column does not exist yet in table schema
+    // Schema fallback if verified_at is not present
     if (updateErr && updateErr.message && updateErr.message.includes('verified_at')) {
       const { error: retryErr } = await supabase
         .from('signatories')
@@ -564,7 +566,7 @@ export async function buyTambayMultiplierBoost() {
   return { success: true, message: '1.5× Boost activated! It will apply to your next clocked-out tambay session.' };
 }
 
-// Resilient Signatory Trait Swap: updates existing columns without failing on 400
+// Resilient Signatory Trait Swap
 export async function swapSignatoryTrait(sigId, newTrait, cost) {
   if (!supabase || !sigId || !newTrait) return false;
   const uid = await getCurrentUserId();
@@ -573,14 +575,12 @@ export async function swapSignatoryTrait(sigId, newTrait, cost) {
   const hasFunds = await spendCurrency(cost);
   if (!hasFunds) return false;
 
-  // Base update targeting universal task columns
   let { error } = await supabase
     .from('signatories')
     .update({ task: newTrait })
     .eq('id', sigId)
     .eq('user_id', uid);
 
-  // Safely update trait and selected_task if available in schema
   if (!error) {
     await supabase
       .from('signatories')
@@ -597,7 +597,6 @@ export async function swapSignatoryTrait(sigId, newTrait, cost) {
 
   if (error) {
     console.error('Error updating signatory trait details:', error);
-    // Refund currency if update failed
     await supabase.rpc('increment_currency', { user_id: uid, amount: cost }).catch(() => {});
     return false;
   }
