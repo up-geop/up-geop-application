@@ -454,19 +454,42 @@ export async function getBuddyGroupMembers(groupName) {
   return list;
 }
 
+// RAComm Evaluation Updates
+export async function adminUpdateApplicantGrades(applicantId, grades) {
+  if (!supabase || !applicantId) return false;
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({
+      grade_interview: parseFloat(grades.interview) || 0,
+      grade_ogt: parseFloat(grades.ogt) || 0,
+      grade_consti_quiz: parseFloat(grades.constiQuiz) || 0,
+      grade_buddy_tasks: parseFloat(grades.buddyTasks) || 0
+    })
+    .eq('id', applicantId);
+
+  if (error) {
+    console.error('Error updating applicant grades:', error);
+    return false;
+  }
+  return true;
+}
+
 export async function getAllApplicantsProgress() {
   if (!supabase) return [];
 
-  const [profilesRes, sigsRes, tambayLogsRes, activeSessionsRes] = await Promise.all([
+  const [profilesRes, sigsRes, tambayLogsRes, activeSessionsRes, eventsRes] = await Promise.all([
     supabase.from('profiles').select('*').order('created_at', { ascending: false }),
     supabase.from('signatories').select('user_id, completed'),
     supabase.from('tambay_logs').select('user_id, hours'),
-    supabase.from('tambay_sessions').select('user_id')
+    supabase.from('tambay_sessions').select('user_id'),
+    supabase.from('event_attendees').select('user_id')
   ]);
 
   const profiles = profilesRes.data || [];
   const sigs = sigsRes.data || [];
   const logs = tambayLogsRes.data || [];
+  const attendedEvents = eventsRes.data || [];
   const activeSet = new Set((activeSessionsRes.data || []).map(s => s.user_id));
 
   return profiles.map(p => {
@@ -477,9 +500,24 @@ export async function getAllApplicantsProgress() {
     const userLogs = logs.filter(l => l.user_id === p.id);
     const tambayHours = Number(userLogs.reduce((sum, l) => sum + (parseFloat(l.hours) || 0), 0).toFixed(1));
 
+    const userEventsCount = attendedEvents.filter(e => e.user_id === p.id).length;
+
+    // Weight Calculation:
+    // Events: 5% each up to 25%
+    // Signatories: 15%
+    // Tambay: 5% (Target 10h)
+    // Manual RAComm: Interview (15%), OGT (20%), Consti (10%), Buddy (10%)
     const sigRatio = totalSigs > 0 ? (completedSigs / totalSigs) : 0;
     const tambayRatio = Math.min(tambayHours / CONFIG.TARGET_TAMBAY_HOURS, 1);
-    const overallPercent = Math.round((sigRatio * 0.6 + tambayRatio * 0.4) * 100);
+
+    const automatedScore = (userEventsCount * 5) + (sigRatio * 15) + (tambayRatio * 5);
+    const manualScore = 
+      (parseFloat(p.grade_interview) || 0) +
+      (parseFloat(p.grade_ogt) || 0) +
+      (parseFloat(p.grade_consti_quiz) || 0) +
+      (parseFloat(p.grade_buddy_tasks) || 0);
+
+    const overallPercent = Math.min(100, Math.round(automatedScore + manualScore));
 
     return {
       id: p.id,
