@@ -28,7 +28,7 @@
   </header>
 
   <main class="container">
-    <!-- User Bar -->
+    <!-- User Status Bar -->
     <div id="userProfileBar" class="card" style="display: none; justify-content: space-between; align-items: center; padding: 12px 18px;">
       <div style="display: flex; align-items: center; gap: 8px;">
         <span style="font-size: 0.85rem;">Signed in: <strong id="userEmailText" style="color: var(--brand-forest);"></strong></span>
@@ -37,7 +37,7 @@
       <button id="logoutBtn" class="btn btn-secondary" style="min-height: 36px; padding: 4px 12px; font-size: 0.8rem;">Sign Out</button>
     </div>
 
-    <!-- Auth Section -->
+    <!-- Login Authentication Section -->
     <div id="authSection" class="card" style="text-align: center; padding: 40px 20px;">
       <h2 style="font-family: var(--font-display); margin-bottom: 8px;">Portal Authentication</h2>
       <p class="subtext" style="max-width: 400px; margin: 0 auto 20px;">
@@ -46,7 +46,7 @@
       <button id="loginGoogleBtn" class="btn">Sign In with Google</button>
     </div>
 
-    <!-- Onboarding Section -->
+    <!-- Applicant Onboarding Section -->
     <div id="onboardingSection" class="card" style="display: none; text-align: center; max-width: 440px; margin: 0 auto;">
       <h2 style="font-family: var(--font-display); margin-bottom: 6px;">Profile Setup</h2>
       <p class="subtext">Provide your information to activate your dashboard.</p>
@@ -63,14 +63,16 @@
       </form>
     </div>
 
-    <!-- Member / RAComm Dashboard -->
+    <!-- Member & RAComm Management Dashboard -->
     <div id="memberDashboardContent" style="display: none;">
       <nav id="racommTabNav" class="tab-nav">
         <button class="tab-btn active" data-tab="racomm-roster">Applicant Roster</button>
+        <button class="tab-btn" data-tab="racomm-buddy-groups">Buddy Groups</button>
         <button class="tab-btn" data-tab="racomm-settings">Settings & Controls</button>
         <button class="tab-btn" data-tab="tab-schedule">Schedule & Announcements</button>
       </nav>
 
+      <!-- Persistent Verification Action Card -->
       <section class="card">
         <div class="card-header">
           <h2>Member Verification Hub</h2>
@@ -80,6 +82,7 @@
         <button id="manualValidateBtn" class="btn btn-checkin">Validate 6-Character Code</button>
       </section>
 
+      <!-- Roster View -->
       <div id="racomm-roster" class="tab-content active">
         <section class="card">
           <div class="card-header">
@@ -105,6 +108,25 @@
         </section>
       </div>
 
+      <!-- Dedicated Buddy Groups Management Board -->
+      <div id="racomm-buddy-groups" class="tab-content">
+        <section class="card">
+          <div class="card-header">
+            <h2>Buddy Group Dashboard</h2>
+            <button id="refreshBuddyGroupsBtn" class="btn btn-secondary" style="min-height: 36px; padding: 4px 10px; font-size: 0.8rem;">Refresh</button>
+          </div>
+          <p class="subtext">Organize applicants and resident members across active buddy groups.</p>
+
+          <div style="display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap;">
+            <input type="text" id="newGroupNameInputDashboard" placeholder="Create new group (e.g. Group 5)" style="flex: 1; min-width: 200px;" />
+            <button id="createGroupDashboardBtn" class="btn btn-checkin">Add Group</button>
+          </div>
+
+          <div id="buddyGroupsBoard" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;"></div>
+        </section>
+      </div>
+
+      <!-- Settings & Controls View -->
       <div id="racomm-settings" class="tab-content">
         <section class="card">
           <h2>Global Policies</h2>
@@ -125,20 +147,12 @@
             </div>
           </div>
 
-          <h2>Create Event</h2>
+          <h2>Create Official Event</h2>
           <div style="display: flex; gap: 8px; margin: 12px 0 24px; flex-wrap: wrap;">
             <input type="text" id="adminEventNameInput" placeholder="Event Name" style="flex: 1; min-width: 180px;" />
             <input type="text" id="adminEventPasskeyInput" placeholder="Passcode" style="width: 120px;" />
             <button id="addEventBtn" class="btn btn-checkin">Add Event</button>
           </div>
-
-          <h2>Buddy Group Organizer</h2>
-          <p class="subtext">Manage active groups and configure allocations.</p>
-          <div style="display: flex; gap: 8px; margin: 12px 0 16px; flex-wrap: wrap;">
-            <input type="text" id="newGroupNameInput" placeholder="New Group Name" style="flex: 1; min-width: 200px;" />
-            <button id="createGroupBtn" class="btn btn-checkin">Add Group</button>
-          </div>
-          <div id="racommGroupList" style="display: flex; flex-direction: column; gap: 8px;"></div>
         </section>
       </div>
     </div>
