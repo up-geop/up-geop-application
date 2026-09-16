@@ -567,10 +567,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => { btn.textContent = orig; }, 1400);
   });
 
-  // Tab Navigation Delegator
-  document.querySelectorAll('.tab-btn').forEach(btn => {
+  // Main Tab Navigation Delegator (Scoped specifically to header navigation bars)
+  document.querySelectorAll('#racommTabNav .tab-btn, #applicantTabNav .tab-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const tabId = btn.dataset.tab;
+      if (!tabId) return;
 
       if (tabId === 'racomm-buddy-groups' || tabId === 'racomm-roster' || tabId === 'racomm-settings') {
         const isOfficer = await checkIfRAComm(currentUser?.email);
