@@ -525,34 +525,42 @@ export async function spendCurrency(amount) {
    PERKS HELPERS: POT, BOOST, TRAIT SWAPPING
    ========================================================= */
 
-export async function getBatchPot(potId = 'buddy_task_ext') {
-  if (!supabase) return null;
-  const { data, error } = await supabase
-    .from('batch_pots')
-    .select('*')
-    .eq('id', potId)
-    .single();
-
-  if (error) return null;
+export async function getUserTaskContributions() {
+  const uid = await getCurrentUserId();
+  if (!uid || !supabase) return [];
+  const { data, error } = await supabase.from('task_contributions').select('*').eq('user_id', uid);
+  if (error) return [];
   return data;
 }
 
-export async function contributeToPot(potId, amount, userName) {
-  if (!supabase || !potId || amount <= 0) return { success: false, message: 'Invalid contribution amount.' };
+export async function chipInToTask(taskId, amount) {
+  if (!supabase || !taskId || amount <= 0) return { success: false, message: 'Invalid amount.' };
   const uid = await getCurrentUserId();
   if (!uid) return { success: false, message: 'User not authenticated.' };
 
-  const { data, error } = await supabase.rpc('contribute_to_batch_pot', {
-    target_pot_id: potId,
-    contributor_id: uid,
-    contributor_name: userName,
-    contrib_amount: parseInt(amount, 10)
+  const { data, error } = await supabase.rpc('chip_in_to_task', {
+    p_task_id: taskId,
+    p_user_id: uid,
+    p_amount: parseInt(amount, 10)
   });
 
-  if (error) {
-    return { success: false, message: error.message };
-  }
-  return data;
+  if (error) return { success: false, message: error.message };
+  return { success: true, message: 'Successfully chipped in!' };
+}
+
+export async function withdrawFromTask(taskId, amount) {
+  if (!supabase || !taskId || amount <= 0) return { success: false, message: 'Invalid amount.' };
+  const uid = await getCurrentUserId();
+  if (!uid) return { success: false, message: 'User not authenticated.' };
+
+  const { data, error } = await supabase.rpc('withdraw_from_task', {
+    p_task_id: taskId,
+    p_user_id: uid,
+    p_amount: parseInt(amount, 10)
+  });
+
+  if (error) return { success: false, message: error.message };
+  return { success: true, message: 'Successfully withdrew AC!' };
 }
 
 export async function buyTambayMultiplierBoost() {
