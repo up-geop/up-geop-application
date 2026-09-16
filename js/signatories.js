@@ -11,10 +11,19 @@ let activeCategory = 'ALL';
 
 function cleanTraitText(text) {
   if (!text) return '';
-  return text
+  let cleaned = text
     .replace(/\u00a0/g, ' ')
-    .replace(/^find\s+(an?|the|another)?\s*(member|person|someone)?\s*(who|na|that)?\s*/i, '')
+    .trim()
+    // Strip prefixes like "Find a/the/another member/person who/na/that"
+    .replace(/^find\s+(an?|the|another|other)?\s*(member|person|someone)?\s*(who|na|that)?\s*/i, '')
+    // Strip standalone prefixes like "Another member who", "Other member", "Member who"
+    .replace(/^(another|other)?\s*member\s*(who|na|that)?\s*/i, '')
+    // Strip standalone leading connectors
+    .replace(/^(who|na|that)\s+/i, '')
     .trim();
+
+  if (cleaned.length === 0) return text;
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
 export async function renderSignatoriesTab(container) {
