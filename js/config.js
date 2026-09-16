@@ -1,4 +1,6 @@
 export const CONFIG = {
+  SUPABASE_URL: 'https://cwbrzxqmlzgedaisaour.supabase.co',
+  SUPABASE_ANON_KEY: 'sb_publishable_oZ1RQOpJ4BoIAq_vDAqHWw_lOnoqFo0',
   TARGET_TAMBAY_HOURS: 10,
   WEIGHTS: {
     EVENTS: 0.25,        // 25% (5 events x 5%)
@@ -8,6 +10,12 @@ export const CONFIG = {
     OGT: 0.20,           // 20%
     CONSTI_QUIZ: 0.10,   // 10%
     BUDDY_TASKS: 0.10    // 10%
+  },
+  SHEETS: {
+    // Traits_Pool (gid=0)
+    TRAITS_CSV_URL: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRUM49iGYGFrwckeq-pSZv65dVWYi7yqE2DIYcpBfZKxFTqIc-1l-CXa6U1TvmGE3oqf8NhjWq29qeC/pub?gid=0&single=true&output=csv',
+    // Tasks_Pool (gid=448373194)
+    TASKS_CSV_URL: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRUM49iGYGFrwckeq-pSZv65dVWYi7yqE2DIYcpBfZKxFTqIc-1l-CXa6U1TvmGE3oqf8NhjWq29qeC/pub?gid=448373194&single=true&output=csv'
   }
 };
 
