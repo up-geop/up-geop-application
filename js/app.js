@@ -17,7 +17,6 @@ import {
   adminAdjustTokens,
   adminToggleApplicantSignatory,
   adminUpdateApplicantGrades,
-  spendCurrency,
   getBuddyGroupMembers,
   getManagedBuddyGroups,
   createBuddyGroup,
@@ -29,7 +28,11 @@ import {
   createAnnouncement,
   deleteAnnouncement,
   getAvailabilitySlots,
-  toggleUserAvailabilitySlot
+  toggleUserAvailabilitySlot,
+  getBatchPot,
+  contributeToPot,
+  buyTambayMultiplierBoost,
+  swapSignatoryTrait
 } from './storage.js';
 
 import { renderSignatoriesTab } from './signatories.js';
@@ -40,6 +43,18 @@ let currentUser = null;
 let timerInterval = null;
 let inspectedApplicantId = null;
 let currentMonday = getMonday(new Date());
+
+const TRAITS_POOL = [
+  "Take a selfie with the member holding a survey instrument",
+  "Ask the member about their favorite Geodetic field story",
+  "Play one round of rock-paper-scissors (Best of 3)",
+  "Ask for their best advice for second-year majors",
+  "Memorize and recite their org committee role",
+  "Share your favorite meme with them",
+  "Learn a quick campus shortcut from them"
+];
+
+let activeSwapMode = 'random';
 
 function getMonday(d) {
   const date = new Date(d);
@@ -85,6 +100,31 @@ function startTimer(timeIn) {
 
 function stopTimer() {
   if (timerInterval) clearInterval(timerInterval);
+}
+
+async function renderShopView() {
+  const pot = await getBatchPot('buddy_task_ext');
+  if (!pot) return;
+
+  const current = pot.current_amount || 0;
+  const target = pot.target_amount || 200;
+  const percent = Math.min(100, Math.round((current / target) * 100));
+
+  const bar = document.getElementById('batchPotProgressBar');
+  const badge = document.getElementById('batchPotBadge');
+  const banner = document.getElementById('potUnlockedBanner');
+  const controls = document.getElementById('potContributionControls');
+
+  if (bar) bar.style.width = `${percent}%`;
+  if (badge) badge.textContent = `${current} / ${target} AC (${percent}%)`;
+
+  if (pot.is_unlocked) {
+    if (banner) banner.style.display = 'block';
+    if (controls) controls.style.opacity = '0.5';
+  } else {
+    if (banner) banner.style.display = 'none';
+    if (controls) controls.style.opacity = '1';
+  }
 }
 
 async function renderAnnouncementsBoard() {
@@ -491,6 +531,45 @@ async function openInspection(appId) {
   modal.style.display = 'flex';
 }
 
+async function openSwapModal(mode) {
+  activeSwapMode = mode;
+  const modal = document.getElementById('swapTraitModal');
+  const title = document.getElementById('swapModalTitle');
+  const subtext = document.getElementById('swapModalSubtext');
+  const specificBox = document.getElementById('specificTraitContainer');
+  const sigSelect = document.getElementById('swapTargetSigSelect');
+  const newTraitSelect = document.getElementById('swapNewTraitSelect');
+
+  const sigs = await getSignatories(currentUser.id);
+  const eligibleSigs = sigs.filter(s => !s.completed && s.role !== 'VP' && s.role !== 'PES');
+
+  if (eligibleSigs.length === 0) {
+    showToast('No eligible uncompleted signatory tasks available to swap.', 'info');
+    return;
+  }
+
+  if (sigSelect) {
+    sigSelect.innerHTML = eligibleSigs.map(s => `
+      <option value="${s.id}">[${s.committee_name || 'Member'}] ${s.task || s.member_name}</option>
+    `).join('');
+  }
+
+  if (mode === 'specific') {
+    title.textContent = 'Specific Trait Selection (50 AC)';
+    subtext.textContent = 'Select your task and choose the exact trait you want to assign.';
+    specificBox.style.display = 'block';
+    if (newTraitSelect) {
+      newTraitSelect.innerHTML = TRAITS_POOL.map(t => `<option value="${t}">${t}</option>`).join('');
+    }
+  } else {
+    title.textContent = 'Random Trait Swap (30 AC)';
+    subtext.textContent = 'Select your task to reroll a completely random new requirement.';
+    specificBox.style.display = 'none';
+  }
+
+  modal.style.display = 'flex';
+}
+
 async function handleAuth() {
   currentUser = await getCurrentUser();
 
@@ -565,6 +644,7 @@ async function handleAuth() {
 
         const greeting = document.getElementById('userGreetingHeading');
         const curr = document.getElementById('userCurrencyText');
+        const currPot = document.getElementById('userCurrencyTextPot');
         const group = document.getElementById('buddyGroupName');
         const avatarImg = document.getElementById('userAvatarHero');
 
@@ -578,7 +658,9 @@ async function handleAuth() {
         }
 
         if (greeting) greeting.textContent = `Good day, ${profile.nickname || profile.full_name}!`;
-        if (curr) curr.textContent = profile.currency ?? 100;
+        const bal = profile.currency ?? 100;
+        if (curr) curr.textContent = bal;
+        if (currPot) currPot.textContent = bal;
         if (group) group.textContent = profile.buddy_group_name || 'Unassigned';
 
         const buddies = await getBuddyGroupMembers(profile.buddy_group_name);
@@ -603,6 +685,7 @@ async function handleAuth() {
         }
 
         await renderDashboard();
+        await renderShopView();
       }
     }
   } else {
@@ -639,6 +722,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         showToast('Event attendance updated.', 'info');
         await renderDashboard();
         await renderRoster();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'batch_pots' }, async () => {
+        await renderShopView();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, async () => {
         showToast('New announcement posted.', 'info');
@@ -714,6 +800,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           await renderBuddyGroupBoard();
         } else if (tabId === 'racomm-roster') {
           await renderRoster();
+        } else if (tabId === 'tab-perks') {
+          await renderShopView();
         }
       }
     });
@@ -778,24 +866,58 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (container) container.style.display = 'none';
   });
 
-  document.getElementById('buyDeadlineBtn')?.addEventListener('click', async () => {
-    if (await spendCurrency(30)) {
-      showToast('Redeemed +2 days deadline extension.', 'success');
+  /* Shop Handlers */
+  document.getElementById('contributePotBtn')?.addEventListener('click', async () => {
+    const input = document.getElementById('potContribAmount');
+    const amount = parseInt(input?.value, 10);
+    if (!amount || amount <= 0) return;
+
+    const profile = await getUserProfileData(currentUser.id);
+    const res = await contributeToPot('buddy_task_ext', amount, profile?.nickname || profile?.full_name);
+    showToast(res.message, res.success ? 'success' : 'error');
+    if (res.success) {
       await handleAuth();
-    } else {
-      showToast('Insufficient AC balance.', 'error');
+      await renderShopView();
     }
   });
 
-  document.getElementById('buyTaskSwapBtn')?.addEventListener('click', async () => {
-    if (await spendCurrency(50)) {
-      showToast('Redeemed task swap perk.', 'success');
-      await handleAuth();
+  document.getElementById('buyTambayBoostBtn')?.addEventListener('click', async () => {
+    const res = await buyTambayMultiplierBoost();
+    showToast(res.message, res.success ? 'success' : 'error');
+    if (res.success) await handleAuth();
+  });
+
+  document.getElementById('openRandomSwapModalBtn')?.addEventListener('click', () => openSwapModal('random'));
+  document.getElementById('openSpecificSwapModalBtn')?.addEventListener('click', () => openSwapModal('specific'));
+  document.getElementById('cancelSwapBtn')?.addEventListener('click', () => {
+    document.getElementById('swapTraitModal').style.display = 'none';
+  });
+
+  document.getElementById('confirmSwapBtn')?.addEventListener('click', async () => {
+    const sigId = document.getElementById('swapTargetSigSelect')?.value;
+    if (!sigId) return;
+
+    const cost = activeSwapMode === 'specific' ? 50 : 30;
+    let chosenTrait = '';
+
+    if (activeSwapMode === 'specific') {
+      chosenTrait = document.getElementById('swapNewTraitSelect')?.value;
     } else {
-      showToast('Insufficient AC balance.', 'error');
+      chosenTrait = TRAITS_POOL[Math.floor(Math.random() * TRAITS_POOL.length)];
+    }
+
+    const ok = await swapSignatoryTrait(sigId, chosenTrait, cost);
+    if (ok) {
+      showToast(`Task swapped to: "${chosenTrait}"`, 'success');
+      document.getElementById('swapTraitModal').style.display = 'none';
+      await handleAuth();
+      await renderDashboard();
+    } else {
+      showToast('Insufficient AC balance or failed to swap task.', 'error');
     }
   });
 
+  /* Global Settings Controls */
   document.getElementById('set1xBtn')?.addEventListener('click', async () => {
     if (await updateGlobalSettings('hourly_multiplier', '1.0')) {
       showToast('Multiplier set to 1.0x', 'info');
