@@ -16,6 +16,7 @@ import {
   adminAdjustTambayHours,
   adminAdjustTokens,
   adminToggleApplicantSignatory,
+  adminUpdateApplicantGrades,
   spendCurrency,
   getBuddyGroupMembers,
   getManagedBuddyGroups,
@@ -264,21 +265,32 @@ async function renderBuddyGroupBoard() {
 }
 
 async function renderDashboard() {
-  const signatories = await getSignatories();
-  const tambayHours = await getTambayHours();
-  const events = await getEvents();
+  const [signatories, tambayHours, events, profile] = await Promise.all([
+    getSignatories(),
+    getTambayHours(),
+    getEvents(),
+    getUserProfileData(currentUser.id)
+  ]);
 
-  const totalSigs = signatories.length || 18;
+  const totalSigs = signatories.length || 21;
   const completedSigs = signatories.filter(s => s.completed).length;
   const sigRatio = totalSigs > 0 ? (completedSigs / totalSigs) : 0;
+
   const tambayRatio = Math.min(tambayHours / CONFIG.TARGET_TAMBAY_HOURS, 1);
   const attendedEvents = events.filter(e => e.attended).length;
-  const eventRatio = events.length > 0 ? (attendedEvents / events.length) : 0;
 
-  const totalPercent = Math.round(
-    (sigRatio * CONFIG.WEIGHTS.SIGNATORIES +
-     tambayRatio * CONFIG.WEIGHTS.TAMBAY +
-     eventRatio * CONFIG.WEIGHTS.EVENTS) * 100
+  // Grade Breakdown (Total: 100%)
+  const eventPoints = attendedEvents * 5;                                    // Max 25%
+  const sigPoints = Number((sigRatio * 15).toFixed(2));                      // Max 15%
+  const tambayPoints = Number((tambayRatio * 5).toFixed(2));                 // Max 5%
+  const interviewPoints = parseFloat(profile?.grade_interview) || 0;         // Max 15%
+  const ogtPoints = parseFloat(profile?.grade_ogt) || 0;                     // Max 20%
+  const constiPoints = parseFloat(profile?.grade_consti_quiz) || 0;          // Max 10%
+  const buddyTaskPoints = parseFloat(profile?.grade_buddy_tasks) || 0;       // Max 10%
+
+  const totalPercent = Math.min(
+    100,
+    Math.round(eventPoints + sigPoints + tambayPoints + interviewPoints + ogtPoints + constiPoints + buddyTaskPoints)
   );
 
   const bar = document.getElementById('progressBar');
@@ -293,10 +305,10 @@ async function renderDashboard() {
   if (tambayText) tambayText.textContent = tambayHours.toFixed(1);
 
   const tambayBadge = document.getElementById('tambayBadge');
-  if (tambayBadge) tambayBadge.textContent = `${tambayHours.toFixed(1)} / ${CONFIG.TARGET_TAMBAY_HOURS} hrs`;
+  if (tambayBadge) tambayBadge.textContent = `${tambayHours.toFixed(1)} / ${CONFIG.TARGET_TAMBAY_HOURS} hrs (${tambayPoints}%)`;
 
   const eventBadge = document.getElementById('eventBadge');
-  if (eventBadge) eventBadge.textContent = `${attendedEvents} Attended`;
+  if (eventBadge) eventBadge.textContent = `${attendedEvents} / 5 Attended (${eventPoints}%)`;
 
   const activeSession = await getActiveTambaySession(currentUser.id);
   const activeBanner = document.getElementById('activeTambayBanner');
@@ -317,14 +329,14 @@ async function renderDashboard() {
       <li class="task-item" style="flex-wrap: wrap; gap: 8px;">
         <div>
           <strong>${evt.name}</strong>
-          <div><small style="color:var(--text-muted);">${evt.attended ? 'Status: Attended' : 'Status: Pending'}</small></div>
+          <div><small style="color:var(--text-muted);">${evt.attended ? 'Status: Attended (+5.0%)' : 'Status: Pending (+0%)'}</small></div>
         </div>
         <div style="display:flex; align-items:center; gap:6px;">
           <a href="${generateGoogleCalendarUrl(evt.name)}" target="_blank" class="btn btn-secondary" style="min-height:36px; padding:4px 8px; font-size:0.75rem;">📅 Google Calendar</a>
           ${!evt.attended ? `
             <input type="text" id="pass-${evt.id}" placeholder="Passcode" style="width:90px; min-height:36px; padding:4px 8px; font-size:0.8rem;" />
             <button class="btn btn-checkin event-checkin-btn" data-id="${evt.id}" style="min-height:36px; padding:4px 10px; font-size:0.8rem;">Check In</button>
-          ` : '<span class="badge" style="background:var(--brand-mint); color:white;">Attended</span>'}
+          ` : '<span class="badge" style="background:var(--brand-mint); color:white;">Attended (5%)</span>'}
         </div>
       </li>
     `).join('');
@@ -349,7 +361,7 @@ async function renderRoster() {
       <td style="font-family:var(--font-mono);">${app.tambayHours} hrs</td>
       <td style="font-family:var(--font-mono); font-weight:700; color:var(--brand-forest);">${app.overallPercent}%</td>
       <td><span class="badge" style="background:${app.isTimedIn ? 'var(--brand-mint-subtle)' : 'var(--surface-subtle)'}; color:${app.isTimedIn ? 'var(--brand-mint)' : 'inherit'};">${app.isTimedIn ? 'Timed In' : 'Offline'}</span></td>
-      <td><button class="btn btn-secondary inspect-btn" data-id="${app.id}" style="min-height:32px; padding:2px 8px; font-size:0.75rem;">Inspect</button></td>
+      <td><button class="btn btn-secondary inspect-btn" data-id="${app.id}" style="min-height:32px; padding:2px 8px; font-size:0.75rem;">Inspect & Grade</button></td>
     </tr>
   `).join('');
 }
@@ -360,30 +372,81 @@ async function openInspection(appId) {
   const details = await getApplicantFullDetails(appId);
   if (!details || !modal) return;
 
-  document.getElementById('inspectApplicantName').textContent = `${details.profile.full_name} ("${details.profile.nickname}")`;
-  document.getElementById('inspectApplicantEmail').textContent = `ID: ${details.profile.id} | Balance: ${details.profile.currency} AC`;
+  const p = details.profile;
+  document.getElementById('inspectApplicantName').textContent = `${p.full_name} ("${p.nickname}")`;
+  document.getElementById('inspectApplicantEmail').textContent = `ID: ${p.id} | Balance: ${p.currency} AC`;
 
   const groups = await getManagedBuddyGroups();
   const select = document.getElementById('inspectBuddyGroupSelect');
   if (select) {
     select.innerHTML = `
-      <option value="Unassigned" ${details.profile.buddy_group_name === 'Unassigned' ? 'selected' : ''}>Unassigned</option>
-      ${groups.map(g => `<option value="${g.name}" ${details.profile.buddy_group_name === g.name ? 'selected' : ''}>${g.name}</option>`).join('')}
+      <option value="Unassigned" ${p.buddy_group_name === 'Unassigned' ? 'selected' : ''}>Unassigned</option>
+      ${groups.map(g => `<option value="${g.name}" ${p.buddy_group_name === g.name ? 'selected' : ''}>${g.name}</option>`).join('')}
     `;
   }
 
-  const sigList = document.getElementById('inspectSignatoriesList');
-  sigList.innerHTML = (details.signatories || []).map(s => `
-    <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid var(--border-subtle); font-size:0.8rem;">
-      <span>[${s.committee_name}] ${s.task}</span>
-      <input type="checkbox" class="admin-sig-check" data-id="${s.id}" ${s.completed ? 'checked' : ''} />
+  // Populate or inject officer manual evaluation inputs
+  let gradeBox = document.getElementById('inspectGradesContainer');
+  if (!gradeBox) {
+    gradeBox = document.createElement('div');
+    gradeBox.id = 'inspectGradesContainer';
+    gradeBox.style = 'margin: 14px 0; padding: 12px; background: var(--surface-subtle); border-radius: 6px;';
+    const insertBeforeElem = document.getElementById('inspectSignatoriesList')?.parentElement;
+    if (insertBeforeElem) insertBeforeElem.parentElement.insertBefore(gradeBox, insertBeforeElem);
+  }
+
+  gradeBox.innerHTML = `
+    <h4 style="margin: 0 0 8px 0; color: var(--brand-forest); font-size: 0.9rem;">Evaluation Scores (Manual Grades)</h4>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.8rem;">
+      <label>Interview (15%):
+        <input type="number" id="gradeInterviewInput" min="0" max="15" step="0.5" value="${p.grade_interview || 0}" style="width:100%; padding:4px; font-size:0.8rem;" />
+      </label>
+      <label>OGT 1 & 2 (20%):
+        <input type="number" id="gradeOgtInput" min="0" max="20" step="0.5" value="${p.grade_ogt || 0}" style="width:100%; padding:4px; font-size:0.8rem;" />
+      </label>
+      <label>Consti Quiz (10%):
+        <input type="number" id="gradeConstiInput" min="0" max="10" step="0.5" value="${p.grade_consti_quiz || 0}" style="width:100%; padding:4px; font-size:0.8rem;" />
+      </label>
+      <label>Buddy Tasks (10%):
+        <input type="number" id="gradeBuddyInput" min="0" max="10" step="0.5" value="${p.grade_buddy_tasks || 0}" style="width:100%; padding:4px; font-size:0.8rem;" />
+      </label>
     </div>
-  `).join('');
+    <button class="btn btn-checkin" id="saveManualGradesBtn" style="margin-top: 10px; width: 100%; min-height: 32px; font-size: 0.8rem;">
+      Save Evaluation Scores
+    </button>
+  `;
+
+  document.getElementById('saveManualGradesBtn')?.addEventListener('click', async () => {
+    const grades = {
+      interview: document.getElementById('gradeInterviewInput').value,
+      ogt: document.getElementById('gradeOgtInput').value,
+      constiQuiz: document.getElementById('gradeConstiInput').value,
+      buddyTasks: document.getElementById('gradeBuddyInput').value
+    };
+    if (await adminUpdateApplicantGrades(inspectedApplicantId, grades)) {
+      showToast('Evaluation scores saved.', 'success');
+      await renderRoster();
+    } else {
+      showToast('Failed to save scores.', 'error');
+    }
+  });
+
+  const sigList = document.getElementById('inspectSignatoriesList');
+  if (sigList) {
+    sigList.innerHTML = (details.signatories || []).map(s => `
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid var(--border-subtle); font-size:0.8rem;">
+        <span>[${s.committee_name}] ${s.task}</span>
+        <input type="checkbox" class="admin-sig-check" data-id="${s.id}" ${s.completed ? 'checked' : ''} />
+      </div>
+    `).join('');
+  }
 
   const logList = document.getElementById('inspectTambayLogsList');
-  logList.innerHTML = (details.tambayLogs || []).map(l => `
-    <div style="font-size:0.78rem; padding:2px 0;">+${l.hours} hrs on ${new Date(l.created_at).toLocaleString()}</div>
-  `).join('') || '<small class="subtext">No logs recorded.</small>';
+  if (logList) {
+    logList.innerHTML = (details.tambayLogs || []).map(l => `
+      <div style="font-size:0.78rem; padding:2px 0;">+${l.hours} hrs on ${new Date(l.created_at).toLocaleString()}</div>
+    `).join('') || '<small class="subtext">No logs recorded.</small>';
+  }
 
   modal.style.display = 'flex';
 }
@@ -524,12 +587,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async () => {
         await renderRoster();
         await renderBuddyGroupBoard();
+        await renderDashboard();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, async () => {
         await renderBuddyGroupBoard();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'signatories' }, async () => {
-        showToast('Signatory verified!', 'success');
+        showToast('Signatory matrix updated.', 'info');
         await renderDashboard();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, async () => {
@@ -543,7 +607,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       .subscribe();
   }
 
-  // Delegated Clipboard Handler
+  // Clipboard Handler
   document.addEventListener('click', async (e) => {
     const btn = e.target.closest('.copy-btn');
     if (!btn) return;
@@ -567,7 +631,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => { btn.textContent = orig; }, 1400);
   });
 
-  // Main Tab Navigation Delegator (Scoped specifically to header navigation bars)
+  // Header Nav Tab Delegation
   document.querySelectorAll('#racommTabNav .tab-btn, #applicantTabNav .tab-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const tabId = btn.dataset.tab;
@@ -610,7 +674,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // Universal Code Validation Modal
+  // Manual Universal Code Verification Modal
   const valModal = document.getElementById('manualCodeModal');
   document.getElementById('manualValidateBtn')?.addEventListener('click', () => {
     if (valModal) {
@@ -637,7 +701,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await handleAuth();
   });
 
-  // Dual Action Time-In / Time-Out QR Trigger
+  // Tambay QR Trigger
   document.getElementById('showQrBtn')?.addEventListener('click', async () => {
     const container = document.getElementById('qrDisplayContainer');
     const canvas = document.getElementById('qrcodeCanvas');
@@ -671,7 +735,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (container) container.style.display = 'none';
   });
 
-  // Perks Redemptions
+  // Perks
   document.getElementById('buyDeadlineBtn')?.addEventListener('click', async () => {
     if (await spendCurrency(30)) {
       showToast('Redeemed +2 days deadline extension.', 'success');
@@ -690,21 +754,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Event Passcode Verification
+  // Events Attendance Passcode
   document.getElementById('eventList')?.addEventListener('click', async (e) => {
     if (e.target.classList.contains('event-checkin-btn')) {
       const id = e.target.dataset.id;
       const inp = document.getElementById(`pass-${id}`);
       if (inp && await checkInToEvent(id, inp.value)) {
-        showToast('Attendance recorded! +2.0 hrs credited.', 'success');
+        showToast('Attendance recorded! +5.0% added to overall grade.', 'success');
         await renderDashboard();
       } else {
-        showToast('Invalid passcode.', 'error');
+        showToast('Invalid event passcode.', 'error');
       }
     }
   });
 
-  // Policy Toggles
+  // Global Settings Controls
   document.getElementById('set1xBtn')?.addEventListener('click', async () => {
     if (await updateGlobalSettings('hourly_multiplier', '1.0')) {
       showToast('Multiplier set to 1.0x', 'info');
@@ -744,7 +808,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Buddy Group Dashboard Controls
+  // Buddy Groups Board Controls
   document.getElementById('refreshBuddyGroupsBtn')?.addEventListener('click', async () => {
     await renderBuddyGroupBoard();
     showToast('Buddy groups refreshed.', 'info');
@@ -830,7 +894,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // When2Meet Date & Cell Selection
+  // Availability / When2Meet
   document.getElementById('when2meetStartDateInput')?.addEventListener('change', async (e) => {
     if (e.target.value) {
       currentMonday = getMonday(new Date(e.target.value));
@@ -848,7 +912,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await renderWhen2Meet();
   });
 
-  // Applicant Roster Search
+  // Roster Search & Inspection
   document.getElementById('searchApplicantInput')?.addEventListener('input', (e) => {
     const term = e.target.value.toLowerCase().trim();
     document.querySelectorAll('#applicantRosterTbody tr').forEach(row => {
@@ -856,7 +920,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // Inspection Modal Controls
   document.getElementById('applicantRosterTbody')?.addEventListener('click', async (e) => {
     if (e.target.classList.contains('inspect-btn')) {
       await openInspection(e.target.dataset.id);
@@ -930,7 +993,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           <h2>UP GEOP Applicant Summary</h2>
           <p><strong>Full Name:</strong> ${p.full_name} (${p.nickname})</p>
           <p><strong>Buddy Family:</strong> ${p.buddy_group_name}</p>
-          <p><strong>Available Tokens:</strong> ${p.currency} AC</p>
+          <p><strong>Evaluation Grades:</strong> Interview: ${p.grade_interview || 0}/15 | OGT: ${p.grade_ogt || 0}/20 | Consti: ${p.grade_consti_quiz || 0}/10 | Buddy: ${p.grade_buddy_tasks || 0}/10</p>
           <h3>Signatory Tasks</h3>
           <table>
             <thead><tr><th>Committee</th><th>Task Description</th><th>Status</th><th>Signed By</th></tr></thead>
