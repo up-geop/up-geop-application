@@ -1,57 +1,30 @@
-const CACHE_NAME = 'geop-portal-cache-v2';
+const CACHE_NAME = 'geop-shell-v2';
 const ASSETS = [
   './',
   './index.html',
   './styles.css',
   './manifest.json',
-  './geop.png'
+  './geop.png',
+  './js/config.js',
+  './js/storage.js',
+  './js/auth.js',
+  './js/events.js',
+  './js/signatories.js',
+  './js/app.js'
 ];
 
-self.addEventListener('install', (e) => {
-  e.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS);
-    })
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
   );
-  self.skipWaiting();
 });
 
-self.addEventListener('activate', (e) => {
-  e.waitUntil(
-    caches.keys().then((keys) => {
-      return Promise.all(
-        keys.map((key) => {
-          if (key !== CACHE_NAME) {
-            return caches.delete(key);
-          }
-        })
-      );
-    })
-  );
-  self.clients.claim();
-});
-
-self.addEventListener('fetch', (e) => {
-  const url = new URL(e.request.url);
-
-  // SKIP SERVICE WORKER INTERCEPTION FOR EXTERNAL SERVICES & CDNS (OneSignal, Supabase, etc.)
-  if (url.origin !== location.origin) {
-    return;
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  // Only handle same-origin static requests; allow Supabase, OneSignal, and CDN queries to bypass
+  if (url.origin === location.origin) {
+    event.respondWith(
+      caches.match(event.request).then((res) => res || fetch(event.request))
+    );
   }
-
-  e.respondWith(
-    caches.match(e.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-      return fetch(e.request).catch(() => {
-        // Fallback for failed local assets
-        return new Response('Offline content unavailable.', {
-          status: 503,
-          statusText: 'Service Unavailable',
-          headers: new Headers({ 'Content-Type': 'text/plain' })
-        });
-      });
-    })
-  );
 });
