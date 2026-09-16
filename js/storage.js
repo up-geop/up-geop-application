@@ -1,358 +1,434 @@
-import { COMMITTEES_LIST } from './config.js';
+import { CONFIG, COMMITTEES_LIST } from './config.js';
 
+// Supabase client instance
 const SUPABASE_URL = 'https://cwbrzxqmlzgedaisaour.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_oZ1RQOpJ4BoIAq_vDAqHWw_lOnoqFo0';
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY'; // Provided in your env/config
 
-const createClient = window.supabase?.createClient;
-export const supabase = createClient ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+export const supabase = window.supabase
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
 
-const TRAITS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRUM49iGYGFrwckeq-pSZv65dVWYi7yqE2DIYcpBfZKxFTqIc-1l-CXa6U1TvmGE3oqf8NhjWq29qeC/pub?gid=0&single=true&output=csv';
-const TASKS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRUM49iGYGFrwckeq-pSZv65dVWYi7yqE2DIYcpBfZKxFTqIc-1l-CXa6U1TvmGE3oqf8NhjWq29qeC/pub?gid=448373194&single=true&output=csv';
-
+// Helper: Get Current Authenticated User ID
 export async function getCurrentUserId() {
   if (!supabase) return null;
   const { data: { session } } = await supabase.auth.getSession();
   return session?.user?.id || null;
 }
 
-function parseCSV(text) {
-  if (!text) return [];
-  const rows = [];
-  let currentRow = [];
-  let currentCell = '';
-  let inQuotes = false;
-
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    const nextChar = text[i + 1];
-
-    if (char === '"') {
-      if (inQuotes && nextChar === '"') { currentCell += '"'; i++; }
-      else { inQuotes = !inQuotes; }
-    } else if (char === ',' && !inQuotes) {
-      currentRow.push(currentCell.trim());
-      currentCell = '';
-    } else if ((char === '\r' || char === '\n') && !inQuotes) {
-      if (char === '\r' && nextChar === '\n') i++;
-      currentRow.push(currentCell.trim());
-      if (currentRow.some(c => c.length > 0)) rows.push(currentRow);
-      currentRow = [];
-      currentCell = '';
-    } else {
-      currentCell += char;
-    }
-  }
-  if (currentCell || currentRow.length) {
-    currentRow.push(currentCell.trim());
-    rows.push(currentRow);
-  }
-  if (rows.length <= 1) return [];
-
-  const headers = rows[0].map(h => h.replace(/^["\uFEFF]|["\uFEFF]$/g, '').toLowerCase());
-  return rows.slice(1).map(row => {
-    const obj = {};
-    headers.forEach((h, idx) => { obj[h] = row[idx] || ''; });
-    obj._raw = row;
-    return obj;
-  });
-}
-
-export async function generateApplicantSignatories(userId) {
-  if (!supabase || !userId) return;
-  const { data: existing } = await supabase.from('signatories').select('id').eq('user_id', userId);
-  if (existing && existing.length > 0) return;
-
-  try {
-    const [traitsRes, tasksRes] = await Promise.all([
-      fetch(TRAITS_CSV_URL).then(r => r.text()),
-      fetch(TASKS_CSV_URL).then(r => r.text())
-    ]);
-
-    const traits = parseCSV(traitsRes);
-    const tasks = parseCSV(tasksRes);
-
-    const allTasks = tasks
-      .map(t => (t['task description'] || t['task_description'] || t._raw?.[0] || '').trim())
-      .filter(v => v.length > 0 && !v.toLowerCase().includes('task description'));
-
-    const shuffledTasks = [...allTasks].sort(() => 0.5 - Math.random());
-    const applicantPool = shuffledTasks.slice(0, Math.min(25, shuffledTasks.length));
-
-    const defaultTraits = [
-      ['owns an iPad or mechanical pencil for notes', 'has taken a GE class in AS / Palma Hall'],
-      ['wearing a green shirt or carries a canvas tote bag', 'loves taking photos during org events'],
-      ['commutes to campus using jeepneys or LRT', 'has been in UP GEOP for over 2 years'],
-      ['brought a reusable water tumbler today', 'loves studying in CS Library or Main Lib'],
-      ['has a favorite cafe near Katipunan', 'frequently tambays at the org room'],
-      ['loves collecting stickers or enamel pins', 'has attended a GEOP night or party']
-    ];
-
-    const records = [];
-    COMMITTEES_LIST.forEach((comm, idx) => {
-      const commTraits = traits
-        .filter(t => (t['committee'] || t._raw?.[0] || '').toLowerCase().trim() === comm.name.toLowerCase())
-        .map(t => (t['trait description'] || t['trait_description'] || t._raw?.[1] || '').trim())
-        .filter(v => v.length > 0);
-
-      const trait1 = commTraits[0] || defaultTraits[idx % defaultTraits.length][0];
-      const trait2 = commTraits[1] || defaultTraits[idx % defaultTraits.length][1];
-
-      records.push({
-        user_id: userId,
-        committee_name: comm.name,
-        type: 'MEMBER_1',
-        role: 'MEMBER_1',
-        task: `Find a member who ${trait1}`,
-        trait_description: `Find a member who ${trait1}`,
-        task_pool: applicantPool,
-        completed: false
-      });
-
-      records.push({
-        user_id: userId,
-        committee_name: comm.name,
-        type: 'MEMBER_2',
-        role: 'MEMBER_2',
-        task: `Find another member who ${trait2}`,
-        trait_description: `Find another member who ${trait2}`,
-        task_pool: applicantPool,
-        completed: false
-      });
-
-      records.push({
-        user_id: userId,
-        committee_name: comm.name,
-        type: 'VP',
-        role: 'VP',
-        task: `Official Endorsement by ${comm.vp}`,
-        trait_description: `Official Endorsement by ${comm.vp}`,
-        task_pool: applicantPool,
-        completed: false
-      });
-    });
-
-    await supabase.from('signatories').insert(records);
-  } catch (err) {
-    console.error('Error generating signatories:', err);
-  }
-}
-
-export async function getSignatories() {
-  const userId = await getCurrentUserId();
-  if (!userId || !supabase) return [];
-  await generateApplicantSignatories(userId);
-  const { data } = await supabase.from('signatories').select('*').eq('user_id', userId).order('created_at', { ascending: true });
-  return data || [];
-}
-
-export async function selectTaskForSignatory(taskId, selectedTask) {
-  if (!supabase || !taskId) return false;
-  const { error } = await supabase.from('signatories').update({ selected_task: selectedTask }).eq('id', taskId);
-  return !error;
-}
-
-export async function updateSignatoryAnswer(sigId, field, value) {
-  if (!supabase || !sigId || !field) return false;
-  const { error } = await supabase.from('signatories').update({ [field]: value }).eq('id', sigId);
-  return !error;
-}
-
-export async function generateApplicantShortCode(sigId = null, type = 'TAMBAY') {
-  const userId = await getCurrentUserId();
-  if (!supabase || !userId) return null;
-
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let code = '';
-  for (let i = 0; i < 6; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
-
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-  await supabase.from('profiles').update({
-    temp_code: code,
-    code_expires_at: expiresAt,
-    code_type: type,
-    pending_sig_id: sigId
-  }).eq('id', userId);
-
-  return code;
-}
-
-export async function verifyUniversalCode(code, verifierEmail) {
-  if (!supabase || !code || !verifierEmail) return { success: false, message: 'Invalid params' };
-  const { data, error } = await supabase.rpc('verify_applicant_code', {
-    p_code: code.trim().toUpperCase(),
-    p_verifier_email: verifierEmail.trim()
-  });
-  if (error) return { success: false, message: error.message };
-  return data;
-}
-
-export async function getTambayHours() {
-  const userId = await getCurrentUserId();
-  if (!userId || !supabase) return 0;
-  const { data } = await supabase.from('tambay_logs').select('hours').eq('user_id', userId);
-  return (data || []).reduce((sum, item) => sum + Number(item.hours), 0);
-}
-
-export async function getActiveTambaySession(applicantId = null) {
-  const targetId = applicantId || await getCurrentUserId();
-  if (!supabase || !targetId) return null;
-  const { data } = await supabase.from('tambay_sessions').select('*').eq('applicant_id', targetId).eq('status', 'ACTIVE').maybeSingle();
-  return data;
-}
+// ---------------------------------------------------------------------------
+// Members & Role Checks
+// ---------------------------------------------------------------------------
 
 export async function checkIfResidentMember(email) {
   if (!supabase || !email) return false;
-  const { data } = await supabase.from('members').select('id').ilike('email', email.trim()).maybeSingle();
-  return !!data;
+  const { data, error } = await supabase
+    .from('members')
+    .select('email')
+    .ilike('email', email.trim())
+    .maybeSingle();
+
+  if (error || !data) return false;
+  return true;
 }
 
 export async function checkIfRAComm(email) {
   if (!supabase || !email) return false;
-  const { data } = await supabase.from('members').select('racomm').ilike('email', email.trim()).maybeSingle();
-  return data?.racomm === true;
+  const { data, error } = await supabase
+    .from('members')
+    .select('racomm')
+    .ilike('email', email.trim())
+    .maybeSingle();
+
+  if (error || !data) return false;
+  return !!data.racomm;
 }
 
+export async function getAllMembersList() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('members')
+    .select('id, email, full_name, buddy_group_name, racomm')
+    .order('full_name', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching members list:', error);
+    return [];
+  }
+  return data || [];
+}
+
+// ---------------------------------------------------------------------------
+// Signatories Matrix
+// ---------------------------------------------------------------------------
+
+export async function getSignatories(userId = null) {
+  if (!supabase) return [];
+  const uid = userId || await getCurrentUserId();
+  if (!uid) return [];
+
+  const { data, error } = await supabase
+    .from('signatories')
+    .select('*')
+    .eq('user_id', uid)
+    .order('id', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching signatories:', error);
+    return [];
+  }
+  return data || [];
+}
+
+export async function selectTaskForSignatory(sigId, taskName) {
+  if (!supabase || !sigId) return false;
+  const { error } = await supabase
+    .from('signatories')
+    .update({ selected_task: taskName })
+    .eq('id', sigId);
+
+  if (error) {
+    console.error('Error updating selected task:', error);
+    return false;
+  }
+  return true;
+}
+
+export async function updateSignatoryAnswer(sigId, field, value) {
+  if (!supabase || !sigId || !field) return false;
+  const updatePayload = {};
+  updatePayload[field] = value;
+
+  const { error } = await supabase
+    .from('signatories')
+    .update(updatePayload)
+    .eq('id', sigId);
+
+  if (error) {
+    console.error(`Error updating signatory ${field}:`, error);
+    return false;
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Verification Code Generation & Validation
+// ---------------------------------------------------------------------------
+
+export async function generateApplicantShortCode(targetId = null, type = 'SIGNATORY') {
+  if (!supabase) return null;
+  const uid = await getCurrentUserId();
+  if (!uid) return null;
+
+  // Clean out stale codes for this user and type
+  await supabase
+    .from('verification_codes')
+    .delete()
+    .eq('user_id', uid)
+    .eq('type', type);
+
+  // Generate 6-character random alphanumeric string
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+
+  const { error } = await supabase
+    .from('verification_codes')
+    .insert([{
+      user_id: uid,
+      code,
+      type,
+      target_id: targetId,
+      created_at: new Date().toISOString()
+    }]);
+
+  if (error) {
+    console.error('Error generating verification code:', error);
+    return null;
+  }
+  return code;
+}
+
+export async function verifyUniversalCode(code, verifierEmail) {
+  if (!supabase || !code || !verifierEmail) {
+    return { success: false, message: 'Invalid verification parameters.' };
+  }
+
+  const cleanCode = code.trim().toUpperCase();
+  const cleanEmail = verifierEmail.trim().toLowerCase();
+
+  // 1. Look up code record
+  const { data: codeRecord, error: codeErr } = await supabase
+    .from('verification_codes')
+    .select('*')
+    .eq('code', cleanCode)
+    .maybeSingle();
+
+  if (codeErr || !codeRecord) {
+    return { success: false, message: 'Invalid or expired verification code.' };
+  }
+
+  // 2. Fetch Verifier details from public.members
+  const { data: member, error: memErr } = await supabase
+    .from('members')
+    .select('*')
+    .ilike('email', cleanEmail)
+    .maybeSingle();
+
+  if (memErr || !member) {
+    return { success: false, message: 'Only registered resident members can verify codes.' };
+  }
+
+  // 3. Handle SIGNATORY Endorsements
+  if (codeRecord.type === 'SIGNATORY') {
+    const { data: sig, error: sigErr } = await supabase
+      .from('signatories')
+      .select('*')
+      .eq('id', codeRecord.target_id)
+      .maybeSingle();
+
+    if (sigErr || !sig) {
+      return { success: false, message: 'Target signatory task was not found.' };
+    }
+
+    if (sig.completed) {
+      return { success: false, message: 'This signatory task has already been completed.' };
+    }
+
+    const isVPTask = sig.role === 'VP' || sig.type === 'VP';
+
+    // Strict VP Verification Gate: Only the assigned VP email may sign their committee endorsement
+    if (isVPTask) {
+      const commConfig = COMMITTEES_LIST.find(
+        c => c.name.toLowerCase() === (sig.committee_name || '').toLowerCase()
+      );
+
+      if (commConfig && commConfig.vpEmail.toLowerCase() !== cleanEmail) {
+        return {
+          success: false,
+          message: `Access denied: Only ${commConfig.vp} (${commConfig.vpEmail}) can endorse this VP task.`
+        };
+      }
+    } else {
+      // Non-VP Member tasks: enforce max 4 tasks per resident member per applicant
+      const { count, error: countErr } = await supabase
+        .from('signatories')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', codeRecord.user_id)
+        .eq('signed_by', member.full_name);
+
+      if (!countErr && (count || 0) >= 4) {
+        return {
+          success: false,
+          message: `${member.full_name} has already signed the maximum limit of 4 tasks for this applicant.`
+        };
+      }
+    }
+
+    // Complete the task
+    const { error: updateErr } = await supabase
+      .from('signatories')
+      .update({
+        completed: true,
+        signed_by: member.full_name,
+        verified_at: new Date().toISOString()
+      })
+      .eq('id', sig.id);
+
+    if (updateErr) {
+      console.error('Error signing task:', updateErr);
+      return { success: false, message: 'Database error occurred while recording signature.' };
+    }
+
+    // Burn used code
+    await supabase.from('verification_codes').delete().eq('code', cleanCode);
+    return { success: true, message: `Successfully endorsed by ${member.full_name}!` };
+  }
+
+  // 4. Handle TAMBAY Sessions (Time-In / Time-Out)
+  if (codeRecord.type === 'TAMBAY') {
+    const active = await getActiveTambaySession(codeRecord.user_id);
+    const settings = await getGlobalSettings();
+    const multiplier = settings.multiplier || 1.0;
+
+    if (!active) {
+      // Time-In
+      const { error: inErr } = await supabase
+        .from('tambay_sessions')
+        .insert([{
+          user_id: codeRecord.user_id,
+          time_in: new Date().toISOString(),
+          verified_by: member.full_name
+        }]);
+
+      if (inErr) {
+        return { success: false, message: 'Failed to start tambay session.' };
+      }
+
+      await supabase.from('verification_codes').delete().eq('code', cleanCode);
+      return { success: true, message: `Applicant successfully timed in by ${member.full_name}.` };
+    } else {
+      // Time-Out
+      const now = new Date();
+      const inTime = new Date(active.time_in);
+      let durationHours = (now - inTime) / (1000 * 60 * 60);
+
+      // Apply multiplier
+      let creditedHours = durationHours * multiplier;
+
+      // Apply 3-hr daily cap if active
+      if (settings.dailyCapEnabled && creditedHours > 3.0) {
+        creditedHours = 3.0;
+      }
+
+      creditedHours = Math.max(0.1, Number(creditedHours.toFixed(2)));
+
+      await supabase.from('tambay_sessions').delete().eq('id', active.id);
+      
+      const { error: logErr } = await supabase
+        .from('tambay_logs')
+        .insert([{
+          user_id: codeRecord.user_id,
+          hours: creditedHours,
+          verified_by: member.full_name
+        }]);
+
+      if (logErr) {
+        return { success: false, message: 'Failed to credit tambay hours.' };
+      }
+
+      await supabase.from('verification_codes').delete().eq('code', cleanCode);
+      return { success: true, message: `Applicant timed out. +${creditedHours} hrs credited by ${member.full_name}!` };
+    }
+  }
+
+  return { success: false, message: 'Unsupported code type.' };
+}
+
+// ---------------------------------------------------------------------------
+// Tambay Logs & Active Sessions
+// ---------------------------------------------------------------------------
+
+export async function getTambayHours(userId = null) {
+  if (!supabase) return 0;
+  const uid = userId || await getCurrentUserId();
+  if (!uid) return 0;
+
+  const { data, error } = await supabase
+    .from('tambay_logs')
+    .select('hours')
+    .eq('user_id', uid);
+
+  if (error || !data) return 0;
+  return data.reduce((acc, row) => acc + (parseFloat(row.hours) || 0), 0);
+}
+
+export async function getActiveTambaySession(userId) {
+  if (!supabase || !userId) return null;
+  const { data, error } = await supabase
+    .from('tambay_sessions')
+    .select('*')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// Global Settings & Policies
+// ---------------------------------------------------------------------------
+
 export async function getGlobalSettings() {
-  if (!supabase) return { dailyCapEnabled: true, multiplier: 1.0 };
-  const { data } = await supabase.from('global_settings').select('*');
-  const cap = data?.find(r => r.key === 'daily_cap_enabled');
-  const mult = data?.find(r => r.key === 'hourly_multiplier');
-  return {
-    dailyCapEnabled: cap ? cap.value === 'true' : true,
-    multiplier: mult ? parseFloat(mult.value) : 1.0
-  };
+  if (!supabase) return { multiplier: 1.0, dailyCapEnabled: true };
+
+  const { data } = await supabase
+    .from('global_settings')
+    .select('key, value');
+
+  let multiplier = 1.0;
+  let dailyCapEnabled = true;
+
+  if (data) {
+    const multObj = data.find(item => item.key === 'hourly_multiplier');
+    const capObj = data.find(item => item.key === 'daily_cap_enabled');
+    if (multObj) multiplier = parseFloat(multObj.value) || 1.0;
+    if (capObj) dailyCapEnabled = capObj.value === 'true';
+  }
+
+  return { multiplier, dailyCapEnabled };
 }
 
 export async function updateGlobalSettings(key, value) {
   if (!supabase) return false;
-  const { error } = await supabase.from('global_settings').upsert({ key, value: String(value) });
-  return !error;
-}
+  const { error } = await supabase
+    .from('global_settings')
+    .upsert({ key, value: String(value), updated_at: new Date().toISOString() });
 
-export async function getAllApplicantsProgress() {
-  if (!supabase) return [];
-  const { data: profiles } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
-  const { data: allSigs } = await supabase.from('signatories').select('*');
-  const { data: allTambay } = await supabase.from('tambay_logs').select('*');
-  const { data: activeSessions } = await supabase.from('tambay_sessions').select('*').eq('status', 'ACTIVE');
-
-  return (profiles || []).map(p => {
-    const userSigs = (allSigs || []).filter(s => s.user_id === p.id);
-    const completedSigs = userSigs.filter(s => s.completed).length;
-    const userTambay = (allTambay || []).filter(t => t.user_id === p.id);
-    const tambayHours = userTambay.reduce((sum, item) => sum + Number(item.hours), 0);
-
-    const sigRatio = completedSigs / (userSigs.length || 18);
-    const tambayRatio = Math.min(tambayHours / 10, 1);
-    const overallPercent = Math.round((sigRatio * 0.40 + tambayRatio * 0.30) * 100);
-
-    return {
-      id: p.id,
-      fullName: p.full_name || 'N/A',
-      nickname: p.nickname || 'N/A',
-      buddyGroup: p.buddy_group_name || 'Unassigned',
-      completedSigs,
-      totalSigs: userSigs.length || 18,
-      tambayHours: tambayHours.toFixed(1),
-      overallPercent,
-      isTimedIn: (activeSessions || []).some(s => s.applicant_id === p.id)
-    };
-  });
-}
-
-export async function getApplicantFullDetails(applicantId) {
-  if (!supabase || !applicantId) return null;
-  const { data: profile } = await supabase.from('profiles').select('*').eq('id', applicantId).single();
-  const { data: signatories } = await supabase.from('signatories').select('*').eq('user_id', applicantId).order('created_at', { ascending: true });
-  const { data: tambayLogs } = await supabase.from('tambay_logs').select('*').eq('user_id', applicantId).order('created_at', { ascending: false });
-  return { profile, signatories, tambayLogs };
-}
-
-export async function deleteApplicantProfile(applicantId) {
-  if (!supabase || !applicantId) return false;
-
-  const { data, error } = await supabase.rpc('admin_delete_applicant', {
-    p_applicant_id: String(applicantId).trim()
-  });
-
-  if (error || !data?.success) {
-    console.error('Delete applicant error:', error || data?.message);
+  if (error) {
+    console.error(`Error updating global setting ${key}:`, error);
     return false;
   }
-
   return true;
 }
 
-export async function adminAdjustTambayHours(applicantId, hours) {
-  if (!supabase || !applicantId) return false;
-  const { error } = await supabase.from('tambay_logs').insert([{ user_id: applicantId, hours }]);
-  return !error;
-}
+// ---------------------------------------------------------------------------
+// Applicant Currency & Perks
+// ---------------------------------------------------------------------------
 
-export async function adminAdjustTokens(applicantId, currency) {
-  if (!supabase || !applicantId) return false;
-  const { error } = await supabase.from('profiles').update({ currency }).eq('id', applicantId);
-  return !error;
-}
+export async function spendCurrency(amount) {
+  if (!supabase) return false;
+  const uid = await getCurrentUserId();
+  if (!uid) return false;
 
-export async function adminToggleApplicantSignatory(taskId, status) {
-  if (!supabase || !taskId) return false;
-  const { error } = await supabase.from('signatories').update({ completed: status }).eq('id', taskId);
-  return !error;
-}
-
-export async function spendCurrency(cost) {
-  const userId = await getCurrentUserId();
-  if (!userId || !supabase) return false;
-  const { data: p } = await supabase.from('profiles').select('currency').eq('id', userId).single();
-  if (!p || p.currency < cost) return false;
-  const { error } = await supabase.from('profiles').update({ currency: p.currency - cost }).eq('id', userId);
-  return !error;
-}
-
-export async function getBuddyGroupMembers(groupName) {
-  if (!groupName || !supabase || groupName === 'Unassigned') return [];
-
-  const { data: applicants } = await supabase
+  const { data: profile, error: pErr } = await supabase
     .from('profiles')
-    .select('full_name, nickname')
-    .eq('buddy_group_name', groupName);
+    .select('currency')
+    .eq('id', uid)
+    .single();
 
-  const { data: members } = await supabase
-    .from('members')
-    .select('full_name')
-    .eq('buddy_group_name', groupName);
+  if (pErr || !profile || (profile.currency || 0) < amount) {
+    return false;
+  }
 
-  const formattedApplicants = (applicants || []).map(a => ({
-    full_name: a.full_name || 'Applicant',
-    nickname: a.nickname || '',
-    role: 'Applicant'
-  }));
+  const { error } = await supabase
+    .from('profiles')
+    .update({ currency: profile.currency - amount })
+    .eq('id', uid);
 
-  const formattedMembers = (members || []).map(m => ({
-    full_name: m.full_name || 'Member',
-    nickname: '',
-    role: 'Member'
-  }));
-
-  return [...formattedMembers, ...formattedApplicants];
+  return !error;
 }
+
+// ---------------------------------------------------------------------------
+// Buddy Groups & Assignments
+// ---------------------------------------------------------------------------
 
 export async function getManagedBuddyGroups() {
   if (!supabase) return [];
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('buddy_groups')
     .select('*')
     .order('name', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching buddy groups:', error);
+    return [];
+  }
   return data || [];
 }
 
-export async function createBuddyGroup(name, description = '') {
+export async function createBuddyGroup(name) {
   if (!supabase || !name) return false;
   const { error } = await supabase
     .from('buddy_groups')
-    .insert([{ name: name.trim(), description: description.trim() }]);
-  return !error;
+    .insert([{ name: name.trim() }]);
+
+  if (error) {
+    console.error('Error creating buddy group:', error);
+    return false;
+  }
+  return true;
 }
 
 export async function deleteBuddyGroup(groupId) {
@@ -361,6 +437,7 @@ export async function deleteBuddyGroup(groupId) {
     .from('buddy_groups')
     .delete()
     .eq('id', groupId);
+
   return !error;
 }
 
@@ -370,16 +447,8 @@ export async function assignApplicantBuddyGroup(applicantId, groupName) {
     .from('profiles')
     .update({ buddy_group_name: groupName })
     .eq('id', applicantId);
-  return !error;
-}
 
-export async function getAllMembersList() {
-  if (!supabase) return [];
-  const { data } = await supabase
-    .from('members')
-    .select('id, email, full_name, racomm, buddy_group_name')
-    .order('full_name', { ascending: true });
-  return data || [];
+  return !error;
 }
 
 export async function assignMemberBuddyGroup(memberId, groupName) {
@@ -388,39 +457,217 @@ export async function assignMemberBuddyGroup(memberId, groupName) {
     .from('members')
     .update({ buddy_group_name: groupName })
     .eq('id', memberId);
+
   return !error;
 }
 
+export async function getBuddyGroupMembers(groupName) {
+  if (!supabase || !groupName || groupName === 'Unassigned') return [];
+
+  const [resMembers, resApplicants] = await Promise.all([
+    supabase.from('members').select('full_name').eq('buddy_group_name', groupName),
+    supabase.from('profiles').select('full_name, nickname').eq('buddy_group_name', groupName)
+  ]);
+
+  const list = [];
+  (resMembers.data || []).forEach(m => {
+    list.push({ full_name: m.full_name, nickname: '', role: 'Member' });
+  });
+  (resApplicants.data || []).forEach(a => {
+    list.push({ full_name: a.full_name, nickname: a.nickname, role: 'Applicant' });
+  });
+
+  return list;
+}
+
+// ---------------------------------------------------------------------------
+// RAComm Administrative Roster & Inspection
+// ---------------------------------------------------------------------------
+
+export async function getAllApplicantsProgress() {
+  if (!supabase) return [];
+
+  const [profilesRes, sigsRes, tambayLogsRes, activeSessionsRes] = await Promise.all([
+    supabase.from('profiles').select('*').order('created_at', { ascending: false }),
+    supabase.from('signatories').select('user_id, completed'),
+    supabase.from('tambay_logs').select('user_id, hours'),
+    supabase.from('tambay_sessions').select('user_id')
+  ]);
+
+  const profiles = profilesRes.data || [];
+  const sigs = sigsRes.data || [];
+  const logs = tambayLogsRes.data || [];
+  const activeSet = new Set((activeSessionsRes.data || []).map(s => s.user_id));
+
+  return profiles.map(p => {
+    const userSigs = sigs.filter(s => s.user_id === p.id);
+    const totalSigs = userSigs.length || 18;
+    const completedSigs = userSigs.filter(s => s.completed).length;
+
+    const userLogs = logs.filter(l => l.user_id === p.id);
+    const tambayHours = Number(userLogs.reduce((sum, l) => sum + (parseFloat(l.hours) || 0), 0).toFixed(1));
+
+    const sigRatio = totalSigs > 0 ? (completedSigs / totalSigs) : 0;
+    const tambayRatio = Math.min(tambayHours / CONFIG.TARGET_TAMBAY_HOURS, 1);
+    const overallPercent = Math.round((sigRatio * 0.6 + tambayRatio * 0.4) * 100);
+
+    return {
+      id: p.id,
+      fullName: p.full_name,
+      nickname: p.nickname,
+      buddyGroup: p.buddy_group_name || 'Unassigned',
+      completedSigs,
+      totalSigs,
+      tambayHours,
+      overallPercent,
+      isTimedIn: activeSet.has(p.id)
+    };
+  });
+}
+
+export async function getApplicantFullDetails(applicantId) {
+  if (!supabase || !applicantId) return null;
+
+  const [profileRes, sigsRes, logsRes] = await Promise.all([
+    supabase.from('profiles').select('*').eq('id', applicantId).single(),
+    supabase.from('signatories').select('*').eq('user_id', applicantId).order('id', { ascending: true }),
+    supabase.from('tambay_logs').select('*').eq('user_id', applicantId).order('created_at', { ascending: false })
+  ]);
+
+  return {
+    profile: profileRes.data,
+    signatories: sigsRes.data || [],
+    tambayLogs: logsRes.data || []
+  };
+}
+
+export async function adminAdjustTambayHours(applicantId, hours) {
+  if (!supabase || !applicantId) return false;
+  const { error } = await supabase
+    .from('tambay_logs')
+    .insert([{
+      user_id: applicantId,
+      hours: parseFloat(hours),
+      verified_by: 'RAComm Officer (Admin Adjust)'
+    }]);
+
+  return !error;
+}
+
+export async function adminAdjustTokens(applicantId, newBalance) {
+  if (!supabase || !applicantId) return false;
+  const { error } = await supabase
+    .from('profiles')
+    .update({ currency: parseInt(newBalance, 10) })
+    .eq('id', applicantId);
+
+  return !error;
+}
+
+export async function adminToggleApplicantSignatory(sigId, completed) {
+  if (!supabase || !sigId) return false;
+  const { error } = await supabase
+    .from('signatories')
+    .update({
+      completed: !!completed,
+      signed_by: completed ? 'RAComm Officer (Admin Override)' : null,
+      verified_at: completed ? new Date().toISOString() : null
+    })
+    .eq('id', sigId);
+
+  return !error;
+}
+
+export async function deleteApplicantProfile(applicantId) {
+  if (!supabase || !applicantId) return false;
+  const { error } = await supabase.rpc('admin_delete_applicant', {
+    target_user_id: applicantId
+  });
+
+  if (error) {
+    console.error('Error invoking admin_delete_applicant RPC:', error);
+    return false;
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Announcements
+// ---------------------------------------------------------------------------
+
 export async function getAnnouncements() {
   if (!supabase) return [];
-  const { data } = await supabase.from('announcements').select('*').order('created_at', { ascending: false });
+  const { data, error } = await supabase
+    .from('announcements')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching announcements:', error);
+    return [];
+  }
   return data || [];
 }
 
-export async function createAnnouncement(title, content, author_email, author_avatar) {
+export async function createAnnouncement(title, content, authorEmail, targetGroup = null) {
   if (!supabase) return false;
-  const { error } = await supabase.from('announcements').insert([{ title, content, author_email, author_avatar }]);
+  const { error } = await supabase
+    .from('announcements')
+    .insert([{
+      title: title.trim(),
+      content: content.trim(),
+      author_email: authorEmail,
+      target_group: targetGroup
+    }]);
+
   return !error;
 }
 
 export async function deleteAnnouncement(id) {
-  if (!supabase) return false;
-  const { error } = await supabase.from('announcements').delete().eq('id', id);
+  if (!supabase || !id) return false;
+  const { error } = await supabase
+    .from('announcements')
+    .delete()
+    .eq('id', id);
+
   return !error;
 }
 
+// ---------------------------------------------------------------------------
+// When2Meet Availability Grid
+// ---------------------------------------------------------------------------
+
 export async function getAvailabilitySlots() {
   if (!supabase) return [];
-  const { data } = await supabase.from('availability_slots').select('*');
+  const { data, error } = await supabase
+    .from('availability_slots')
+    .select('*');
+
+  if (error) {
+    console.error('Error fetching availability:', error);
+    return [];
+  }
   return data || [];
 }
 
-export async function toggleUserAvailabilitySlot(userId, userName, slotKey, isAvailable) {
-  if (!supabase) return false;
-  if (isAvailable) {
-    await supabase.from('availability_slots').delete().eq('user_id', userId).eq('time_slot', slotKey);
+export async function toggleUserAvailabilitySlot(userId, userName, timeSlot, isSelected) {
+  if (!supabase || !userId || !timeSlot) return false;
+
+  if (isSelected) {
+    const { error } = await supabase
+      .from('availability_slots')
+      .delete()
+      .eq('user_id', userId)
+      .eq('time_slot', timeSlot);
+    return !error;
   } else {
-    await supabase.from('availability_slots').insert([{ user_id: userId, user_name: userName, time_slot: slotKey }]);
+    const { error } = await supabase
+      .from('availability_slots')
+      .insert([{
+        user_id: userId,
+        user_name: userName,
+        time_slot: timeSlot
+      }]);
+    return !error;
   }
-  return true;
 }
