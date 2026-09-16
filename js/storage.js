@@ -226,17 +226,20 @@ export async function verifyUniversalCode(code, verifierEmail) {
       }
     }
 
+    const updatePayload = {
+      completed: true,
+      signed_by: member.full_name,
+      verified_at: new Date().toISOString()
+    };
+
     const { error: updateErr } = await supabase
       .from('signatories')
-      .update({
-        completed: true,
-        signed_by: member.full_name,
-        verified_at: new Date().toISOString()
-      })
+      .update(updatePayload)
       .eq('id', sig.id);
 
     if (updateErr) {
-      return { success: false, message: 'Database error occurred while recording signature.' };
+      console.error('Error updating signatory:', updateErr);
+      return { success: false, message: updateErr.message || 'Database error occurred while recording signature.' };
     }
 
     await supabase.from('verification_codes').delete().eq('code', cleanCode);
@@ -246,7 +249,7 @@ export async function verifyUniversalCode(code, verifierEmail) {
   if (codeRecord.type === 'TAMBAY') {
     const active = await getActiveTambaySession(codeRecord.user_id);
     const settings = await getGlobalSettings();
-    const multiplier = settings.multiplier || 1.0;
+    const baseMultiplier = settings.multiplier || 1.0;
 
     if (!active) {
       const { error: inErr } = await supabase
@@ -268,7 +271,17 @@ export async function verifyUniversalCode(code, verifierEmail) {
       const inTime = new Date(active.time_in);
       let durationHours = (now - inTime) / (1000 * 60 * 60);
 
-      let creditedHours = durationHours * multiplier;
+      // Check for personal 1.5x boost
+      const { data: userProfile } = await supabase
+        .from('profiles')
+        .select('tambay_boost_active')
+        .eq('id', codeRecord.user_id)
+        .single();
+
+      const hasBoost = !!userProfile?.tambay_boost_active;
+      const effectiveMultiplier = baseMultiplier * (hasBoost ? 1.5 : 1.0);
+
+      let creditedHours = durationHours * effectiveMultiplier;
       if (settings.dailyCapEnabled && creditedHours > 3.0) {
         creditedHours = 3.0;
       }
@@ -281,15 +294,26 @@ export async function verifyUniversalCode(code, verifierEmail) {
         .insert([{
           user_id: codeRecord.user_id,
           hours: creditedHours,
-          verified_by: member.full_name
+          verified_by: member.full_name + (hasBoost ? ' (1.5x Boost Applied)' : '')
         }]);
 
       if (logErr) {
         return { success: false, message: 'Failed to credit tambay hours.' };
       }
 
+      // Consume boost if active
+      if (hasBoost) {
+        await supabase
+          .from('profiles')
+          .update({ tambay_boost_active: false })
+          .eq('id', codeRecord.user_id);
+      }
+
       await supabase.from('verification_codes').delete().eq('code', cleanCode);
-      return { success: true, message: `Applicant timed out. +${creditedHours} hrs credited by ${member.full_name}!` };
+      return { 
+        success: true, 
+        message: `Applicant timed out. +${creditedHours} hrs credited by ${member.full_name}${hasBoost ? ' with 1.5x boost!' : '!'}` 
+      };
     }
   }
 
@@ -378,6 +402,98 @@ export async function spendCurrency(amount) {
   return !error;
 }
 
+/* =========================================================
+   NEW SHOP HELPERS: CROWDFUND POT, MULTIPLIER, TRAIT SWAPS
+   ========================================================= */
+
+export async function getBatchPot(potId = 'buddy_task_ext') {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from('batch_pots')
+    .select('*')
+    .eq('id', potId)
+    .single();
+
+  if (error) return null;
+  return data;
+}
+
+export async function contributeToPot(potId, amount, userName) {
+  if (!supabase || !potId || amount <= 0) return { success: false, message: 'Invalid contribution amount.' };
+  const uid = await getCurrentUserId();
+  if (!uid) return { success: false, message: 'User not authenticated.' };
+
+  const { data, error } = await supabase.rpc('contribute_to_batch_pot', {
+    target_pot_id: potId,
+    contributor_id: uid,
+    contributor_name: userName,
+    contrib_amount: parseInt(amount, 10)
+  });
+
+  if (error) {
+    return { success: false, message: error.message };
+  }
+  return data;
+}
+
+export async function buyTambayMultiplierBoost() {
+  if (!supabase) return { success: false, message: 'Database connection offline.' };
+  const uid = await getCurrentUserId();
+  if (!uid) return { success: false, message: 'Please sign in.' };
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('currency, tambay_boost_active')
+    .eq('id', uid)
+    .single();
+
+  if (!profile || (profile.currency || 0) < 40) {
+    return { success: false, message: 'Insufficient AC (40 AC needed).' };
+  }
+  if (profile.tambay_boost_active) {
+    return { success: false, message: 'You already have an active 1.5× boost ready for your next session!' };
+  }
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({
+      currency: profile.currency - 40,
+      tambay_boost_active: true
+    })
+    .eq('id', uid);
+
+  if (error) return { success: false, message: 'Failed to activate session boost.' };
+  return { success: true, message: '1.5× Boost activated! It will apply to your next clocked-out tambay session.' };
+}
+
+export async function swapSignatoryTrait(sigId, newTraitName, cost) {
+  if (!supabase || !sigId || !newTraitName) return false;
+  const uid = await getCurrentUserId();
+  if (!uid) return false;
+
+  const hasFunds = await spendCurrency(cost);
+  if (!hasFunds) return false;
+
+  const { error } = await supabase
+    .from('signatories')
+    .update({
+      selected_task: newTraitName,
+      task: newTraitName
+    })
+    .eq('id', sigId)
+    .eq('user_id', uid);
+
+  if (error) {
+    console.error('Error updating signatory task swap:', error);
+    return false;
+  }
+  return true;
+}
+
+/* =========================================================
+   ADMINISTRATION & GRADING HELPERS
+   ========================================================= */
+
 export async function getManagedBuddyGroups() {
   if (!supabase) return [];
   const { data, error } = await supabase
@@ -398,11 +514,7 @@ export async function createBuddyGroup(name) {
     .from('buddy_groups')
     .insert([{ name: name.trim() }]);
 
-  if (error) {
-    console.error('Error creating buddy group:', error);
-    return false;
-  }
-  return true;
+  return !error;
 }
 
 export async function deleteBuddyGroup(groupId) {
@@ -454,7 +566,6 @@ export async function getBuddyGroupMembers(groupName) {
   return list;
 }
 
-// RAComm Evaluation Updates
 export async function adminUpdateApplicantGrades(applicantId, grades) {
   if (!supabase || !applicantId) return false;
 
@@ -468,11 +579,7 @@ export async function adminUpdateApplicantGrades(applicantId, grades) {
     })
     .eq('id', applicantId);
 
-  if (error) {
-    console.error('Error updating applicant grades:', error);
-    return false;
-  }
-  return true;
+  return !error;
 }
 
 export async function getAllApplicantsProgress() {
@@ -502,11 +609,6 @@ export async function getAllApplicantsProgress() {
 
     const userEventsCount = attendedEvents.filter(e => e.user_id === p.id).length;
 
-    // Weight Calculation:
-    // Events: 5% each up to 25%
-    // Signatories: 15%
-    // Tambay: 5% (Target 10h)
-    // Manual RAComm: Interview (15%), OGT (20%), Consti (10%), Buddy (10%)
     const sigRatio = totalSigs > 0 ? (completedSigs / totalSigs) : 0;
     const tambayRatio = Math.min(tambayHours / CONFIG.TARGET_TAMBAY_HOURS, 1);
 
