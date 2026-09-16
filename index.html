@@ -9,7 +9,7 @@
   <link rel="icon" href="geop.png" />
   <meta name="theme-color" content="#1b382b" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="preconnect" href="https://fonts.gstatic.com" />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
   <link rel="stylesheet" href="styles.css" />
@@ -17,6 +17,7 @@
 </head>
 <body>
 
+  <!-- Full-Width Edge-to-Edge Banner -->
   <header class="header">
     <div class="header-inner">
       <img src="geop.png" onerror="this.onerror=null; this.src='https://cdn-icons-png.flaticon.com/512/3135/3135715.png';" alt="Logo" class="header-logo" />
@@ -30,7 +31,7 @@
   <main class="container">
     <!-- User Status Bar -->
     <div id="userProfileBar" class="card" style="display: none; justify-content: space-between; align-items: center; padding: 12px 18px;">
-      <div style="display: flex; align-items: center; gap: 8px;">
+      <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
         <span style="font-size: 0.85rem;">Signed in: <strong id="userEmailText" style="color: var(--brand-forest);"></strong></span>
         <span id="roleBadgeHeader" class="badge">Applicant</span>
       </div>
@@ -43,7 +44,7 @@
       <p class="subtext" style="max-width: 400px; margin: 0 auto 20px;">
         Sign in using your official <strong>@up.edu.ph</strong> account to view your progress.
       </p>
-      <button id="loginGoogleBtn" class="btn">Sign In with Google</button>
+      <button id="loginGoogleBtn" class="btn btn-checkin" style="min-height: 42px; padding: 6px 18px;">Sign In with Google</button>
     </div>
 
     <!-- Applicant Onboarding Section -->
@@ -73,15 +74,17 @@
         <button class="tab-btn" data-tab="tab-schedule">Schedule & Announcements</button>
       </nav>
 
-      <!-- Member Default Hub View -->
+      <!-- Member Verification Hub View -->
       <div id="member-hub-view" class="tab-content active">
         <section class="card">
           <div class="card-header">
-            <h2>Member Verification</h2>
+            <div>
+              <h2>Member Verification</h2>
+              <p class="subtext">Verify applicant tasks or record time-in and time-out logs.</p>
+            </div>
             <span class="badge" style="background: var(--brand-forest); color: white;">Verifier</span>
           </div>
-          <p class="subtext">Verify applicant tasks or record time-in and time-out logs.</p>
-          <button id="manualValidateBtn" class="btn btn-checkin">Validate 6-Character Code</button>
+          <button id="manualValidateBtn" class="btn btn-checkin" style="min-height: 40px; padding: 6px 16px;">Validate 6-Character Code</button>
         </section>
       </div>
 
@@ -89,7 +92,10 @@
       <div id="racomm-roster" class="tab-content">
         <section class="card">
           <div class="card-header">
-            <h2>Applicant Roster</h2>
+            <div>
+              <h2>Applicant Roster</h2>
+              <p class="subtext">Track applicant completion metrics and manage grade records.</p>
+            </div>
             <input type="text" id="searchApplicantInput" placeholder="Filter by name..." style="min-height: 36px; padding: 4px 10px; font-size: 0.82rem;" />
           </div>
           <div class="table-responsive">
@@ -111,14 +117,16 @@
         </section>
       </div>
 
-      <!-- RAComm: Dedicated Buddy Groups Board -->
+      <!-- RAComm: Buddy Groups Board -->
       <div id="racomm-buddy-groups" class="tab-content">
         <section class="card">
           <div class="card-header">
-            <h2>Buddy Group Dashboard</h2>
+            <div>
+              <h2>Buddy Group Dashboard</h2>
+              <p class="subtext">Organize applicants and resident members across active buddy groups.</p>
+            </div>
             <button id="refreshBuddyGroupsBtn" class="btn btn-secondary" style="min-height: 36px; padding: 4px 10px; font-size: 0.8rem;">Refresh</button>
           </div>
-          <p class="subtext">Organize applicants and resident members across active buddy groups.</p>
 
           <div style="display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap;">
             <input type="text" id="newGroupNameInputDashboard" placeholder="Create new group (e.g. Group 5)" style="flex: 1; min-width: 200px;" />
@@ -129,7 +137,7 @@
         </section>
       </div>
 
-      <!-- RAComm: Settings & Global Policies -->
+      <!-- RAComm: Global Settings & Policies -->
       <div id="racomm-settings" class="tab-content">
         <section class="card">
           <h2>Global Settings</h2>
@@ -301,8 +309,8 @@
       </section>
     </div>
 
-    <!-- Modals -->
-    <div id="manualCodeModal" class="modal-backdrop" role="dialog" aria-modal="true">
+    <!-- Manual Code Verification Modal -->
+    <div id="manualCodeModal" class="modal-backdrop" role="dialog" aria-modal="true" style="display: none;">
       <div class="modal-box">
         <h3 style="margin-bottom: 8px;">Validate Code</h3>
         <p class="subtext">Enter applicant 6-character code.</p>
