@@ -337,6 +337,7 @@ async function handleAuth() {
     if (bar) bar.style.display = 'flex';
     if (emailText) emailText.textContent = currentUser.email;
 
+    // Scan-to-link QR verification handler
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('verifyCode') || urlParams.get('validateApplicant');
     if (code) {
@@ -435,7 +436,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       .subscribe();
   }
 
-  // Global Clipboard Delegator
+  // Delegated Clipboard Handler
   document.addEventListener('click', async (e) => {
     const btn = e.target.closest('.copy-btn');
     if (!btn) return;
@@ -459,7 +460,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => { btn.textContent = orig; }, 1400);
   });
 
-  // Tab Navigation Delegator
+  // Tab Switching
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const tabId = btn.dataset.tab;
@@ -486,7 +487,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // Code Validation Modal
+  // Universal Manual Code Validator Modal
   const valModal = document.getElementById('manualCodeModal');
   document.getElementById('manualValidateBtn')?.addEventListener('click', () => {
     if (valModal) {
@@ -513,19 +514,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     await handleAuth();
   });
 
-  // QR Modal Display
+  // Automated Time-In / Time-Out QR Trigger
   document.getElementById('showQrBtn')?.addEventListener('click', async () => {
     const container = document.getElementById('qrDisplayContainer');
     const canvas = document.getElementById('qrcodeCanvas');
     const text = document.getElementById('applicantShortCodeText');
 
+    const activeSession = await getActiveTambaySession(currentUser.id);
+    const isTimingOut = !!activeSession;
+
     const code = await generateApplicantShortCode(null, 'TAMBAY');
     if (text) text.textContent = code || 'ERROR';
 
-    const url = `${window.location.origin}${window.location.pathname}?verifyCode=${code}`;
+    const verifyUrl = `${window.location.origin}${window.location.pathname}?verifyCode=${code}`;
+    
     if (canvas) {
-      canvas.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(url)}" alt="QR" width="160" height="160" style="border-radius:6px;" />`;
+      canvas.innerHTML = `
+        <div style="margin-bottom: 8px;">
+          <span class="badge" style="background: ${isTimingOut ? '#b33a2b' : 'var(--brand-forest)'}; color: #ffffff;">
+            ${isTimingOut ? 'Scan to TIME-OUT' : 'Scan to TIME-IN'}
+          </span>
+        </div>
+        <img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(verifyUrl)}" 
+             alt="Tambay QR" width="160" height="160" style="border-radius: 6px;" />
+      `;
     }
+
     if (container) container.style.display = 'block';
   });
 
@@ -553,7 +567,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Event Check-In
+  // Events
   document.getElementById('eventList')?.addEventListener('click', async (e) => {
     if (e.target.classList.contains('event-checkin-btn')) {
       const id = e.target.dataset.id;
@@ -567,7 +581,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Admin Policies
+  // RAComm Policies
   document.getElementById('set1xBtn')?.addEventListener('click', async () => {
     if (await updateGlobalSettings('hourly_multiplier', '1.0')) {
       showToast('Multiplier set to 1.0x', 'info');
@@ -607,7 +621,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Bidding Actions
+  // Buddy Bidding Actions
   document.getElementById('biddingFamiliesContainer')?.addEventListener('click', async (e) => {
     if (e.target.classList.contains('bid-submit-btn')) {
       const famId = e.target.dataset.id;
@@ -635,13 +649,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   document.getElementById('finalizeWinnersBtn')?.addEventListener('click', async () => {
-    if (await adminResolveBidding()) {
-      showToast('Bidding round resolved and locked.', 'success');
-      await handleAuth();
+    if (confirm('Finalize bidding round and assign families?')) {
+      if (await adminResolveBidding()) {
+        showToast('Bidding round resolved and locked.', 'success');
+        await handleAuth();
+      }
     }
   });
 
-  // Announcements Form
+  // Announcements
   document.getElementById('postAnnouncementBtn')?.addEventListener('click', async () => {
     const titleIn = document.getElementById('announcementTitleInput');
     const contentIn = document.getElementById('announcementContentInput');
@@ -657,14 +673,23 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('announcementsList')?.addEventListener('click', async (e) => {
     if (e.target.classList.contains('delete-ann-btn')) {
-      if (await deleteAnnouncement(e.target.dataset.id)) {
-        showToast('Announcement removed.', 'info');
-        await renderAnnouncementsBoard();
+      if (confirm('Delete this announcement?')) {
+        if (await deleteAnnouncement(e.target.dataset.id)) {
+          showToast('Announcement removed.', 'info');
+          await renderAnnouncementsBoard();
+        }
       }
     }
   });
 
-  // When2Meet Cell Click
+  // When2Meet Date & Cell Selection
+  document.getElementById('when2meetStartDateInput')?.addEventListener('change', async (e) => {
+    if (e.target.value) {
+      currentMonday = getMonday(new Date(e.target.value));
+      await renderWhen2Meet();
+    }
+  });
+
   document.getElementById('availabilityGridTbody')?.addEventListener('click', async (e) => {
     const cell = e.target.closest('.w2m-cell');
     if (!cell || !currentUser) return;
@@ -673,6 +698,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const name = currentUser.email.split('@')[0];
     await toggleUserAvailabilitySlot(currentUser.id, name, slot, isMine);
     await renderWhen2Meet();
+  });
+
+  // Roster Search
+  document.getElementById('searchApplicantInput')?.addEventListener('input', (e) => {
+    const term = e.target.value.toLowerCase().trim();
+    document.querySelectorAll('#applicantRosterTbody tr').forEach(row => {
+      row.style.display = row.textContent.toLowerCase().includes(term) ? '' : 'none';
+    });
   });
 
   // Inspection Modal Controls
@@ -715,7 +748,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   document.getElementById('adminDeleteApplicantBtn')?.addEventListener('click', async () => {
-    if (inspectedApplicantId && confirm('Delete this applicant profile?')) {
+    if (inspectedApplicantId && confirm('Delete this applicant profile? This action is permanent.')) {
       await deleteApplicantProfile(inspectedApplicantId);
       document.getElementById('adminInspectionModal').style.display = 'none';
       showToast('Profile deleted.', 'info');
@@ -730,12 +763,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     const win = window.open('', '_blank');
     win.document.write(`
       <html>
-        <head><title>Applicant Report - ${p.full_name}</title></head>
-        <body style="font-family:sans-serif; padding:24px;">
-          <h2>UP GEOP Applicant Report</h2>
-          <p><strong>Name:</strong> ${p.full_name} (${p.nickname})</p>
-          <p><strong>Group:</strong> ${p.buddy_group_name}</p>
-          <p><strong>Balance:</strong> ${p.currency} AC</p>
+        <head>
+          <title>Applicant Report - ${p.full_name}</title>
+          <style>
+            body { font-family: sans-serif; padding: 24px; color: #2a2016; }
+            h2 { color: #1b382b; border-bottom: 2px solid #b5702f; padding-bottom: 6px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 0.85rem; }
+            th, td { border: 1px solid #d8c8a8; padding: 8px; text-align: left; }
+            th { background: #f3ecdd; }
+          </style>
+        </head>
+        <body>
+          <h2>UP GEOP Applicant Summary</h2>
+          <p><strong>Full Name:</strong> ${p.full_name} (${p.nickname})</p>
+          <p><strong>Buddy Family:</strong> ${p.buddy_group_name}</p>
+          <p><strong>Available Tokens:</strong> ${p.currency} AC</p>
+          <h3>Signatory Tasks</h3>
+          <table>
+            <thead><tr><th>Committee</th><th>Task Description</th><th>Status</th><th>Signed By</th></tr></thead>
+            <tbody>
+              ${(details.signatories || []).map(s => `
+                <tr><td>${s.committee_name}</td><td>${s.task}</td><td>${s.completed ? 'Completed' : 'Pending'}</td><td>${s.signed_by || '-'}</td></tr>
+              `).join('')}
+            </tbody>
+          </table>
           <script>window.onload = function() { window.print(); }<\/script>
         </body>
       </html>
