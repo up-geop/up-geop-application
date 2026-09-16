@@ -254,7 +254,7 @@
           <div class="card-header">
             <div>
               <h2>Assigned Buddy Tasks</h2>
-              <p class="subtext">Deadlines extend by +2 days when the Batch Shop Goal is funded!</p>
+              <p class="subtext">Deadlines extend by +2 days when their Shop Goal is funded!</p>
             </div>
             <span id="buddyTaskSummaryBadge" class="badge">0 / 0 Done</span>
           </div>
@@ -307,29 +307,19 @@
 
       <!-- Shop / Perks Tab -->
       <div id="tab-perks" class="tab-content">
-        <!-- Communal Batch Crowdfund Pot -->
+        <!-- Dynamic Buddy Task Extension Pots -->
         <section class="card" style="border: 2px solid var(--brand-clay); background: var(--surface-subtle);">
           <div class="card-header">
             <div>
-              <span class="badge" style="background: var(--brand-clay); color: #fff; margin-bottom: 4px;">Batch Goal (Crowdfunded)</span>
-              <h2>Buddy Task Deadline Extension (+2 Days)</h2>
-              <p class="subtext">All applicants chip in AC together. Reaching 200 AC extends the Buddy Tasks deadline for the whole batch!</p>
+              <span class="badge" style="background: var(--brand-clay); color: #fff; margin-bottom: 4px;">Buddy Task Extensions (Crowdfunded)</span>
+              <h2>Dynamic Deadline Extensions (+2 Days)</h2>
+              <p class="subtext">Chip in AC for specific tasks. Reach the target to unlock the extension! You can withdraw your AC if the goal isn't met yet.</p>
             </div>
-            <span id="batchPotBadge" class="badge" style="font-size: 0.85rem; font-weight: 700;">0 / 200 AC</span>
+            <span class="badge" style="font-size: 0.85rem; font-weight: 700;">Balance: <strong id="userCurrencyTextPot">--</strong> AC</span>
           </div>
 
-          <div style="background: #e5ded0; height: 18px; border-radius: 9px; overflow: hidden; margin-bottom: 12px; border: 1px solid var(--border-medium);">
-            <div id="batchPotProgressBar" style="background: var(--brand-clay); height: 100%; width: 0%; transition: width 0.3s ease;"></div>
-          </div>
-
-          <div id="potContributionControls" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
-            <input type="number" id="potContribAmount" min="5" max="100" step="5" value="10" style="width: 110px;" placeholder="AC Amount" />
-            <button id="contributePotBtn" class="btn btn-checkin">Chip In AC</button>
-            <span class="subtext" style="margin-left: auto;">Balance: <strong id="userCurrencyTextPot">--</strong> AC</span>
-          </div>
-          <div id="potUnlockedBanner" style="display: none; color: var(--brand-forest); font-weight: 700; margin-top: 8px;">
-            🎉 Goal Met! +2 Days Buddy Task Extension unlocked for all applicants!
-          </div>
+          <!-- Container for dynamic task pots -->
+          <div id="dynamicPotsContainer" style="display: flex; flex-direction: column; gap: 16px;"></div>
         </section>
 
         <!-- Individual Perks Grid -->
