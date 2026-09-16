@@ -1,11 +1,98 @@
 import { CONFIG, COMMITTEES_LIST, PES_LIST } from './config.js';
 
 export const supabase = window.supabase
-  ? window.supabase.createClient(
-      'https://cwbrzxqmlzgedaisaour.supabase.co',
-      window.SUPABASE_ANON_KEY || window.supabaseAnonKey || (window.CONFIG && window.CONFIG.SUPABASE_ANON_KEY) || 'sb_publishable_oZ1RQOpJ4BoIAq_vDAqHWw_lOnoqFo0'
-    )
+  ? window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY)
   : null;
+
+// Caches to avoid hammering Google Sheets repeatedly
+let cachedTraitsPool = null;
+let cachedTasksPool = null;
+
+// Robust CSV Line/Field Parser (handles commas inside quotes)
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
+  if (lines.length <= 1) return [];
+
+  const headers = lines[0].split(',').map(h => h.trim().replace(/^["']|["']$/g, '').toLowerCase());
+  const rows = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const matches = lines[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || lines[i].split(',');
+    const cleanMatches = matches.map(m => m.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+    
+    const rowObj = {};
+    headers.forEach((h, index) => {
+      rowObj[h] = cleanMatches[index] || '';
+    });
+    rows.push(rowObj);
+  }
+  return rows;
+}
+
+// Fetches live Traits Pool (gid=0)
+export async function getAvailableTraitsPool() {
+  if (cachedTraitsPool && cachedTraitsPool.length > 0) {
+    return cachedTraitsPool;
+  }
+
+  try {
+    const res = await fetch(CONFIG.SHEETS.TRAITS_CSV_URL);
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const csvData = await res.text();
+    const rows = parseCSV(csvData);
+
+    const traits = rows
+      .map(r => r.trait || r.traits || r.name || Object.values(r)[0])
+      .filter(t => t && t.trim().length > 0);
+
+    if (traits.length > 0) {
+      cachedTraitsPool = [...new Set(traits)];
+      return cachedTraitsPool;
+    }
+  } catch (err) {
+    console.warn('Could not fetch traits from published CSV, falling back to DB:', err);
+  }
+
+  if (supabase) {
+    const { data: sigTraits } = await supabase.from('signatories').select('trait');
+    if (sigTraits && sigTraits.length > 0) {
+      const fallback = [...new Set(sigTraits.map(s => s.trait).filter(Boolean))];
+      if (fallback.length > 0) {
+        cachedTraitsPool = fallback;
+        return cachedTraitsPool;
+      }
+    }
+  }
+
+  return [];
+}
+
+// Fetches live Tasks Pool (gid=448373194)
+export async function getAvailableTasksPool() {
+  if (cachedTasksPool && cachedTasksPool.length > 0) {
+    return cachedTasksPool;
+  }
+
+  try {
+    const res = await fetch(CONFIG.SHEETS.TASKS_CSV_URL);
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const csvData = await res.text();
+    const rows = parseCSV(csvData);
+
+    const tasks = rows
+      .map(r => r.task || r.tasks || r.name || Object.values(r)[0])
+      .filter(t => t && t.trim().length > 0);
+
+    if (tasks.length > 0) {
+      cachedTasksPool = [...new Set(tasks)];
+      return cachedTasksPool;
+    }
+  } catch (err) {
+    console.warn('Could not fetch tasks from published CSV:', err);
+  }
+
+  return [];
+}
 
 export async function getCurrentUserId() {
   if (!supabase) return null;
@@ -69,15 +156,19 @@ export async function getSignatories(userId = null) {
   return data || [];
 }
 
-export async function selectTaskForSignatory(sigId, taskName) {
+export async function selectTaskForSignatory(sigId, traitName) {
   if (!supabase || !sigId) return false;
   const { error } = await supabase
     .from('signatories')
-    .update({ selected_task: taskName })
+    .update({ 
+      selected_task: traitName,
+      trait: traitName,
+      task: traitName 
+    })
     .eq('id', sigId);
 
   if (error) {
-    console.error('Error updating selected task:', error);
+    console.error('Error updating trait:', error);
     return false;
   }
   return true;
@@ -175,24 +266,24 @@ export async function verifyUniversalCode(code, verifierEmail) {
       .maybeSingle();
 
     if (sigErr || !sig) {
-      return { success: false, message: 'Target signatory task was not found.' };
+      return { success: false, message: 'Target signatory was not found.' };
     }
 
     if (sig.completed) {
-      return { success: false, message: 'This signatory task has already been completed.' };
+      return { success: false, message: 'This signatory has already been endorsed.' };
     }
 
     const isPESTask = sig.role === 'PES' || sig.type === 'PES' || (sig.committee_name || '').toUpperCase() === 'PES';
     if (isPESTask) {
       const pesOfficer = PES_LIST.find(p => 
         p.fullName.toLowerCase() === (sig.member_name || '').toLowerCase() ||
-        p.title.toLowerCase() === (sig.task || '').toLowerCase()
+        p.title.toLowerCase() === (sig.trait || sig.task || '').toLowerCase()
       );
 
       if (pesOfficer && pesOfficer.email.toLowerCase() !== cleanEmail) {
         return {
           success: false,
-          message: `Forbidden: Only ${pesOfficer.title} (${pesOfficer.fullName}) can endorse this task.`
+          message: `Forbidden: Only ${pesOfficer.title} (${pesOfficer.fullName}) can endorse this clearance.`
         };
       }
     }
@@ -206,7 +297,7 @@ export async function verifyUniversalCode(code, verifierEmail) {
       if (commConfig && commConfig.vpEmail.toLowerCase() !== cleanEmail) {
         return {
           success: false,
-          message: `Forbidden: Only ${commConfig.vp} (${commConfig.vpEmail}) can endorse this VP task.`
+          message: `Forbidden: Only ${commConfig.vp} (${commConfig.vpEmail}) can endorse this VP clearance.`
         };
       }
     }
@@ -221,7 +312,7 @@ export async function verifyUniversalCode(code, verifierEmail) {
       if (!countErr && (count || 0) >= 4) {
         return {
           success: false,
-          message: `${member.full_name} has already signed the maximum limit of 4 tasks for this applicant.`
+          message: `${member.full_name} has already signed the maximum limit of 4 slots for this applicant.`
         };
       }
     }
@@ -271,7 +362,6 @@ export async function verifyUniversalCode(code, verifierEmail) {
       const inTime = new Date(active.time_in);
       let durationHours = (now - inTime) / (1000 * 60 * 60);
 
-      // Check for personal 1.5x boost
       const { data: userProfile } = await supabase
         .from('profiles')
         .select('tambay_boost_active')
@@ -301,7 +391,6 @@ export async function verifyUniversalCode(code, verifierEmail) {
         return { success: false, message: 'Failed to credit tambay hours.' };
       }
 
-      // Consume boost if active
       if (hasBoost) {
         await supabase
           .from('profiles')
@@ -402,10 +491,6 @@ export async function spendCurrency(amount) {
   return !error;
 }
 
-/* =========================================================
-   NEW SHOP HELPERS: CROWDFUND POT, MULTIPLIER, TRAIT SWAPS
-   ========================================================= */
-
 export async function getBatchPot(potId = 'buddy_task_ext') {
   if (!supabase) return null;
   const { data, error } = await supabase
@@ -437,7 +522,7 @@ export async function contributeToPot(potId, amount, userName) {
 }
 
 export async function buyTambayMultiplierBoost() {
-  if (!supabase) return { success: false, message: 'Database connection offline.' };
+  if (!supabase) return { success: false, message: 'Database offline.' };
   const uid = await getCurrentUserId();
   if (!uid) return { success: false, message: 'Please sign in.' };
 
@@ -466,8 +551,8 @@ export async function buyTambayMultiplierBoost() {
   return { success: true, message: '1.5× Boost activated! It will apply to your next clocked-out tambay session.' };
 }
 
-export async function swapSignatoryTrait(sigId, newTraitName, cost) {
-  if (!supabase || !sigId || !newTraitName) return false;
+export async function swapSignatoryTrait(sigId, newTrait, cost) {
+  if (!supabase || !sigId || !newTrait) return false;
   const uid = await getCurrentUserId();
   if (!uid) return false;
 
@@ -477,22 +562,19 @@ export async function swapSignatoryTrait(sigId, newTraitName, cost) {
   const { error } = await supabase
     .from('signatories')
     .update({
-      selected_task: newTraitName,
-      task: newTraitName
+      trait: newTrait,
+      task: newTrait,
+      selected_task: newTrait
     })
     .eq('id', sigId)
     .eq('user_id', uid);
 
   if (error) {
-    console.error('Error updating signatory task swap:', error);
+    console.error('Error updating signatory trait:', error);
     return false;
   }
   return true;
 }
-
-/* =========================================================
-   ADMINISTRATION & GRADING HELPERS
-   ========================================================= */
 
 export async function getManagedBuddyGroups() {
   if (!supabase) return [];
