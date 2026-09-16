@@ -4,11 +4,9 @@ export const supabase = window.supabase
   ? window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY)
   : null;
 
-// In-memory caches to prevent repeated fetching from Google Sheets
 let cachedTraitsPool = null;
 let cachedTasksPool = null;
 
-// Robust CSV Line & Field Parser (handles quoted lines, line breaks, and internal commas)
 function parseCSV(text) {
   const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
   if (lines.length <= 1) return [];
@@ -29,7 +27,6 @@ function parseCSV(text) {
   return rows;
 }
 
-// Fetches live Traits Pool directly from Google Sheets
 export async function getAvailableTraitsPool() {
   if (cachedTraitsPool && cachedTraitsPool.length > 0) {
     return cachedTraitsPool;
@@ -42,9 +39,17 @@ export async function getAvailableTraitsPool() {
     const rows = parseCSV(csvData);
 
     const traits = rows
-      .map(r => r.trait || r.traits || r.name || Object.values(r)[0])
+      .map(r => {
+        const values = Object.values(r);
+        return r.trait || r.traits || (values.length > 1 ? values[1] : values[0]);
+      })
       .map(t => typeof t === 'string' ? t.trim() : '')
-      .filter(t => t.length > 0 && !t.toLowerCase().startsWith('trait'));
+      .filter(t => {
+        if (!t || t.length === 0) return false;
+        const lower = t.toLowerCase();
+        return !lower.startsWith('trait') && 
+               !['academics', 'publicity', 'racomm', 'internal', 'external', 'finance'].includes(lower);
+      });
 
     if (traits.length > 0) {
       cachedTraitsPool = [...new Set(traits)];
@@ -54,7 +59,6 @@ export async function getAvailableTraitsPool() {
     console.warn('Could not fetch traits from Google Sheets, checking database fallback:', err);
   }
 
-  // Fallback: check signatories table
   if (supabase) {
     const { data: sigTraits } = await supabase.from('signatories').select('trait');
     if (sigTraits && sigTraits.length > 0) {
@@ -69,7 +73,6 @@ export async function getAvailableTraitsPool() {
   return [];
 }
 
-// Fetches live Tasks Pool directly from Google Sheets
 export async function getAvailableTasksPool() {
   if (cachedTasksPool && cachedTasksPool.length > 0) {
     return cachedTasksPool;
@@ -327,7 +330,6 @@ export async function verifyUniversalCode(code, verifierEmail) {
       .update(updatePayload)
       .eq('id', sig.id);
 
-    // Schema fallback if verified_at is not present
     if (updateErr && updateErr.message && updateErr.message.includes('verified_at')) {
       const { error: retryErr } = await supabase
         .from('signatories')
@@ -502,10 +504,6 @@ export async function spendCurrency(amount) {
   return !error;
 }
 
-/* =========================================================
-   PERKS HELPERS: POT, BOOST, TRAIT SWAPPING
-   ========================================================= */
-
 export async function getBatchPot(potId = 'buddy_task_ext') {
   if (!supabase) return null;
   const { data, error } = await supabase
@@ -566,7 +564,6 @@ export async function buyTambayMultiplierBoost() {
   return { success: true, message: '1.5× Boost activated! It will apply to your next clocked-out tambay session.' };
 }
 
-// Resilient Signatory Trait Swap
 export async function swapSignatoryTrait(sigId, newTrait, cost) {
   if (!supabase || !sigId || !newTrait) return false;
   const uid = await getCurrentUserId();
@@ -602,10 +599,6 @@ export async function swapSignatoryTrait(sigId, newTrait, cost) {
   }
   return true;
 }
-
-/* =========================================================
-   ADMINISTRATION & GRADING HELPERS
-   ========================================================= */
 
 export async function getManagedBuddyGroups() {
   if (!supabase) return [];
