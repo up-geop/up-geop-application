@@ -11,7 +11,10 @@ let activeCategory = 'ALL';
 
 function cleanTraitText(text) {
   if (!text) return '';
-  return text.replace(/^find\s+(another\s+)?member\s+(who\s+)?/i, '').trim();
+  return text
+    .replace(/\u00a0/g, ' ')
+    .replace(/^find\s+(an?|the|another)?\s*(member|person|someone)?\s*(who|na|that)?\s*/i, '')
+    .trim();
 }
 
 export async function renderSignatoriesTab(container) {
