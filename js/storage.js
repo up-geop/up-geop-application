@@ -2,7 +2,7 @@ import { CONFIG, COMMITTEES_LIST } from './config.js';
 
 // Supabase client instance
 const SUPABASE_URL = 'https://cwbrzxqmlzgedaisaour.supabase.co';
-const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY'; // Provided in your env/config
+const SUPABASE_ANON_KEY = 'sb_publishable_oZ1RQOpJ4BoIAq_vDAqHWw_lOnoqFo0'; // Provided in your env/config
 
 export const supabase = window.supabase
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
