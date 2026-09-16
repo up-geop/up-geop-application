@@ -1,11 +1,11 @@
-import { COMMITTEES_LIST, PES_LIST } from './config.js';
 import {
   getSignatories,
   getAllMembersList,
   selectTaskForSignatory,
   updateSignatoryAnswer,
   generateApplicantShortCode,
-  getAvailableTasksPool
+  getAvailableTasksPool,
+  getCommitteeDirectory
 } from './storage.js';
 import { showToast } from './app.js';
 
@@ -27,11 +27,28 @@ function cleanTraitText(text) {
 
 export async function renderSignatoriesTab(container) {
   if (!container) return;
-  const [signatories, membersList, fallbackTasksPool] = await Promise.all([
+  const [signatories, membersList, fallbackTasksPool, directory] = await Promise.all([
     getSignatories(),
     getAllMembersList(),
-    getAvailableTasksPool()
+    getAvailableTasksPool(),
+    getCommitteeDirectory()
   ]);
+
+  const PES_LIST = directory.filter(d => d.role_type === 'PES').map(p => ({
+    roleKey: p.role_key,
+    title: p.title,
+    fullName: p.full_name,
+    email: p.email,
+    photo: p.photo_url
+  }));
+
+  const COMMITTEES_LIST = directory.filter(d => d.role_type === 'VP').map(c => ({
+    name: c.committee_name,
+    vpTitle: c.title,
+    vp: c.full_name,
+    vpEmail: c.email,
+    photo: c.photo_url
+  }));
 
   const total = signatories.length || 21;
   const completed = signatories.filter(s => s.completed).length;
