@@ -66,24 +66,27 @@
     <!-- Member & RAComm Management Dashboard -->
     <div id="memberDashboardContent" style="display: none;">
       <nav id="racommTabNav" class="tab-nav">
-        <button class="tab-btn active" data-tab="racomm-roster">Applicant Roster</button>
-        <button class="tab-btn" data-tab="racomm-buddy-groups">Buddy Groups</button>
-        <button class="tab-btn" data-tab="racomm-settings">Settings & Controls</button>
+        <button class="tab-btn active" data-tab="member-hub-view">Verification Hub</button>
+        <button class="tab-btn racomm-only-tab" data-tab="racomm-roster" style="display: none;">Applicant Roster</button>
+        <button class="tab-btn racomm-only-tab" data-tab="racomm-buddy-groups" style="display: none;">Buddy Groups</button>
+        <button class="tab-btn racomm-only-tab" data-tab="racomm-settings" style="display: none;">Settings & Controls</button>
         <button class="tab-btn" data-tab="tab-schedule">Schedule & Announcements</button>
       </nav>
 
-      <!-- Persistent Verification Action Card -->
-      <section class="card">
-        <div class="card-header">
-          <h2>Member Verification Hub</h2>
-          <span class="badge" style="background: var(--brand-forest); color: white;">Verifier</span>
-        </div>
-        <p class="subtext">Verify applicant tasks or record time-in and time-out logs.</p>
-        <button id="manualValidateBtn" class="btn btn-checkin">Validate 6-Character Code</button>
-      </section>
+      <!-- Member Default Hub View -->
+      <div id="member-hub-view" class="tab-content active">
+        <section class="card">
+          <div class="card-header">
+            <h2>Member Verification Hub</h2>
+            <span class="badge" style="background: var(--brand-forest); color: white;">Verifier</span>
+          </div>
+          <p class="subtext">Verify applicant tasks or record time-in and time-out logs.</p>
+          <button id="manualValidateBtn" class="btn btn-checkin">Validate 6-Character Code</button>
+        </section>
+      </div>
 
-      <!-- Roster View -->
-      <div id="racomm-roster" class="tab-content active">
+      <!-- RAComm: Roster View -->
+      <div id="racomm-roster" class="tab-content">
         <section class="card">
           <div class="card-header">
             <h2>Applicant Roster</h2>
@@ -108,7 +111,7 @@
         </section>
       </div>
 
-      <!-- Dedicated Buddy Groups Management Board -->
+      <!-- RAComm: Dedicated Buddy Groups Board -->
       <div id="racomm-buddy-groups" class="tab-content">
         <section class="card">
           <div class="card-header">
@@ -126,7 +129,7 @@
         </section>
       </div>
 
-      <!-- Settings & Controls View -->
+      <!-- RAComm: Settings & Global Policies -->
       <div id="racomm-settings" class="tab-content">
         <section class="card">
           <h2>Global Policies</h2>
