@@ -29,8 +29,9 @@ import {
   deleteAnnouncement,
   getAvailabilitySlots,
   toggleUserAvailabilitySlot,
-  getBatchPot,
-  contributeToPot,
+  getUserTaskContributions,
+  chipInToTask,
+  withdrawFromTask,
   buyTambayMultiplierBoost,
   swapSignatoryTrait,
   getAvailableTraitsPool,
@@ -106,28 +107,65 @@ function computeEffectiveDeadline(rawIso, isPotUnlocked) {
 }
 
 async function renderShopView() {
-  const pot = await getBatchPot('buddy_task_ext');
-  if (!pot) return;
+  const container = document.getElementById('dynamicPotsContainer');
+  if (!container || !currentUser) return;
 
-  const current = pot.current_amount || 0;
-  const target = pot.target_amount || 200;
-  const percent = Math.min(100, Math.round((current / target) * 100));
+  const [tasks, contributions, profile] = await Promise.all([
+    getBuddyTasks(),
+    getUserTaskContributions(),
+    getUserProfileData(currentUser.id)
+  ]);
 
-  const bar = document.getElementById('batchPotProgressBar');
-  const badge = document.getElementById('batchPotBadge');
-  const banner = document.getElementById('potUnlockedBanner');
-  const controls = document.getElementById('potContributionControls');
+  const currPot = document.getElementById('userCurrencyTextPot');
+  if (currPot) currPot.textContent = profile?.currency ?? 0;
 
-  if (bar) bar.style.width = `${percent}%`;
-  if (badge) badge.textContent = `${current} / ${target} AC (${percent}%)`;
-
-  if (pot.is_unlocked) {
-    if (banner) banner.style.display = 'block';
-    if (controls) controls.style.opacity = '0.5';
-  } else {
-    if (banner) banner.style.display = 'none';
-    if (controls) controls.style.opacity = '1';
+  if (tasks.length === 0) {
+    container.innerHTML = '<p class="subtext">No active buddy tasks to extend right now.</p>';
+    return;
   }
+
+  container.innerHTML = tasks.map(t => {
+    const current = t.pot_current || 0;
+    const target = t.pot_target || 200;
+    const isUnlocked = t.is_extended;
+    const percent = Math.min(100, Math.round((current / target) * 100));
+    
+    const userContrib = contributions.find(c => c.task_id === t.id)?.amount || 0;
+
+    return `
+      <div style="background: var(--surface); border: 1px solid var(--border-subtle); padding: 14px; border-radius: var(--radius-sm);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <strong style="color: var(--brand-forest); font-size: 0.95rem;">${t.title}</strong>
+          <span class="badge" style="background: ${isUnlocked ? 'var(--brand-mint)' : 'var(--surface-subtle)'}; color: ${isUnlocked ? '#fff' : 'inherit'};">
+            ${current} / ${target} AC (${percent}%)
+          </span>
+        </div>
+
+        <div style="background: #e5ded0; height: 12px; border-radius: 6px; overflow: hidden; margin-bottom: 12px; border: 1px solid var(--border-medium);">
+          <div style="background: ${isUnlocked ? 'var(--brand-mint)' : 'var(--brand-clay)'}; height: 100%; width: ${percent}%; transition: width 0.3s ease;"></div>
+        </div>
+
+        ${isUnlocked ? `
+          <div style="color: var(--brand-forest); font-weight: 700; font-size: 0.85rem;">🎉 Goal Met! +2 Days Extension Unlocked!</div>
+        ` : `
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <input type="number" id="chipInAmt-${t.id}" min="5" step="5" placeholder="Amt" style="width: 70px; padding: 4px; font-size: 0.8rem;" />
+              <button class="btn btn-checkin chip-in-btn" data-task-id="${t.id}" style="min-height: 28px; padding: 4px 10px; font-size: 0.75rem;">Chip In</button>
+            </div>
+            
+            ${userContrib > 0 ? `
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <span style="font-size: 0.75rem; color: var(--brand-clay-deep);">You put in: <strong>${userContrib} AC</strong></span>
+                <input type="number" id="withdrawAmt-${t.id}" min="5" max="${userContrib}" step="5" placeholder="Amt" style="width: 70px; padding: 4px; font-size: 0.8rem;" />
+                <button class="btn btn-secondary withdraw-btn" data-task-id="${t.id}" style="min-height: 28px; padding: 4px 10px; font-size: 0.75rem;">Withdraw</button>
+              </div>
+            ` : ''}
+          </div>
+        `}
+      </div>
+    `;
+  }).join('');
 }
 
 async function renderApplicantBuddyTasks(userGroup) {
@@ -135,13 +173,11 @@ async function renderApplicantBuddyTasks(userGroup) {
   const badge = document.getElementById('buddyTaskSummaryBadge');
   if (!container || !currentUser) return;
 
-  const [tasks, completions, pot] = await Promise.all([
+  const [tasks, completions] = await Promise.all([
     getBuddyTasks(),
-    getApplicantBuddyTaskCompletions(currentUser.id),
-    getBatchPot('buddy_task_ext')
+    getApplicantBuddyTaskCompletions(currentUser.id)
   ]);
 
-  const isPotUnlocked = !!pot?.is_unlocked;
   const completedTaskIds = new Set(completions.map(c => c.task_id));
 
   const relevantTasks = tasks.filter(t => 
@@ -164,6 +200,7 @@ async function renderApplicantBuddyTasks(userGroup) {
 
   container.innerHTML = relevantTasks.map(t => {
     const isDone = completedTaskIds.has(t.id);
+    const isPotUnlocked = !!t.is_extended;
     const deadline = computeEffectiveDeadline(t.deadline, isPotUnlocked);
     const isOverdue = !isDone && now > deadline;
 
@@ -196,13 +233,10 @@ async function renderOfficerBuddyTasksManager() {
   const groupSelect = document.getElementById('buddyTaskTargetGroupSelect');
   if (!container) return;
 
-  const [tasks, groups, pot] = await Promise.all([
+  const [tasks, groups] = await Promise.all([
     getBuddyTasks(),
-    getManagedBuddyGroups(),
-    getBatchPot('buddy_task_ext')
+    getManagedBuddyGroups()
   ]);
-
-  const isPotUnlocked = !!pot?.is_unlocked;
 
   if (groupSelect) {
     groupSelect.innerHTML = `
@@ -217,6 +251,7 @@ async function renderOfficerBuddyTasksManager() {
   }
 
   container.innerHTML = tasks.map(t => {
+    const isPotUnlocked = !!t.is_extended;
     const deadline = computeEffectiveDeadline(t.deadline, isPotUnlocked);
 
     return `
@@ -582,7 +617,7 @@ async function openInspection(appId) {
           </label>
           <label style="display: flex; flex-direction: column; gap: 2px;">
             <span>Buddy (10%):</span>
-            <input type="number" id="gradeBuddyInput" min="0" max="10" step="0.5" value="${p.grade_buddy_tasks || 0}" style="width: 100%; padding: 4px; font-size: 0.8rem;" />
+            <input type="number" id="gradeBuddyInput" min="0" max="10" step="0.01" value="${p.grade_buddy_tasks || 0}" style="width: 100%; padding: 4px; font-size: 0.8rem;" />
           </label>
         </div>
         <button class="btn btn-checkin" id="saveManualGradesBtn" style="margin-top: 10px; width: 100%; min-height: 34px; font-size: 0.8rem;">
@@ -868,15 +903,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         await renderDashboard();
         await renderRoster();
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'batch_pots' }, async () => {
-        await renderShopView();
-        const profile = await getUserProfileData(currentUser?.id);
-        await renderApplicantBuddyTasks(profile?.buddy_group_name);
-      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'buddy_tasks' }, async () => {
         const profile = await getUserProfileData(currentUser?.id);
         await renderApplicantBuddyTasks(profile?.buddy_group_name);
         await renderOfficerBuddyTasksManager();
+        await renderShopView();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_contributions' }, async () => {
+        await renderShopView();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'buddy_task_completions' }, async () => {
         const profile = await getUserProfileData(currentUser?.id);
@@ -1025,17 +1059,33 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   /* Shop Handlers */
-  document.getElementById('contributePotBtn')?.addEventListener('click', async () => {
-    const input = document.getElementById('potContribAmount');
-    const amount = parseInt(input?.value, 10);
-    if (!amount || amount <= 0) return;
+  document.getElementById('dynamicPotsContainer')?.addEventListener('click', async (e) => {
+    if (e.target.classList.contains('chip-in-btn')) {
+      const taskId = e.target.dataset.taskId;
+      const input = document.getElementById(`chipInAmt-${taskId}`);
+      const amount = parseInt(input?.value, 10);
+      if (!amount || amount <= 0) return;
 
-    const profile = await getUserProfileData(currentUser.id);
-    const res = await contributeToPot('buddy_task_ext', amount, profile?.nickname || profile?.full_name);
-    showToast(res.message, res.success ? 'success' : 'error');
-    if (res.success) {
-      await handleAuth();
-      await renderShopView();
+      const res = await chipInToTask(taskId, amount);
+      showToast(res.message, res.success ? 'success' : 'error');
+      if (res.success) {
+        await handleAuth();
+        await renderShopView();
+      }
+    }
+
+    if (e.target.classList.contains('withdraw-btn')) {
+      const taskId = e.target.dataset.taskId;
+      const input = document.getElementById(`withdrawAmt-${taskId}`);
+      const amount = parseInt(input?.value, 10);
+      if (!amount || amount <= 0) return;
+
+      const res = await withdrawFromTask(taskId, amount);
+      showToast(res.message, res.success ? 'success' : 'error');
+      if (res.success) {
+        await handleAuth();
+        await renderShopView();
+      }
     }
   });
 
