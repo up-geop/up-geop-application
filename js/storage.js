@@ -504,6 +504,10 @@ export async function spendCurrency(amount) {
   return !error;
 }
 
+/* =========================================================
+   PERKS HELPERS: POT, BOOST, TRAIT SWAPPING
+   ========================================================= */
+
 export async function getBatchPot(potId = 'buddy_task_ext') {
   if (!supabase) return null;
   const { data, error } = await supabase
@@ -599,6 +603,93 @@ export async function swapSignatoryTrait(sigId, newTrait, cost) {
   }
   return true;
 }
+
+/* =========================================================
+   BUDDY TASKS & DEADLINE EXTENSION HELPERS
+   ========================================================= */
+
+export async function getBuddyTasks() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('buddy_tasks')
+    .select('*')
+    .order('deadline', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching buddy tasks:', error);
+    return [];
+  }
+  return data || [];
+}
+
+export async function createBuddyTask(title, description, targetGroup, deadlineIso) {
+  if (!supabase || !title || !deadlineIso) return false;
+  const { error } = await supabase
+    .from('buddy_tasks')
+    .insert([{
+      title: title.trim(),
+      description: description ? description.trim() : '',
+      target_group: targetGroup || 'ALL',
+      deadline: deadlineIso
+    }]);
+
+  if (error) {
+    console.error('Error creating buddy task:', error);
+    return false;
+  }
+  return true;
+}
+
+export async function deleteBuddyTask(taskId) {
+  if (!supabase || !taskId) return false;
+  const { error } = await supabase
+    .from('buddy_tasks')
+    .delete()
+    .eq('id', taskId);
+
+  return !error;
+}
+
+export async function getApplicantBuddyTaskCompletions(userId = null) {
+  if (!supabase) return [];
+  const uid = userId || await getCurrentUserId();
+  if (!uid) return [];
+
+  const { data, error } = await supabase
+    .from('buddy_task_completions')
+    .select('*')
+    .eq('user_id', uid);
+
+  if (error) return [];
+  return data || [];
+}
+
+export async function toggleBuddyTaskCompletion(taskId, applicantId, isCompleted, verifierName) {
+  if (!supabase || !taskId || !applicantId) return false;
+
+  if (isCompleted) {
+    const { error } = await supabase
+      .from('buddy_task_completions')
+      .upsert([{
+        task_id: taskId,
+        user_id: applicantId,
+        verified_by: verifierName,
+        completed_at: new Date().toISOString()
+      }], { onConflict: 'task_id,user_id' });
+    return !error;
+  } else {
+    const { error } = await supabase
+      .from('buddy_task_completions')
+      .delete()
+      .eq('task_id', taskId)
+      .eq('user_id', applicantId);
+    return !error;
+  }
+}
+
+/* =========================================================
+   ADMINISTRATION & GRADING HELPERS
+   ========================================================= */
 
 export async function getManagedBuddyGroups() {
   if (!supabase) return [];
