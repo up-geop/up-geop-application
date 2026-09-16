@@ -1,4 +1,4 @@
-import { CONFIG, COMMITTEES_LIST, PES_LIST } from './config.js';
+import { CONFIG } from './config.js';
 
 export const supabase = window.supabase
   ? window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY)
@@ -25,6 +25,16 @@ function parseCSV(text) {
     rows.push(rowObj);
   }
   return rows;
+}
+
+export async function getCommitteeDirectory() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('committee_directory').select('*');
+  if (error) {
+    console.error('Error fetching directory:', error);
+    return [];
+  }
+  return data || [];
 }
 
 export async function getAvailableTraitsPool() {
@@ -276,30 +286,37 @@ export async function verifyUniversalCode(code, verifierEmail) {
     }
 
     const isPESTask = sig.role === 'PES' || sig.type === 'PES' || (sig.committee_name || '').toUpperCase() === 'PES';
+    const isVPTask = sig.role === 'VP' || sig.type === 'VP';
+
+    let directory = [];
+    if (isPESTask || isVPTask) {
+      directory = await getCommitteeDirectory();
+    }
+
     if (isPESTask) {
-      const pesOfficer = PES_LIST.find(p => 
-        p.fullName.toLowerCase() === (sig.member_name || '').toLowerCase() ||
-        p.title.toLowerCase() === (sig.trait || sig.task || '').toLowerCase()
+      const pesOfficer = directory.find(p => 
+        p.role_type === 'PES' && 
+        (p.full_name.toLowerCase() === (sig.member_name || '').toLowerCase() ||
+         p.title.toLowerCase() === (sig.trait || sig.task || '').toLowerCase())
       );
 
       if (pesOfficer && pesOfficer.email.toLowerCase() !== cleanEmail) {
         return {
           success: false,
-          message: `Forbidden: Only ${pesOfficer.title} (${pesOfficer.fullName}) can endorse this clearance.`
+          message: `Forbidden: Only ${pesOfficer.title} (${pesOfficer.full_name}) can endorse this clearance.`
         };
       }
     }
 
-    const isVPTask = sig.role === 'VP' || sig.type === 'VP';
     if (isVPTask) {
-      const commConfig = COMMITTEES_LIST.find(
-        c => c.name.toLowerCase() === (sig.committee_name || '').toLowerCase()
+      const commConfig = directory.find(
+        c => c.role_type === 'VP' && c.committee_name.toLowerCase() === (sig.committee_name || '').toLowerCase()
       );
 
-      if (commConfig && commConfig.vpEmail.toLowerCase() !== cleanEmail) {
+      if (commConfig && commConfig.email.toLowerCase() !== cleanEmail) {
         return {
           success: false,
-          message: `Forbidden: Only ${commConfig.vp} (${commConfig.vpEmail}) can endorse this VP clearance.`
+          message: `Forbidden: Only ${commConfig.full_name} (${commConfig.email}) can endorse this VP clearance.`
         };
       }
     }
