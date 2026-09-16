@@ -1,23 +1,17 @@
-import { CONFIG, COMMITTEES_LIST } from './config.js';
-
-// Supabase client instance
-const SUPABASE_URL = 'https://cwbrzxqmlzgedaisaour.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_oZ1RQOpJ4BoIAq_vDAqHWw_lOnoqFo0'; // Provided in your env/config
+import { CONFIG, COMMITTEES_LIST, PES_LIST } from './config.js';
 
 export const supabase = window.supabase
-  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  ? window.supabase.createClient(
+      'https://cwbrzxqmlzgedaisaour.supabase.co',
+      window.SUPABASE_ANON_KEY || window.supabaseAnonKey || (window.CONFIG && window.CONFIG.SUPABASE_ANON_KEY) || 'sb_publishable_oZ1RQOpJ4BoIAq_vDAqHWw_lOnoqFo0'
+    )
   : null;
 
-// Helper: Get Current Authenticated User ID
 export async function getCurrentUserId() {
   if (!supabase) return null;
   const { data: { session } } = await supabase.auth.getSession();
   return session?.user?.id || null;
 }
-
-// ---------------------------------------------------------------------------
-// Members & Role Checks
-// ---------------------------------------------------------------------------
 
 export async function checkIfResidentMember(email) {
   if (!supabase || !email) return false;
@@ -56,10 +50,6 @@ export async function getAllMembersList() {
   }
   return data || [];
 }
-
-// ---------------------------------------------------------------------------
-// Signatories Matrix
-// ---------------------------------------------------------------------------
 
 export async function getSignatories(userId = null) {
   if (!supabase) return [];
@@ -110,38 +100,37 @@ export async function updateSignatoryAnswer(sigId, field, value) {
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// Verification Code Generation & Validation
-// ---------------------------------------------------------------------------
-
 export async function generateApplicantShortCode(targetId = null, type = 'SIGNATORY') {
   if (!supabase) return null;
   const uid = await getCurrentUserId();
   if (!uid) return null;
 
-  // Clean out stale codes for this user and type
   await supabase
     .from('verification_codes')
     .delete()
     .eq('user_id', uid)
     .eq('type', type);
 
-  // Generate 6-character random alphanumeric string
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
   for (let i = 0; i < 6; i++) {
     code += chars.charAt(Math.floor(Math.random() * chars.length));
   }
 
+  const payload = {
+    user_id: uid,
+    code,
+    type,
+    created_at: new Date().toISOString()
+  };
+
+  if (targetId && targetId !== 'null') {
+    payload.target_id = targetId;
+  }
+
   const { error } = await supabase
     .from('verification_codes')
-    .insert([{
-      user_id: uid,
-      code,
-      type,
-      target_id: targetId,
-      created_at: new Date().toISOString()
-    }]);
+    .insert([payload]);
 
   if (error) {
     console.error('Error generating verification code:', error);
@@ -158,7 +147,6 @@ export async function verifyUniversalCode(code, verifierEmail) {
   const cleanCode = code.trim().toUpperCase();
   const cleanEmail = verifierEmail.trim().toLowerCase();
 
-  // 1. Look up code record
   const { data: codeRecord, error: codeErr } = await supabase
     .from('verification_codes')
     .select('*')
@@ -169,7 +157,6 @@ export async function verifyUniversalCode(code, verifierEmail) {
     return { success: false, message: 'Invalid or expired verification code.' };
   }
 
-  // 2. Fetch Verifier details from public.members
   const { data: member, error: memErr } = await supabase
     .from('members')
     .select('*')
@@ -180,7 +167,6 @@ export async function verifyUniversalCode(code, verifierEmail) {
     return { success: false, message: 'Only registered resident members can verify codes.' };
   }
 
-  // 3. Handle SIGNATORY Endorsements
   if (codeRecord.type === 'SIGNATORY') {
     const { data: sig, error: sigErr } = await supabase
       .from('signatories')
@@ -196,9 +182,22 @@ export async function verifyUniversalCode(code, verifierEmail) {
       return { success: false, message: 'This signatory task has already been completed.' };
     }
 
-    const isVPTask = sig.role === 'VP' || sig.type === 'VP';
+    const isPESTask = sig.role === 'PES' || sig.type === 'PES' || (sig.committee_name || '').toUpperCase() === 'PES';
+    if (isPESTask) {
+      const pesOfficer = PES_LIST.find(p => 
+        p.fullName.toLowerCase() === (sig.member_name || '').toLowerCase() ||
+        p.title.toLowerCase() === (sig.task || '').toLowerCase()
+      );
 
-    // Strict VP Verification Gate: Only the assigned VP email may sign their committee endorsement
+      if (pesOfficer && pesOfficer.email.toLowerCase() !== cleanEmail) {
+        return {
+          success: false,
+          message: `Forbidden: Only ${pesOfficer.title} (${pesOfficer.fullName}) can endorse this task.`
+        };
+      }
+    }
+
+    const isVPTask = sig.role === 'VP' || sig.type === 'VP';
     if (isVPTask) {
       const commConfig = COMMITTEES_LIST.find(
         c => c.name.toLowerCase() === (sig.committee_name || '').toLowerCase()
@@ -207,11 +206,12 @@ export async function verifyUniversalCode(code, verifierEmail) {
       if (commConfig && commConfig.vpEmail.toLowerCase() !== cleanEmail) {
         return {
           success: false,
-          message: `Access denied: Only ${commConfig.vp} (${commConfig.vpEmail}) can endorse this VP task.`
+          message: `Forbidden: Only ${commConfig.vp} (${commConfig.vpEmail}) can endorse this VP task.`
         };
       }
-    } else {
-      // Non-VP Member tasks: enforce max 4 tasks per resident member per applicant
+    }
+
+    if (!isPESTask && !isVPTask) {
       const { count, error: countErr } = await supabase
         .from('signatories')
         .select('id', { count: 'exact', head: true })
@@ -226,7 +226,6 @@ export async function verifyUniversalCode(code, verifierEmail) {
       }
     }
 
-    // Complete the task
     const { error: updateErr } = await supabase
       .from('signatories')
       .update({
@@ -237,23 +236,19 @@ export async function verifyUniversalCode(code, verifierEmail) {
       .eq('id', sig.id);
 
     if (updateErr) {
-      console.error('Error signing task:', updateErr);
       return { success: false, message: 'Database error occurred while recording signature.' };
     }
 
-    // Burn used code
     await supabase.from('verification_codes').delete().eq('code', cleanCode);
     return { success: true, message: `Successfully endorsed by ${member.full_name}!` };
   }
 
-  // 4. Handle TAMBAY Sessions (Time-In / Time-Out)
   if (codeRecord.type === 'TAMBAY') {
     const active = await getActiveTambaySession(codeRecord.user_id);
     const settings = await getGlobalSettings();
     const multiplier = settings.multiplier || 1.0;
 
     if (!active) {
-      // Time-In
       const { error: inErr } = await supabase
         .from('tambay_sessions')
         .insert([{
@@ -267,21 +262,16 @@ export async function verifyUniversalCode(code, verifierEmail) {
       }
 
       await supabase.from('verification_codes').delete().eq('code', cleanCode);
-      return { success: true, message: `Applicant successfully timed in by ${member.full_name}.` };
+      return { success: true, message: `Applicant timed in by ${member.full_name}.` };
     } else {
-      // Time-Out
       const now = new Date();
       const inTime = new Date(active.time_in);
       let durationHours = (now - inTime) / (1000 * 60 * 60);
 
-      // Apply multiplier
       let creditedHours = durationHours * multiplier;
-
-      // Apply 3-hr daily cap if active
       if (settings.dailyCapEnabled && creditedHours > 3.0) {
         creditedHours = 3.0;
       }
-
       creditedHours = Math.max(0.1, Number(creditedHours.toFixed(2)));
 
       await supabase.from('tambay_sessions').delete().eq('id', active.id);
@@ -303,12 +293,8 @@ export async function verifyUniversalCode(code, verifierEmail) {
     }
   }
 
-  return { success: false, message: 'Unsupported code type.' };
+  return { success: false, message: 'Unsupported verification code type.' };
 }
-
-// ---------------------------------------------------------------------------
-// Tambay Logs & Active Sessions
-// ---------------------------------------------------------------------------
 
 export async function getTambayHours(userId = null) {
   if (!supabase) return 0;
@@ -335,10 +321,6 @@ export async function getActiveTambaySession(userId) {
   if (error || !data) return null;
   return data;
 }
-
-// ---------------------------------------------------------------------------
-// Global Settings & Policies
-// ---------------------------------------------------------------------------
 
 export async function getGlobalSettings() {
   if (!supabase) return { multiplier: 1.0, dailyCapEnabled: true };
@@ -373,10 +355,6 @@ export async function updateGlobalSettings(key, value) {
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// Applicant Currency & Perks
-// ---------------------------------------------------------------------------
-
 export async function spendCurrency(amount) {
   if (!supabase) return false;
   const uid = await getCurrentUserId();
@@ -399,10 +377,6 @@ export async function spendCurrency(amount) {
 
   return !error;
 }
-
-// ---------------------------------------------------------------------------
-// Buddy Groups & Assignments
-// ---------------------------------------------------------------------------
 
 export async function getManagedBuddyGroups() {
   if (!supabase) return [];
@@ -480,10 +454,6 @@ export async function getBuddyGroupMembers(groupName) {
   return list;
 }
 
-// ---------------------------------------------------------------------------
-// RAComm Administrative Roster & Inspection
-// ---------------------------------------------------------------------------
-
 export async function getAllApplicantsProgress() {
   if (!supabase) return [];
 
@@ -501,7 +471,7 @@ export async function getAllApplicantsProgress() {
 
   return profiles.map(p => {
     const userSigs = sigs.filter(s => s.user_id === p.id);
-    const totalSigs = userSigs.length || 18;
+    const totalSigs = userSigs.length || 21;
     const completedSigs = userSigs.filter(s => s.completed).length;
 
     const userLogs = logs.filter(l => l.user_id === p.id);
@@ -585,15 +555,11 @@ export async function deleteApplicantProfile(applicantId) {
   });
 
   if (error) {
-    console.error('Error invoking admin_delete_applicant RPC:', error);
+    console.error('Error deleting applicant:', error);
     return false;
   }
   return true;
 }
-
-// ---------------------------------------------------------------------------
-// Announcements
-// ---------------------------------------------------------------------------
 
 export async function getAnnouncements() {
   if (!supabase) return [];
@@ -632,10 +598,6 @@ export async function deleteAnnouncement(id) {
 
   return !error;
 }
-
-// ---------------------------------------------------------------------------
-// When2Meet Availability Grid
-// ---------------------------------------------------------------------------
 
 export async function getAvailabilitySlots() {
   if (!supabase) return [];
