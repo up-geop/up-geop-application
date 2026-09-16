@@ -375,3 +375,229 @@ td {
 .toast-success { border-left-color: var(--brand-mint); }
 .toast-error { border-left-color: #b33a2b; }
 .toast-info { border-left-color: var(--brand-clay); }
+
+:root {
+  --brand-forest: #1b382b;
+  --brand-forest-light: #2c5945;
+  --brand-mint: #2e7d5a;
+  --brand-mint-subtle: #e8f5ed;
+  --brand-clay: #b5702f;
+  --brand-clay-deep: #8a4e18;
+  --surface: #ffffff;
+  --surface-subtle: #fbf9f4;
+  --surface-tint: #f3ecdd;
+  --border-subtle: #e5ded0;
+  --border-medium: #d1c5b0;
+  --text-heading: #1d1813;
+  --text-body: #3b332a;
+  --text-muted: #726859;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  --font-display: "Playfair Display", Georgia, serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--text-body);
+  background-color: var(--surface-tint);
+  line-height: 1.5;
+  padding: 12px;
+}
+
+.container {
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+/* Base Cards */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.subtext {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* Navigation Tabs */
+.tab-nav {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  margin-bottom: 16px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+  text-decoration: none;
+}
+
+.btn-secondary {
+  background: var(--surface);
+  border-color: var(--border-medium);
+  color: var(--text-body);
+}
+
+.btn-checkin {
+  background: var(--brand-forest);
+  color: #ffffff;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  background: var(--surface-subtle);
+  color: var(--text-muted);
+}
+
+/* List elements */
+.task-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-subtle);
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+}
+
+/* Toast Container */
+#toastContainer {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 250px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: #2a2016;
+  color: #fff;
+  font-size: 0.85rem;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.toast-success { background: var(--brand-forest); }
+.toast-error { background: #9e2a2b; }
+.toast-info { background: #334155; }
+
+/* =========================================================
+   MOBILE-FIRST INSPECTION MODAL FIXES
+   ========================================================= */
+
+#adminInspectionModal {
+  position: fixed;
+  inset: 0;
+  background: rgba(18, 28, 22, 0.7);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 12px;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.modal-dialog {
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100% !important;
+  max-width: 680px !important;
+  max-height: 92vh !important;
+  background: var(--surface) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25) !important;
+  overflow: hidden !important;
+  margin: auto !important;
+}
+
+.modal-header-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-subtle);
+}
+
+.modal-scrollable-body {
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Sticky Action Controls inside Modal */
+.modal-actions-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--surface-subtle);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* Two-column panel wrapper for Events & Grade inputs */
+.modal-inner-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  width: 100%;
+}
+
+@media (min-width: 600px) {
+  .modal-inner-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
