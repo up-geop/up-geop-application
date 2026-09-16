@@ -173,11 +173,12 @@ async function renderBuddyGroupBoard() {
     getAllMembersList()
   ]);
 
+  const activeGroupNames = new Set(groups.map(g => g.name));
   const groupNames = ['Unassigned', ...groups.map(g => g.name)];
 
   board.innerHTML = groups.map(g => {
-    const groupApplicants = applicants.filter(a => a.buddyGroup === g.name);
-    const groupMembers = members.filter(m => m.buddy_group_name === g.name);
+    const groupApplicants = applicants.filter(a => (a.buddyGroup || '').trim() === g.name);
+    const groupMembers = members.filter(m => (m.buddy_group_name || '').trim() === g.name);
 
     return `
       <div class="card" style="margin: 0; display: flex; flex-direction: column; justify-content: space-between;">
@@ -218,8 +219,15 @@ async function renderBuddyGroupBoard() {
     `;
   }).join('');
 
-  const unassignedApplicants = applicants.filter(a => a.buddyGroup === 'Unassigned' || !a.buddyGroup);
-  const unassignedMembers = members.filter(m => m.buddy_group_name === 'Unassigned' || !m.buddy_group_name);
+  const unassignedApplicants = applicants.filter(a => {
+    const bg = (a.buddyGroup || '').trim();
+    return !bg || bg.toLowerCase() === 'unassigned' || !activeGroupNames.has(bg);
+  });
+
+  const unassignedMembers = members.filter(m => {
+    const bg = (m.buddy_group_name || '').trim();
+    return !bg || bg.toLowerCase() === 'unassigned' || !activeGroupNames.has(bg);
+  });
 
   board.innerHTML += `
     <div class="card" style="margin: 0; background: var(--surface-subtle); border-style: dashed;">
@@ -413,7 +421,6 @@ async function handleAuth() {
       if (appDash) appDash.style.display = 'none';
       if (memDash) memDash.style.display = 'block';
 
-      // Restrict navigation tabs exclusively to RAComm officers
       const racommTabs = document.querySelectorAll('.racomm-only-tab');
       racommTabs.forEach(tab => {
         tab.style.display = isRAComm ? 'inline-block' : 'none';
@@ -428,7 +435,6 @@ async function handleAuth() {
         await renderRoster();
         await renderBuddyGroupBoard();
       } else {
-        // Enforce active Verification Hub tab for standard members
         document.querySelectorAll('#racommTabNav .tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelector('[data-tab="member-hub-view"]')?.classList.add('active');
 
@@ -459,7 +465,6 @@ async function handleAuth() {
         const group = document.getElementById('buddyGroupName');
         const avatarImg = document.getElementById('userAvatarHero');
 
-        // Resolve Google avatar with fallbacks
         const meta = currentUser.user_metadata || {};
         const identityMeta = currentUser.identities?.[0]?.identity_data || {};
         const googleAvatar = meta.avatar_url || meta.picture || identityMeta.avatar_url || identityMeta.picture;
@@ -473,7 +478,6 @@ async function handleAuth() {
         if (curr) curr.textContent = profile.currency ?? 100;
         if (group) group.textContent = profile.buddy_group_name || 'Unassigned';
 
-        // Render Buddy Group Members List
         const buddies = await getBuddyGroupMembers(profile.buddy_group_name);
         const buddyList = document.getElementById('buddyList');
         const countBadge = document.getElementById('buddyCountBadge');
@@ -517,6 +521,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Realtime Subscriptions
   if (supabase) {
     supabase.channel('app-db-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async () => {
+        await renderRoster();
+        await renderBuddyGroupBoard();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, async () => {
+        await renderBuddyGroupBoard();
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'signatories' }, async () => {
         showToast('Signatory verified!', 'success');
         await renderDashboard();
@@ -527,6 +538,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tambay_sessions' }, async () => {
         await renderDashboard();
+        await renderRoster();
       })
       .subscribe();
   }
@@ -560,7 +572,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     btn.addEventListener('click', async () => {
       const tabId = btn.dataset.tab;
 
-      // Access Gate: block non-RAComm members from administrative tabs
       if (tabId === 'racomm-buddy-groups' || tabId === 'racomm-roster' || tabId === 'racomm-settings') {
         const isOfficer = await checkIfRAComm(currentUser?.email);
         if (!isOfficer) {
@@ -788,6 +799,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (await assignApplicantBuddyGroup(inspectedApplicantId, groupName)) {
         showToast(`Assigned to ${groupName}!`, 'success');
         await renderRoster();
+        await renderBuddyGroupBoard();
       }
     }
   });
