@@ -33,7 +33,7 @@ export async function createApplicantProfile(userId, fullName, nickname) {
         full_name: fullName.trim(),
         nickname: nickname.trim(),
         buddy_group_name: 'Unassigned',
-        currency: 100
+        currency: 0
       }
     ]);
 
