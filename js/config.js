@@ -1,11 +1,23 @@
 export const CONFIG = {
   TARGET_TAMBAY_HOURS: 10,
   WEIGHTS: {
-    SIGNATORIES: 0.5,
-    TAMBAY: 0.3,
-    EVENTS: 0.2
+    EVENTS: 0.25,        // 25% (5 events x 5%)
+    SIGNATORIES: 0.15,   // 15%
+    TAMBAY: 0.05,        // 5%
+    INTERVIEW: 0.15,     // 15%
+    OGT: 0.20,           // 20%
+    CONSTI_QUIZ: 0.10,   // 10%
+    BUDDY_TASKS: 0.10    // 10%
   }
 };
+
+export const OFFICIAL_EVENTS_LIST = [
+  { name: "Applicants’ Orientation", weightPercent: 5 },
+  { name: "Buddy Bidding", weightPercent: 5 },
+  { name: "Apps Mems Bonding 1", weightPercent: 5 },
+  { name: "Apps Mems Bonding 2", weightPercent: 5 },
+  { name: "Apps Only Bonding", weightPercent: 5 }
+];
 
 export const PES_LIST = [
   {
