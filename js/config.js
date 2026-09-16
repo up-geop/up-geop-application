@@ -7,6 +7,30 @@ export const CONFIG = {
   }
 };
 
+export const PES_LIST = [
+  {
+    roleKey: 'PRESIDENT',
+    title: 'President',
+    fullName: 'Jose Miguel P. Macatangay',
+    email: 'jpmacatangay1@up.edu.ph',
+    photo: 'assets/pes/macatangay.jpg'
+  },
+  {
+    roleKey: 'EVP',
+    title: 'Executive Vice President',
+    fullName: 'Mikaela E. Donato',
+    email: 'medonato@up.edu.ph',
+    photo: 'assets/pes/donato.jpg'
+  },
+  {
+    roleKey: 'SEC_GEN',
+    title: 'Secretary-General',
+    fullName: 'Jo Elise G. Gulle',
+    email: 'jggulle1@up.edu.ph',
+    photo: 'assets/pes/gulle.jpg'
+  }
+];
+
 export const COMMITTEES_LIST = [
   {
     name: 'Academics',
