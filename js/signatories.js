@@ -1,189 +1,242 @@
+import { COMMITTEES_LIST } from './config.js';
 import {
   getSignatories,
   selectTaskForSignatory,
-  generateApplicantShortCode,
-  updateSignatoryAnswer
+  updateSignatoryAnswer,
+  generateApplicantShortCode
 } from './storage.js';
+import { showToast } from './app.js';
 
-import { COMMITTEES_LIST } from './config.js';
+let activeCategory = 'ALL';
 
 export async function renderSignatoriesTab(container) {
+  if (!container) return;
   const signatories = await getSignatories();
-  const completedCount = signatories.filter(s => s.completed).length;
-  const totalCount = signatories.length || 18;
 
-  const usedTasks = new Set(
-    signatories.map(s => s.selected_task).filter(t => t && t.trim().length > 0)
-  );
+  const total = signatories.length || 18;
+  const completed = signatories.filter(s => s.completed).length;
+
+  const categories = [
+    { label: `All (${total})`, value: 'ALL' },
+    { label: 'Academics', value: 'Academics' },
+    { label: 'Publicity', value: 'Publicity' },
+    { label: 'RAComm', value: 'RAComm' },
+    { label: 'Internal', value: 'Internal' },
+    { label: 'External', value: 'External' },
+    { label: 'Finance', value: 'Finance' }
+  ];
 
   container.innerHTML = `
     <section class="card">
       <div class="card-header">
         <div>
           <h2>Signatories Matrix</h2>
-          <p class="subtext" style="margin-bottom: 0;">Fulfill member tasks and receive official VP endorsements.</p>
+          <p class="subtext">Fulfill member tasks and receive official VP endorsements.</p>
         </div>
-        <span class="badge" style="background: var(--brand-forest); color: white;">${completedCount} / ${totalCount} Signed</span>
-      </div>
-
-      <div style="background: var(--surface-subtle); padding: 10px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); margin-bottom: 16px; font-size: 0.8rem; color: var(--text-muted);">
-        Heads up: each resident member can personally sign up to 4 signatory tasks. Spread yours across different members.
-      </div>
-
-      <div class="tab-nav" style="margin-bottom: 16px;">
-        <button class="tab-btn comm-filter-btn active" data-filter="ALL">All (${totalCount})</button>
-        ${COMMITTEES_LIST.map(c => `<button class="tab-btn comm-filter-btn" data-filter="${c.name}">${c.name}</button>`).join('')}
-      </div>
-
-      <div id="committeesContainer">
-        ${COMMITTEES_LIST.map(comm => {
-          const commSigs = signatories.filter(s => s.committee_name?.toLowerCase() === comm.name.toLowerCase());
-          return renderCommitteeGroup(comm, commSigs, usedTasks);
-        }).join('')}
-      </div>
-    </section>
-
-    <div id="verifyModal" class="modal-backdrop" role="dialog" aria-modal="true">
-      <div class="modal-box" style="text-align: center;">
-        <h3 style="margin-bottom: 8px;">Signatory Verification</h3>
-        <p class="subtext">Ask a resident member or VP to scan this QR code or input the 6-character code.</p>
-        <div id="modalQrCode" style="display: flex; justify-content: center; margin-bottom: 12px;"></div>
-        <div id="modalShortCode" style="font-family: var(--font-mono); font-size: 1.6rem; font-weight: 700; letter-spacing: 4px; padding: 10px; background: var(--surface-subtle); border-radius: var(--radius-sm); margin-bottom: 12px;">------</div>
-        <button type="button" class="copy-btn btn btn-secondary" data-copy-target="modalShortCode" style="min-height: 36px; padding: 4px 10px; margin-bottom: 12px;">Copy Code</button>
-        <button id="closeVerifyModalBtn" class="btn btn-secondary" style="width: 100%;">Close</button>
-      </div>
-    </div>
-  `;
-
-  attachSignatoryEvents(container);
-}
-
-function renderCommitteeGroup(comm, sigs, usedTasks) {
-  const vpSig = sigs.find(s => s.type === 'VP');
-  const memberSigs = sigs.filter(s => s.type !== 'VP');
-  const allCompleted = memberSigs.length > 0 && memberSigs.every(m => m.completed);
-
-  const sorted = [];
-  if (vpSig) sorted.push({ ...vpSig, isLocked: !allCompleted });
-  memberSigs.forEach(m => sorted.push({ ...m, isLocked: false }));
-
-  return `
-    <div class="card committee-group" data-committee="${comm.name}">
-      <h3 style="font-family: var(--font-display); font-size: 1.15rem; color: var(--brand-forest); margin-bottom: 12px; border-bottom: 1px solid var(--border-medium); padding-bottom: 4px;">
-        ${comm.name} Committee
-      </h3>
-      <div>
-        ${sorted.map((sig, idx) => renderSignatoryCard(sig, idx, usedTasks)).join('')}
-      </div>
-    </div>
-  `;
-}
-
-function renderSignatoryCard(sig, idx, usedTasks) {
-  const isVP = sig.type === 'VP';
-  const isCompleted = sig.completed;
-  const isLocked = sig.isLocked;
-  const pool = sig.task_pool || [];
-
-  return `
-    <div class="card" style="margin-bottom: 12px; background: ${isCompleted ? 'var(--brand-mint-subtle)' : 'var(--surface-white)'};">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-        <span class="badge">${isVP ? 'VP Endorsement' : `Member Task #${idx + 1}`}</span>
-        <span class="badge" style="background: ${isCompleted ? 'var(--brand-mint)' : 'var(--surface-subtle)'}; color: ${isCompleted ? '#fff' : 'inherit'};">
-          ${isCompleted ? '✓ Signed' : (isLocked ? 'Locked' : 'Pending')}
+        <span class="badge" style="background: var(--brand-forest); color: white; font-weight: 700;">
+          ${completed} / ${total} Signed
         </span>
       </div>
 
-      <p style="font-size: 0.9rem; font-weight: 600; margin-bottom: 10px;">${sig.trait_description || sig.task}</p>
-
-      ${!isVP ? `
-        <div style="margin-bottom: 12px;">
-          <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Choose Task:</label>
-          <select class="task-select" data-id="${sig.id}" ${isCompleted || isLocked ? 'disabled' : ''} style="width: 100%;">
-            <option value="">-- Select a Task --</option>
-            ${pool.map(task => {
-              const sel = sig.selected_task === task;
-              const used = usedTasks.has(task) && !sel;
-              return `<option value="${task}" ${sel ? 'selected' : ''} ${used ? 'disabled' : ''}>${task} ${used ? '(Taken)' : ''}</option>`;
-            }).join('')}
-          </select>
-        </div>
-      ` : ''}
-
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: 12px;">
-        <div>
-          <label style="font-size: 0.72rem; color: var(--text-muted); display: block;">Member Name:</label>
-          <input type="text" class="qa-input" data-sig-id="${sig.id}" data-field="member_name" value="${sig.member_name || ''}" ${isCompleted || isLocked ? 'disabled' : ''} style="width: 100%; min-height: 36px; padding: 4px 8px; font-size: 0.8rem;" />
-        </div>
-        <div>
-          <label style="font-size: 0.72rem; color: var(--text-muted); display: block;">Nickname:</label>
-          <input type="text" class="qa-input" data-sig-id="${sig.id}" data-field="nickname" value="${sig.nickname || ''}" ${isCompleted || isLocked ? 'disabled' : ''} style="width: 100%; min-height: 36px; padding: 4px 8px; font-size: 0.8rem;" />
-        </div>
-        <div>
-          <label style="font-size: 0.72rem; color: var(--text-muted); display: block;">Favorite Spot:</label>
-          <input type="text" class="qa-input" data-sig-id="${sig.id}" data-field="fav_spot" value="${sig.fav_spot || ''}" ${isCompleted || isLocked ? 'disabled' : ''} style="width: 100%; min-height: 36px; padding: 4px 8px; font-size: 0.8rem;" />
-        </div>
-        <div>
-          <label style="font-size: 0.72rem; color: var(--text-muted); display: block;">Least Liked Sub:</label>
-          <input type="text" class="qa-input" data-sig-id="${sig.id}" data-field="least_sub" value="${sig.least_sub || ''}" ${isCompleted || isLocked ? 'disabled' : ''} style="width: 100%; min-height: 36px; padding: 4px 8px; font-size: 0.8rem;" />
-        </div>
+      <div style="background: var(--surface-subtle); border-left: 4px solid var(--brand-clay); padding: 12px 16px; border-radius: var(--radius-sm); margin-bottom: 20px;">
+        <small style="color: var(--text-muted); line-height: 1.4; display: block;">
+          Heads up: each resident member can personally sign up to 4 signatory tasks. Spread yours across different members.
+        </small>
       </div>
 
-      ${!isCompleted ? `
-        <button class="btn btn-checkin request-sign-btn" data-id="${sig.id}" ${isLocked ? 'disabled' : ''} style="width: 100%;">
-          ${isLocked ? 'Complete Member Tasks to Unlock' : 'Request Signature'}
-        </button>
-      ` : `
-        <div style="font-size: 0.8rem; color: var(--brand-mint); padding: 6px; background: var(--surface-white); border-radius: 4px;">
-          Signed by: <strong>${sig.signed_by || 'Verified'}</strong> on ${sig.signed_at ? new Date(sig.signed_at).toLocaleDateString() : 'Verified'}
-        </div>
-      `}
-    </div>
+      <!-- Committee Filter Pills (Uses .committee-filter-btn instead of .tab-btn) -->
+      <div id="committeeFilterBar" style="display: flex; gap: 8px; overflow-x: auto; padding-bottom: 12px; margin-bottom: 20px;">
+        ${categories.map(cat => `
+          <button type="button" 
+                  class="btn committee-filter-btn ${activeCategory === cat.value ? 'btn-checkin' : 'btn-secondary'}" 
+                  data-category="${cat.value}" 
+                  style="min-height: 38px; padding: 6px 14px; font-size: 0.82rem; white-space: nowrap;">
+            ${cat.label}
+          </button>
+        `).join('')}
+      </div>
+
+      <div id="committeesDisplayContainer" style="display: flex; flex-direction: column; gap: 20px;">
+        ${COMMITTEES_LIST.map(comm => {
+          const commSigs = signatories.filter(s => (s.committee_name || '').toLowerCase() === comm.name.toLowerCase());
+          const vpTask = commSigs.find(s => s.role === 'VP' || s.type === 'VP');
+          const memberTasks = commSigs.filter(s => s !== vpTask);
+          const membersDone = memberTasks.length > 0 && memberTasks.every(s => s.completed);
+
+          return `
+            <div class="card committee-card" data-committee="${comm.name}" style="margin: 0; padding: 20px;">
+              <h2 style="font-family: var(--font-display); color: var(--brand-forest); margin-bottom: 16px;">
+                ${comm.name} Committee
+              </h2>
+
+              <!-- VP Endorsement Task -->
+              ${vpTask ? `
+                <div class="card" style="margin-bottom: 16px; border-color: ${vpTask.completed ? 'var(--brand-mint)' : 'var(--border-medium)'}; background: ${vpTask.completed ? 'var(--brand-mint-subtle)' : 'var(--surface)'};">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">VP Endorsement</span>
+                    <span class="badge" style="background: ${vpTask.completed ? 'var(--brand-mint)' : 'var(--surface-subtle)'}; color: ${vpTask.completed ? '#fff' : 'inherit'};">
+                      ${vpTask.completed ? 'Completed' : (membersDone ? 'Unlocked' : 'Locked')}
+                    </span>
+                  </div>
+                  <strong style="display: block; font-size: 0.95rem; margin-bottom: 12px;">Official Endorsement by ${comm.vp}</strong>
+
+                  ${!vpTask.completed ? `
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 12px;">
+                      <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="member_name" placeholder="Member Name" value="${vpTask.member_name || ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
+                      <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="nickname" placeholder="Nickname" value="${vpTask.nickname || ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
+                      <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="favorite_spot" placeholder="Favorite Spot" value="${vpTask.favorite_spot || ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
+                      <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="least_liked_sub" placeholder="Least Liked Sub" value="${vpTask.least_liked_sub || ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
+                    </div>
+                    <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${vpTask.id}" ${!membersDone ? 'disabled style="opacity: 0.6; cursor: not-allowed;"' : ''} style="width: 100%;">
+                      ${membersDone ? 'Generate Signatory Code' : 'Complete Member Tasks to Unlock'}
+                    </button>
+                  ` : `
+                    <small style="color: var(--brand-forest); font-weight: 600;">Signed by ${vpTask.signed_by || comm.vp}</small>
+                  `}
+                </div>
+              ` : ''}
+
+              <!-- Member Tasks -->
+              <div style="display: flex; flex-direction: column; gap: 12px;">
+                ${memberTasks.map((task, idx) => `
+                  <div class="card" style="margin: 0; border-color: ${task.completed ? 'var(--brand-mint)' : 'var(--border-subtle)'}; background: ${task.completed ? 'var(--brand-mint-subtle)' : 'var(--surface)'};">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                      <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">Member Task #${idx + 1}</span>
+                      <span class="badge" style="background: ${task.completed ? 'var(--brand-mint)' : 'var(--surface-subtle)'}; color: ${task.completed ? '#fff' : 'inherit'};">
+                        ${task.completed ? 'Completed' : 'Pending'}
+                      </span>
+                    </div>
+
+                    ${task.task_pool && task.task_pool.length > 0 && !task.selected_task ? `
+                      <select class="sig-task-select" data-sig-id="${task.id}" style="width: 100%; margin-bottom: 8px; font-size: 0.82rem;">
+                        <option value="">-- Choose a task from pool --</option>
+                        ${task.task_pool.map(t => `<option value="${t}">${t}</option>`).join('')}
+                      </select>
+                    ` : `
+                      <strong style="display: block; font-size: 0.9rem; margin-bottom: 10px;">${task.selected_task || task.task}</strong>
+                    `}
+
+                    ${!task.completed ? `
+                      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 10px;">
+                        <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="member_name" placeholder="Member Name" value="${task.member_name || ''}" style="font-size: 0.8rem; padding: 6px;" />
+                        <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="nickname" placeholder="Nickname" value="${task.nickname || ''}" style="font-size: 0.8rem; padding: 6px;" />
+                        <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="favorite_spot" placeholder="Favorite Spot" value="${task.favorite_spot || ''}" style="font-size: 0.8rem; padding: 6px;" />
+                        <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="least_liked_sub" placeholder="Least Liked Sub" value="${task.least_liked_sub || ''}" style="font-size: 0.8rem; padding: 6px;" />
+                      </div>
+                      <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${task.id}" style="width: 100%;">
+                        Generate Signatory Code
+                      </button>
+                    ` : `
+                      <small style="color: var(--brand-forest); font-weight: 600;">Signed by ${task.signed_by || 'Verified Member'}</small>
+                    `}
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </section>
   `;
-}
 
-function attachSignatoryEvents(container) {
-  const modal = container.querySelector('#verifyModal');
-  const closeModal = () => { if (modal) modal.style.display = 'none'; };
+  // Apply default filtering
+  filterCommitteeCards(activeCategory);
 
-  container.querySelector('#closeVerifyModalBtn')?.addEventListener('click', closeModal);
+  // Committee Filter Button Click Handler (Toggles cards without hiding tab-signatories)
+  const filterBar = container.querySelector('#committeeFilterBar');
+  if (filterBar) {
+    filterBar.addEventListener('click', (e) => {
+      const btn = e.target.closest('.committee-filter-btn');
+      if (!btn) return;
 
-  container.querySelectorAll('.comm-filter-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      container.querySelectorAll('.comm-filter-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const filter = btn.dataset.filter;
-      container.querySelectorAll('.committee-group').forEach(group => {
-        group.style.display = (filter === 'ALL' || group.dataset.committee === filter) ? 'block' : 'none';
+      activeCategory = btn.dataset.category;
+
+      filterBar.querySelectorAll('.committee-filter-btn').forEach(b => {
+        b.classList.remove('btn-checkin');
+        b.classList.add('btn-secondary');
       });
+      btn.classList.remove('btn-secondary');
+      btn.classList.add('btn-checkin');
+
+      filterCommitteeCards(activeCategory);
+    });
+  }
+
+  function filterCommitteeCards(cat) {
+    const cards = container.querySelectorAll('.committee-card');
+    cards.forEach(card => {
+      if (cat === 'ALL' || card.dataset.committee.toLowerCase() === cat.toLowerCase()) {
+        card.style.display = 'block';
+      } else {
+        card.style.display = 'none';
+      }
+    });
+  }
+
+  // Task Pool Selection Handler
+  container.querySelectorAll('.sig-task-select').forEach(select => {
+    select.addEventListener('change', async (e) => {
+      const val = e.target.value;
+      const sigId = e.target.dataset.sigId;
+      if (val && sigId) {
+        await selectTaskForSignatory(sigId, val);
+        showToast('Task assigned!', 'info');
+        await renderSignatoriesTab(container);
+      }
     });
   });
 
-  container.querySelectorAll('.task-select').forEach(sel => {
-    sel.addEventListener('change', async (e) => {
-      await selectTaskForSignatory(e.target.dataset.id, e.target.value);
-      await renderSignatoriesTab(container);
+  // Inputs Debounce
+  container.querySelectorAll('.sig-input').forEach(inp => {
+    inp.addEventListener('change', async (e) => {
+      const sigId = e.target.dataset.sigId;
+      const field = e.target.dataset.field;
+      const val = e.target.value.trim();
+      if (sigId && field) {
+        await updateSignatoryAnswer(sigId, field, val);
+      }
     });
   });
 
-  container.querySelectorAll('.qa-input').forEach(input => {
-    input.addEventListener('blur', async (e) => {
-      await updateSignatoryAnswer(e.target.dataset.sigId, e.target.dataset.field, e.target.value.trim());
-    });
-  });
+  // Generate Signatory Code Button Handler
+  container.querySelectorAll('.trigger-sig-code-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const sigId = e.target.dataset.sigId;
+      if (!sigId) return;
 
-  container.querySelectorAll('.request-sign-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      if (btn.disabled) return;
-      const code = await generateApplicantShortCode(btn.dataset.id, 'SIGNATORY');
-      if (!code) return;
+      const code = await generateApplicantShortCode(sigId, 'SIGNATORY');
+      if (!code) {
+        showToast('Failed to generate verification code.', 'error');
+        return;
+      }
 
-      container.querySelector('#modalShortCode').textContent = code;
-      const url = `${window.location.origin}${window.location.pathname}?verifyCode=${code}`;
-      container.querySelector('#modalQrCode').innerHTML = `
-        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(url)}" alt="QR" width="150" height="150" style="border-radius: 6px;" />
-      `;
-      modal.style.display = 'flex';
+      const qrModal = document.getElementById('qrDisplayContainer');
+      const textElem = document.getElementById('applicantShortCodeText');
+      const canvasElem = document.getElementById('qrcodeCanvas');
+
+      if (textElem) textElem.textContent = code;
+
+      const verifyUrl = `${window.location.origin}${window.location.pathname}?verifyCode=${code}`;
+
+      if (canvasElem) {
+        canvasElem.innerHTML = `
+          <div style="margin-bottom: 8px;">
+            <span class="badge" style="background: var(--brand-forest); color: #ffffff;">Signatory Code</span>
+          </div>
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(verifyUrl)}" 
+               alt="Signatory QR" width="160" height="160" style="border-radius: 6px;" />
+        `;
+      }
+
+      // Switch view to Tambay & Events or display modal to reveal the QR code
+      if (qrModal) {
+        qrModal.style.display = 'block';
+        const tambayTabBtn = document.querySelector('#applicantTabNav [data-tab="tab-tambay"]');
+        if (tambayTabBtn) tambayTabBtn.click();
+        qrModal.scrollIntoView({ behavior: 'smooth' });
+      }
+
+      showToast(`Verification code generated: ${code}`, 'success');
     });
   });
 }
