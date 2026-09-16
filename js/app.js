@@ -32,7 +32,8 @@ import {
   getBatchPot,
   contributeToPot,
   buyTambayMultiplierBoost,
-  swapSignatoryTrait
+  swapSignatoryTrait,
+  getAvailableTraitsPool
 } from './storage.js';
 
 import { renderSignatoriesTab } from './signatories.js';
@@ -43,17 +44,6 @@ let currentUser = null;
 let timerInterval = null;
 let inspectedApplicantId = null;
 let currentMonday = getMonday(new Date());
-
-const TRAITS_POOL = [
-  "Take a selfie with the member holding a survey instrument",
-  "Ask the member about their favorite Geodetic field story",
-  "Play one round of rock-paper-scissors (Best of 3)",
-  "Ask for their best advice for second-year majors",
-  "Memorize and recite their org committee role",
-  "Share your favorite meme with them",
-  "Learn a quick campus shortcut from them"
-];
-
 let activeSwapMode = 'random';
 
 function getMonday(d) {
@@ -515,7 +505,7 @@ async function openInspection(appId) {
   if (sigList) {
     sigList.innerHTML = (details.signatories || []).map(s => `
       <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--border-subtle); font-size:0.8rem;">
-        <span>[${s.committee_name}] ${s.task}</span>
+        <span><strong>${s.trait || s.task}</strong> <small style="color:var(--text-muted);">(${s.committee_name || 'Member'})</small></span>
         <input type="checkbox" class="admin-sig-check" data-id="${s.id}" ${s.completed ? 'checked' : ''} />
       </div>
     `).join('');
@@ -540,30 +530,40 @@ async function openSwapModal(mode) {
   const sigSelect = document.getElementById('swapTargetSigSelect');
   const newTraitSelect = document.getElementById('swapNewTraitSelect');
 
-  const sigs = await getSignatories(currentUser.id);
+  // Pull live data from Supabase and Google Sheets Traits Pool
+  const [sigs, traitsPool] = await Promise.all([
+    getSignatories(currentUser.id),
+    getAvailableTraitsPool()
+  ]);
+
   const eligibleSigs = sigs.filter(s => !s.completed && s.role !== 'VP' && s.role !== 'PES');
 
   if (eligibleSigs.length === 0) {
-    showToast('No eligible uncompleted signatory tasks available to swap.', 'info');
+    showToast('No eligible pending signatory traits available to swap.', 'info');
+    return;
+  }
+
+  if (traitsPool.length === 0) {
+    showToast('Could not load traits from sheet. Check permissions or network.', 'error');
     return;
   }
 
   if (sigSelect) {
     sigSelect.innerHTML = eligibleSigs.map(s => `
-      <option value="${s.id}">[${s.committee_name || 'Member'}] ${s.task || s.member_name}</option>
+      <option value="${s.id}">${s.trait || s.task || 'Member Trait'} (${s.committee_name || 'Member'})</option>
     `).join('');
   }
 
   if (mode === 'specific') {
     title.textContent = 'Specific Trait Selection (50 AC)';
-    subtext.textContent = 'Select your task and choose the exact trait you want to assign.';
+    subtext.textContent = 'Select your signatory and pick the exact trait from the sheets roster:';
     specificBox.style.display = 'block';
     if (newTraitSelect) {
-      newTraitSelect.innerHTML = TRAITS_POOL.map(t => `<option value="${t}">${t}</option>`).join('');
+      newTraitSelect.innerHTML = traitsPool.map(t => `<option value="${t}">${t}</option>`).join('');
     }
   } else {
     title.textContent = 'Random Trait Swap (30 AC)';
-    subtext.textContent = 'Select your task to reroll a completely random new requirement.';
+    subtext.textContent = 'Select your signatory to roll a random trait requirement:';
     specificBox.style.display = 'none';
   }
 
@@ -897,23 +897,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     const sigId = document.getElementById('swapTargetSigSelect')?.value;
     if (!sigId) return;
 
+    // Pull directly from published Google Sheets via storage.js
+    const traitsPool = await getAvailableTraitsPool();
+    if (traitsPool.length === 0) {
+      showToast('Could not load traits from sheet. Check spreadsheet permissions.', 'error');
+      return;
+    }
+
     const cost = activeSwapMode === 'specific' ? 50 : 30;
     let chosenTrait = '';
 
     if (activeSwapMode === 'specific') {
       chosenTrait = document.getElementById('swapNewTraitSelect')?.value;
     } else {
-      chosenTrait = TRAITS_POOL[Math.floor(Math.random() * TRAITS_POOL.length)];
+      chosenTrait = traitsPool[Math.floor(Math.random() * traitsPool.length)];
     }
 
     const ok = await swapSignatoryTrait(sigId, chosenTrait, cost);
     if (ok) {
-      showToast(`Task swapped to: "${chosenTrait}"`, 'success');
+      showToast(`Signatory trait updated to: "${chosenTrait}"`, 'success');
       document.getElementById('swapTraitModal').style.display = 'none';
       await handleAuth();
       await renderDashboard();
     } else {
-      showToast('Insufficient AC balance or failed to swap task.', 'error');
+      showToast('Insufficient AC balance or failed to swap trait.', 'error');
     }
   });
 
@@ -1135,12 +1142,12 @@ document.addEventListener('DOMContentLoaded', async () => {
           <p><strong>Full Name:</strong> ${p.full_name} (${p.nickname})</p>
           <p><strong>Buddy Family:</strong> ${p.buddy_group_name}</p>
           <p><strong>Evaluation Grades:</strong> Interview: ${p.grade_interview || 0}/15 | OGT: ${p.grade_ogt || 0}/20 | Consti: ${p.grade_consti_quiz || 0}/10 | Buddy: ${p.grade_buddy_tasks || 0}/10</p>
-          <h3>Signatory Tasks</h3>
+          <h3>Signatories</h3>
           <table>
-            <thead><tr><th>Committee</th><th>Task Description</th><th>Status</th><th>Signed By</th></tr></thead>
+            <thead><tr><th>Committee</th><th>Assigned Trait Requirement</th><th>Status</th><th>Signed By</th></tr></thead>
             <tbody>
               ${(details.signatories || []).map(s => `
-                <tr><td>${s.committee_name}</td><td>${s.task}</td><td>${s.completed ? 'Completed' : 'Pending'}</td><td>${s.signed_by || '-'}</td></tr>
+                <tr><td>${s.committee_name}</td><td>${s.trait || s.task}</td><td>${s.completed ? 'Completed' : 'Pending'}</td><td>${s.signed_by || '-'}</td></tr>
               `).join('')}
             </tbody>
           </table>
