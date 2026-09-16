@@ -396,7 +396,6 @@ async function handleAuth() {
     if (bar) bar.style.display = 'flex';
     if (emailText) emailText.textContent = currentUser.email;
 
-    // Direct QR validation
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('verifyCode') || urlParams.get('validateApplicant');
     if (code) {
@@ -414,6 +413,12 @@ async function handleAuth() {
       if (appDash) appDash.style.display = 'none';
       if (memDash) memDash.style.display = 'block';
 
+      // Restrict navigation tabs exclusively to RAComm officers
+      const racommTabs = document.querySelectorAll('.racomm-only-tab');
+      racommTabs.forEach(tab => {
+        tab.style.display = isRAComm ? 'inline-block' : 'none';
+      });
+
       if (isRAComm) {
         const settings = await getGlobalSettings();
         const multText = document.getElementById('currentMultiplierText');
@@ -422,6 +427,20 @@ async function handleAuth() {
         if (capText) capText.textContent = settings.dailyCapEnabled ? 'Active' : 'Disabled';
         await renderRoster();
         await renderBuddyGroupBoard();
+      } else {
+        // Enforce active Verification Hub tab for standard members
+        document.querySelectorAll('#racommTabNav .tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelector('[data-tab="member-hub-view"]')?.classList.add('active');
+
+        document.querySelectorAll('#memberDashboardContent .tab-content').forEach(c => {
+          c.style.display = 'none';
+          c.classList.remove('active');
+        });
+        const hub = document.getElementById('member-hub-view');
+        if (hub) {
+          hub.style.display = 'block';
+          hub.classList.add('active');
+        }
       }
     } else {
       if (badge) badge.textContent = 'Applicant';
@@ -440,7 +459,7 @@ async function handleAuth() {
         const group = document.getElementById('buddyGroupName');
         const avatarImg = document.getElementById('userAvatarHero');
 
-        // Robust Google Avatar resolution
+        // Resolve Google avatar with fallbacks
         const meta = currentUser.user_metadata || {};
         const identityMeta = currentUser.identities?.[0]?.identity_data || {};
         const googleAvatar = meta.avatar_url || meta.picture || identityMeta.avatar_url || identityMeta.picture;
@@ -540,10 +559,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const tabId = btn.dataset.tab;
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+
+      // Access Gate: block non-RAComm members from administrative tabs
+      if (tabId === 'racomm-buddy-groups' || tabId === 'racomm-roster' || tabId === 'racomm-settings') {
+        const isOfficer = await checkIfRAComm(currentUser?.email);
+        if (!isOfficer) {
+          showToast('Access restricted to RAComm officers.', 'error');
+          return;
+        }
+      }
+
+      const parentNav = btn.closest('.tab-nav');
+      if (parentNav) {
+        parentNav.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      }
       btn.classList.add('active');
 
-      document.querySelectorAll('.tab-content').forEach(c => {
+      const containerContext = btn.closest('#memberDashboardContent') || btn.closest('#applicantDashboardContent') || document;
+      containerContext.querySelectorAll('.tab-content').forEach(c => {
         c.style.display = 'none';
         c.classList.remove('active');
       });
@@ -558,6 +591,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           await renderWhen2Meet();
         } else if (tabId === 'racomm-buddy-groups') {
           await renderBuddyGroupBoard();
+        } else if (tabId === 'racomm-roster') {
+          await renderRoster();
         }
       }
     });
@@ -849,10 +884,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('adminDeleteApplicantBtn')?.addEventListener('click', async () => {
     if (inspectedApplicantId && confirm('Delete this applicant profile? This action is permanent.')) {
-      await deleteApplicantProfile(inspectedApplicantId);
-      document.getElementById('adminInspectionModal').style.display = 'none';
-      showToast('Profile deleted.', 'info');
-      await renderRoster();
+      const success = await deleteApplicantProfile(inspectedApplicantId);
+      if (success) {
+        document.getElementById('adminInspectionModal').style.display = 'none';
+        showToast('Profile deleted successfully.', 'info');
+        await renderRoster();
+        await renderBuddyGroupBoard();
+      } else {
+        showToast('Failed to delete applicant profile. Check permissions.', 'error');
+      }
     }
   });
 
