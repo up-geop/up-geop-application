@@ -521,6 +521,45 @@ async function openInspection(appId) {
   modal.style.display = 'flex';
 }
 
+// Function to get distinct traits available for swap by excluding all current assigned traits
+async function getFilteredAvailableTraits(targetSigId) {
+  const [sigs, fullPool] = await Promise.all([
+    getSignatories(currentUser.id),
+    getAvailableTraitsPool()
+  ]);
+
+  // Collect all traits already in use across the user's signatories
+  const usedTraits = new Set(
+    sigs
+      .filter(s => s.id !== targetSigId) // allow retaining their own current trait if desired, or exclude all
+      .map(s => (s.trait || s.task || '').trim().toLowerCase())
+      .filter(Boolean)
+  );
+
+  // Target's exact current trait so they don't reroll the same one
+  const targetSig = sigs.find(s => s.id === targetSigId);
+  if (targetSig) {
+    usedTraits.add((targetSig.trait || targetSig.task || '').trim().toLowerCase());
+  }
+
+  // Filter out any trait that already exists in usedTraits
+  return fullPool.filter(trait => !usedTraits.has(trait.trim().toLowerCase()));
+}
+
+async function updateSwapOptions() {
+  const sigId = document.getElementById('swapTargetSigSelect')?.value;
+  const newTraitSelect = document.getElementById('swapNewTraitSelect');
+  if (!sigId || !newTraitSelect || activeSwapMode !== 'specific') return;
+
+  const availableTraits = await getFilteredAvailableTraits(sigId);
+
+  if (availableTraits.length === 0) {
+    newTraitSelect.innerHTML = '<option value="">-- No other unique traits available --</option>';
+  } else {
+    newTraitSelect.innerHTML = availableTraits.map(t => `<option value="${t}">${t}</option>`).join('');
+  }
+}
+
 async function openSwapModal(mode) {
   activeSwapMode = mode;
   const modal = document.getElementById('swapTraitModal');
@@ -528,23 +567,12 @@ async function openSwapModal(mode) {
   const subtext = document.getElementById('swapModalSubtext');
   const specificBox = document.getElementById('specificTraitContainer');
   const sigSelect = document.getElementById('swapTargetSigSelect');
-  const newTraitSelect = document.getElementById('swapNewTraitSelect');
 
-  // Pull live data from Supabase and Google Sheets Traits Pool
-  const [sigs, traitsPool] = await Promise.all([
-    getSignatories(currentUser.id),
-    getAvailableTraitsPool()
-  ]);
-
+  const sigs = await getSignatories(currentUser.id);
   const eligibleSigs = sigs.filter(s => !s.completed && s.role !== 'VP' && s.role !== 'PES');
 
   if (eligibleSigs.length === 0) {
     showToast('No eligible pending signatory traits available to swap.', 'info');
-    return;
-  }
-
-  if (traitsPool.length === 0) {
-    showToast('Could not load traits from sheet. Check permissions or network.', 'error');
     return;
   }
 
@@ -556,14 +584,12 @@ async function openSwapModal(mode) {
 
   if (mode === 'specific') {
     title.textContent = 'Specific Trait Selection (50 AC)';
-    subtext.textContent = 'Select your signatory and pick the exact trait from the sheets roster:';
+    subtext.textContent = 'Select your signatory and pick a new unique trait:';
     specificBox.style.display = 'block';
-    if (newTraitSelect) {
-      newTraitSelect.innerHTML = traitsPool.map(t => `<option value="${t}">${t}</option>`).join('');
-    }
+    await updateSwapOptions();
   } else {
     title.textContent = 'Random Trait Swap (30 AC)';
-    subtext.textContent = 'Select your signatory to roll a random trait requirement:';
+    subtext.textContent = 'Select your signatory to roll a new unique trait:';
     specificBox.style.display = 'none';
   }
 
@@ -887,6 +913,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (res.success) await handleAuth();
   });
 
+  document.getElementById('swapTargetSigSelect')?.addEventListener('change', async () => {
+    await updateSwapOptions();
+  });
+
   document.getElementById('openRandomSwapModalBtn')?.addEventListener('click', () => openSwapModal('random'));
   document.getElementById('openSpecificSwapModalBtn')?.addEventListener('click', () => openSwapModal('specific'));
   document.getElementById('cancelSwapBtn')?.addEventListener('click', () => {
@@ -897,10 +927,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const sigId = document.getElementById('swapTargetSigSelect')?.value;
     if (!sigId) return;
 
-    // Pull directly from published Google Sheets via storage.js
-    const traitsPool = await getAvailableTraitsPool();
-    if (traitsPool.length === 0) {
-      showToast('Could not load traits from sheet. Check spreadsheet permissions.', 'error');
+    const availableTraits = await getFilteredAvailableTraits(sigId);
+
+    if (availableTraits.length === 0) {
+      showToast('All available traits from the pool are already assigned to you!', 'error');
       return;
     }
 
@@ -909,8 +939,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (activeSwapMode === 'specific') {
       chosenTrait = document.getElementById('swapNewTraitSelect')?.value;
+      if (!chosenTrait) {
+        showToast('Please select a valid trait.', 'error');
+        return;
+      }
     } else {
-      chosenTrait = traitsPool[Math.floor(Math.random() * traitsPool.length)];
+      // Pick randomly from only the traits the user doesn't already have
+      chosenTrait = availableTraits[Math.floor(Math.random() * availableTraits.length)];
     }
 
     const ok = await swapSignatoryTrait(sigId, chosenTrait, cost);
