@@ -33,7 +33,12 @@ import {
   contributeToPot,
   buyTambayMultiplierBoost,
   swapSignatoryTrait,
-  getAvailableTraitsPool
+  getAvailableTraitsPool,
+  getBuddyTasks,
+  createBuddyTask,
+  deleteBuddyTask,
+  getApplicantBuddyTaskCompletions,
+  toggleBuddyTaskCompletion
 } from './storage.js';
 
 import { renderSignatoriesTab } from './signatories.js';
@@ -92,6 +97,14 @@ function stopTimer() {
   if (timerInterval) clearInterval(timerInterval);
 }
 
+function computeEffectiveDeadline(rawIso, isPotUnlocked) {
+  const baseDate = new Date(rawIso);
+  if (isPotUnlocked) {
+    baseDate.setTime(baseDate.getTime() + (2 * 24 * 60 * 60 * 1000));
+  }
+  return baseDate;
+}
+
 async function renderShopView() {
   const pot = await getBatchPot('buddy_task_ext');
   if (!pot) return;
@@ -115,6 +128,114 @@ async function renderShopView() {
     if (banner) banner.style.display = 'none';
     if (controls) controls.style.opacity = '1';
   }
+}
+
+async function renderApplicantBuddyTasks(userGroup) {
+  const container = document.getElementById('applicantOverviewBuddyTasks');
+  const badge = document.getElementById('buddyTaskSummaryBadge');
+  if (!container || !currentUser) return;
+
+  const [tasks, completions, pot] = await Promise.all([
+    getBuddyTasks(),
+    getApplicantBuddyTaskCompletions(currentUser.id),
+    getBatchPot('buddy_task_ext')
+  ]);
+
+  const isPotUnlocked = !!pot?.is_unlocked;
+  const completedTaskIds = new Set(completions.map(c => c.task_id));
+
+  const relevantTasks = tasks.filter(t => 
+    t.target_group === 'ALL' || (userGroup && t.target_group.toLowerCase() === userGroup.toLowerCase())
+  );
+
+  if (badge) {
+    const doneCount = relevantTasks.filter(t => completedTaskIds.has(t.id)).length;
+    badge.textContent = `${doneCount} / ${relevantTasks.length} Done`;
+    badge.style.background = doneCount === relevantTasks.length && relevantTasks.length > 0 ? 'var(--brand-mint)' : 'var(--surface-subtle)';
+    badge.style.color = doneCount === relevantTasks.length && relevantTasks.length > 0 ? '#fff' : 'inherit';
+  }
+
+  if (relevantTasks.length === 0) {
+    container.innerHTML = '<p class="subtext">No buddy tasks assigned yet.</p>';
+    return;
+  }
+
+  const now = new Date();
+
+  container.innerHTML = relevantTasks.map(t => {
+    const isDone = completedTaskIds.has(t.id);
+    const deadline = computeEffectiveDeadline(t.deadline, isPotUnlocked);
+    const isOverdue = !isDone && now > deadline;
+
+    return `
+      <div class="card" style="margin: 0; padding: 12px 14px; border-left: 4px solid ${isDone ? 'var(--brand-mint)' : (isOverdue ? '#9e2a2b' : 'var(--brand-clay)')}; background: ${isDone ? 'var(--brand-mint-subtle)' : 'var(--surface-subtle)'};">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+          <div>
+            <span class="badge" style="font-size: 0.72rem; margin-bottom: 4px;">Target: ${t.target_group}</span>
+            <strong style="font-size: 0.95rem; color: var(--text-heading); display: block;">${t.title}</strong>
+            ${t.description ? `<p style="font-size: 0.82rem; color: var(--text-body); margin: 4px 0;">${t.description}</p>` : ''}
+          </div>
+          <span class="badge" style="background: ${isDone ? 'var(--brand-mint)' : (isOverdue ? '#9e2a2b' : 'var(--brand-clay)')}; color: #fff;">
+            ${isDone ? 'Finished' : (isOverdue ? 'Overdue' : 'Pending')}
+          </span>
+        </div>
+
+        <div style="margin-top: 8px; font-size: 0.78rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px;">
+          <span style="color: ${isOverdue ? '#9e2a2b' : 'var(--text-muted)'}; font-weight: ${isOverdue ? '700' : 'normal'};">
+            📅 Deadline: <strong>${deadline.toLocaleDateString()} ${deadline.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong>
+            ${isPotUnlocked ? '<span style="color: var(--brand-forest); font-weight: 700; margin-left: 4px;">(+2 Days Shop Boost Active)</span>' : ''}
+          </span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function renderOfficerBuddyTasksManager() {
+  const container = document.getElementById('racommBuddyTasksList');
+  const groupSelect = document.getElementById('buddyTaskTargetGroupSelect');
+  if (!container) return;
+
+  const [tasks, groups, pot] = await Promise.all([
+    getBuddyTasks(),
+    getManagedBuddyGroups(),
+    getBatchPot('buddy_task_ext')
+  ]);
+
+  const isPotUnlocked = !!pot?.is_unlocked;
+
+  if (groupSelect) {
+    groupSelect.innerHTML = `
+      <option value="ALL">All Applicants (Universal)</option>
+      ${groups.map(g => `<option value="${g.name}">${g.name}</option>`).join('')}
+    `;
+  }
+
+  if (tasks.length === 0) {
+    container.innerHTML = '<p class="subtext">No buddy tasks created yet.</p>';
+    return;
+  }
+
+  container.innerHTML = tasks.map(t => {
+    const deadline = computeEffectiveDeadline(t.deadline, isPotUnlocked);
+
+    return `
+      <div class="card" style="margin: 0; padding: 12px; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <span class="badge" style="margin-bottom: 2px;">${t.target_group}</span>
+          <strong style="display: block; font-size: 0.95rem; color: var(--brand-forest);">${t.title}</strong>
+          <small class="subtext" style="display: block;">${t.description || 'No description'}</small>
+          <small style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; display: block;">
+            Base: ${new Date(t.deadline).toLocaleDateString()} ${new Date(t.deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            ${isPotUnlocked ? ` | <strong style="color: var(--brand-clay);">Effective (+2d): ${deadline.toLocaleDateString()}</strong>` : ''}
+          </small>
+        </div>
+        <button class="btn btn-secondary delete-buddy-task-btn" data-id="${t.id}" style="min-height: 30px; padding: 2px 8px; font-size: 0.75rem; color: #9e2a2b;">
+          Delete
+        </button>
+      </div>
+    `;
+  }).join('');
 }
 
 async function renderAnnouncementsBoard() {
@@ -521,28 +642,24 @@ async function openInspection(appId) {
   modal.style.display = 'flex';
 }
 
-// Function to get distinct traits available for swap by excluding all current assigned traits
 async function getFilteredAvailableTraits(targetSigId) {
   const [sigs, fullPool] = await Promise.all([
     getSignatories(currentUser.id),
     getAvailableTraitsPool()
   ]);
 
-  // Collect all traits already in use across the user's signatories
   const usedTraits = new Set(
     sigs
-      .filter(s => s.id !== targetSigId) // allow retaining their own current trait if desired, or exclude all
+      .filter(s => s.id !== targetSigId)
       .map(s => (s.trait || s.task || '').trim().toLowerCase())
       .filter(Boolean)
   );
 
-  // Target's exact current trait so they don't reroll the same one
   const targetSig = sigs.find(s => s.id === targetSigId);
   if (targetSig) {
     usedTraits.add((targetSig.trait || targetSig.task || '').trim().toLowerCase());
   }
 
-  // Filter out any trait that already exists in usedTraits
   return fullPool.filter(trait => !usedTraits.has(trait.trim().toLowerCase()));
 }
 
@@ -642,6 +759,7 @@ async function handleAuth() {
         if (capText) capText.textContent = settings.dailyCapEnabled ? 'Active' : 'Disabled';
         await renderRoster();
         await renderBuddyGroupBoard();
+        await renderOfficerBuddyTasksManager();
       } else {
         document.querySelectorAll('#racommTabNav .tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelector('[data-tab="member-hub-view"]')?.classList.add('active');
@@ -711,6 +829,7 @@ async function handleAuth() {
         }
 
         await renderDashboard();
+        await renderApplicantBuddyTasks(profile.buddy_group_name);
         await renderShopView();
       }
     }
@@ -751,6 +870,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'batch_pots' }, async () => {
         await renderShopView();
+        const profile = await getUserProfileData(currentUser?.id);
+        await renderApplicantBuddyTasks(profile?.buddy_group_name);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'buddy_tasks' }, async () => {
+        const profile = await getUserProfileData(currentUser?.id);
+        await renderApplicantBuddyTasks(profile?.buddy_group_name);
+        await renderOfficerBuddyTasksManager();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'buddy_task_completions' }, async () => {
+        const profile = await getUserProfileData(currentUser?.id);
+        await renderApplicantBuddyTasks(profile?.buddy_group_name);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, async () => {
         showToast('New announcement posted.', 'info');
@@ -794,7 +924,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const tabId = btn.dataset.tab;
       if (!tabId) return;
 
-      if (tabId === 'racomm-buddy-groups' || tabId === 'racomm-roster' || tabId === 'racomm-settings') {
+      if (tabId === 'racomm-buddy-groups' || tabId === 'racomm-roster' || tabId === 'racomm-settings' || tabId === 'racomm-buddy-tasks') {
         const isOfficer = await checkIfRAComm(currentUser?.email);
         if (!isOfficer) {
           showToast('Access restricted to RAComm officers.', 'error');
@@ -824,6 +954,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           await renderWhen2Meet();
         } else if (tabId === 'racomm-buddy-groups') {
           await renderBuddyGroupBoard();
+        } else if (tabId === 'racomm-buddy-tasks') {
+          await renderOfficerBuddyTasksManager();
         } else if (tabId === 'racomm-roster') {
           await renderRoster();
         } else if (tabId === 'tab-perks') {
@@ -944,7 +1076,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
     } else {
-      // Pick randomly from only the traits the user doesn't already have
       chosenTrait = availableTraits[Math.floor(Math.random() * availableTraits.length)];
     }
 
@@ -956,6 +1087,45 @@ document.addEventListener('DOMContentLoaded', async () => {
       await renderDashboard();
     } else {
       showToast('Insufficient AC balance or failed to swap trait.', 'error');
+    }
+  });
+
+  /* Buddy Tasks Management Handlers */
+  document.getElementById('createBuddyTaskForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const title = document.getElementById('buddyTaskTitleInput')?.value.trim();
+    const desc = document.getElementById('buddyTaskDescInput')?.value.trim();
+    const targetGroup = document.getElementById('buddyTaskTargetGroupSelect')?.value;
+    const deadlineVal = document.getElementById('buddyTaskDeadlineInput')?.value;
+
+    if (!title || !deadlineVal) {
+      showToast('Title and deadline are required.', 'error');
+      return;
+    }
+
+    const isoDeadline = new Date(deadlineVal).toISOString();
+    const ok = await createBuddyTask(title, desc, targetGroup, isoDeadline);
+
+    if (ok) {
+      showToast('Buddy task published successfully!', 'success');
+      document.getElementById('buddyTaskTitleInput').value = '';
+      document.getElementById('buddyTaskDescInput').value = '';
+      document.getElementById('buddyTaskDeadlineInput').value = '';
+      await renderOfficerBuddyTasksManager();
+    } else {
+      showToast('Failed to create task.', 'error');
+    }
+  });
+
+  document.getElementById('racommBuddyTasksList')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.delete-buddy-task-btn');
+    if (!btn) return;
+    if (confirm('Delete this buddy task?')) {
+      const ok = await deleteBuddyTask(btn.dataset.id);
+      if (ok) {
+        showToast('Task removed.', 'info');
+        await renderOfficerBuddyTasksManager();
+      }
     }
   });
 
