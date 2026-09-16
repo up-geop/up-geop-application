@@ -22,6 +22,8 @@ import {
   createBuddyGroup,
   deleteBuddyGroup,
   assignApplicantBuddyGroup,
+  getAllMembersList,
+  assignMemberBuddyGroup,
   getAnnouncements,
   createAnnouncement,
   deleteAnnouncement,
@@ -161,45 +163,96 @@ async function renderWhen2Meet() {
   }).join('');
 }
 
-async function renderBidding() {
-  const container = document.getElementById('biddingFamiliesContainer');
-  const banner = document.getElementById('biddingStatusBanner');
-  if (!container || !currentUser) return;
+async function renderBuddyGroupBoard() {
+  const board = document.getElementById('buddyGroupsBoard');
+  if (!board) return;
 
-  const state = await getBiddingState();
-  if (banner) banner.style.display = state.is_active ? 'none' : 'flex';
-  container.style.opacity = state.is_active ? '1' : '0.6';
-  container.style.pointerEvents = state.is_active ? 'auto' : 'none';
+  const [groups, applicants, members] = await Promise.all([
+    getManagedBuddyGroups(),
+    getAllApplicantsProgress(),
+    getAllMembersList()
+  ]);
 
-  const { totalAC, availableAC } = await getAvailableAC(currentUser.id);
-  const availElem = document.getElementById('biddingAvailableAC');
-  if (availElem) availElem.textContent = availableAC;
+  const groupNames = ['Unassigned', ...groups.map(g => g.name)];
 
-  const families = await getBuddyFams();
-  container.innerHTML = '';
+  board.innerHTML = groups.map(g => {
+    const groupApplicants = applicants.filter(a => a.buddyGroup === g.name);
+    const groupMembers = members.filter(m => m.buddy_group_name === g.name);
 
-  for (const f of families) {
-    const top = await getTopBidsForFam(f.id);
-    const topStr = top.length ? top.map((b, i) => `#${i + 1}: ${b.amount} AC`).join(', ') : 'No bids yet';
+    return `
+      <div class="card" style="margin: 0; display: flex; flex-direction: column; justify-content: space-between;">
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+            <h3 style="font-family: var(--font-display); color: var(--brand-forest);">${g.name}</h3>
+            <button class="btn btn-secondary delete-group-btn" data-id="${g.id}" style="min-height: 28px; padding: 2px 6px; font-size: 0.72rem; color: #b33a2b;">Delete</button>
+          </div>
+          <small class="badge" style="margin-bottom: 12px;">${groupMembers.length} Members • ${groupApplicants.length} Applicants</small>
 
-    const card = document.createElement('div');
-    card.className = 'card';
-    card.style.margin = '0';
-    card.innerHTML = `
-      <h3>${f.name}</h3>
-      <p class="subtext" style="font-style:italic;">"${f.description}"</p>
-      <div style="background:var(--surface-subtle); padding:8px; border-radius:4px; font-size:0.75rem; margin-bottom:10px;">
-        <strong>Top Bids:</strong> ${topStr}
-      </div>
-      ${f.is_locked ? '<div class="badge">Round Finalized</div>' : `
-        <div style="display:flex; gap:6px;">
-          <input type="number" id="bid-in-${f.id}" placeholder="Bid AC" style="flex:1; min-height:36px;" />
-          <button class="btn btn-checkin bid-submit-btn" data-id="${f.id}" style="min-height:36px; padding:4px 12px; font-size:0.8rem;">Bid</button>
+          <div style="margin-top: 10px;">
+            <strong style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 4px;">Resident Members</strong>
+            <ul class="task-list" style="margin-bottom: 12px;">
+              ${groupMembers.map(m => `
+                <li class="task-item" style="padding: 6px 10px; font-size: 0.8rem;">
+                  <span>${m.full_name}</span>
+                  <select class="reassign-member-select" data-id="${m.id}" style="min-height: 28px; font-size: 0.75rem; padding: 2px 4px;">
+                    ${groupNames.map(name => `<option value="${name}" ${name === g.name ? 'selected' : ''}>${name}</option>`).join('')}
+                  </select>
+                </li>
+              `).join('') || '<li class="subtext" style="font-size: 0.78rem;">No members assigned.</li>'}
+            </ul>
+
+            <strong style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 4px;">Applicants</strong>
+            <ul class="task-list">
+              ${groupApplicants.map(a => `
+                <li class="task-item" style="padding: 6px 10px; font-size: 0.8rem;">
+                  <span>${a.nickname ? `${a.nickname} (${a.fullName})` : a.fullName}</span>
+                  <select class="reassign-applicant-select" data-id="${a.id}" style="min-height: 28px; font-size: 0.75rem; padding: 2px 4px;">
+                    ${groupNames.map(name => `<option value="${name}" ${name === g.name ? 'selected' : ''}>${name}</option>`).join('')}
+                  </select>
+                </li>
+              `).join('') || '<li class="subtext" style="font-size: 0.78rem;">No applicants assigned.</li>'}
+            </ul>
+          </div>
         </div>
-      `}
+      </div>
     `;
-    container.appendChild(card);
-  }
+  }).join('');
+
+  const unassignedApplicants = applicants.filter(a => a.buddyGroup === 'Unassigned' || !a.buddyGroup);
+  const unassignedMembers = members.filter(m => m.buddy_group_name === 'Unassigned' || !m.buddy_group_name);
+
+  board.innerHTML += `
+    <div class="card" style="margin: 0; background: var(--surface-subtle); border-style: dashed;">
+      <h3 style="font-family: var(--font-display); color: var(--brand-clay-deep);">Unassigned Pool</h3>
+      <small class="badge" style="margin-bottom: 12px;">${unassignedMembers.length} Members • ${unassignedApplicants.length} Applicants</small>
+
+      <div style="margin-top: 10px;">
+        <strong style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 4px;">Unassigned Members</strong>
+        <ul class="task-list" style="margin-bottom: 12px;">
+          ${unassignedMembers.map(m => `
+            <li class="task-item" style="padding: 6px 10px; font-size: 0.8rem;">
+              <span>${m.full_name}</span>
+              <select class="reassign-member-select" data-id="${m.id}" style="min-height: 28px; font-size: 0.75rem;">
+                ${groupNames.map(name => `<option value="${name}" ${name === 'Unassigned' ? 'selected' : ''}>${name}</option>`).join('')}
+              </select>
+            </li>
+          `).join('') || '<li class="subtext" style="font-size: 0.78rem;">None</li>'}
+        </ul>
+
+        <strong style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 4px;">Unassigned Applicants</strong>
+        <ul class="task-list">
+          ${unassignedApplicants.map(a => `
+            <li class="task-item" style="padding: 6px 10px; font-size: 0.8rem;">
+              <span>${a.nickname ? `${a.nickname} (${a.fullName})` : a.fullName}</span>
+              <select class="reassign-applicant-select" data-id="${a.id}" style="min-height: 28px; font-size: 0.75rem;">
+                ${groupNames.map(name => `<option value="${name}" ${name === 'Unassigned' ? 'selected' : ''}>${name}</option>`).join('')}
+              </select>
+            </li>
+          `).join('') || '<li class="subtext" style="font-size: 0.78rem;">None</li>'}
+        </ul>
+      </div>
+    </div>
+  `;
 }
 
 async function renderDashboard() {
@@ -302,6 +355,15 @@ async function openInspection(appId) {
   document.getElementById('inspectApplicantName').textContent = `${details.profile.full_name} ("${details.profile.nickname}")`;
   document.getElementById('inspectApplicantEmail').textContent = `ID: ${details.profile.id} | Balance: ${details.profile.currency} AC`;
 
+  const groups = await getManagedBuddyGroups();
+  const select = document.getElementById('inspectBuddyGroupSelect');
+  if (select) {
+    select.innerHTML = `
+      <option value="Unassigned" ${details.profile.buddy_group_name === 'Unassigned' ? 'selected' : ''}>Unassigned</option>
+      ${groups.map(g => `<option value="${g.name}" ${details.profile.buddy_group_name === g.name ? 'selected' : ''}>${g.name}</option>`).join('')}
+    `;
+  }
+
   const sigList = document.getElementById('inspectSignatoriesList');
   sigList.innerHTML = (details.signatories || []).map(s => `
     <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid var(--border-subtle); font-size:0.8rem;">
@@ -334,7 +396,7 @@ async function handleAuth() {
     if (bar) bar.style.display = 'flex';
     if (emailText) emailText.textContent = currentUser.email;
 
-    // Scan-to-link QR verification handler
+    // Direct QR validation
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('verifyCode') || urlParams.get('validateApplicant');
     if (code) {
@@ -359,6 +421,7 @@ async function handleAuth() {
         if (multText) multText.textContent = `${settings.multiplier}x`;
         if (capText) capText.textContent = settings.dailyCapEnabled ? 'Active' : 'Disabled';
         await renderRoster();
+        await renderBuddyGroupBoard();
       }
     } else {
       if (badge) badge.textContent = 'Applicant';
@@ -375,23 +438,42 @@ async function handleAuth() {
         const greeting = document.getElementById('userGreetingHeading');
         const curr = document.getElementById('userCurrencyText');
         const group = document.getElementById('buddyGroupName');
+        const avatarImg = document.getElementById('userAvatarHero');
+
+        // Robust Google Avatar resolution
+        const meta = currentUser.user_metadata || {};
+        const identityMeta = currentUser.identities?.[0]?.identity_data || {};
+        const googleAvatar = meta.avatar_url || meta.picture || identityMeta.avatar_url || identityMeta.picture;
+
+        if (avatarImg) {
+          avatarImg.referrerPolicy = 'no-referrer';
+          avatarImg.src = googleAvatar || 'geop.png';
+        }
 
         if (greeting) greeting.textContent = `Good day, ${profile.nickname || profile.full_name}!`;
         if (curr) curr.textContent = profile.currency ?? 100;
         if (group) group.textContent = profile.buddy_group_name || 'Unassigned';
 
+        // Render Buddy Group Members List
         const buddies = await getBuddyGroupMembers(profile.buddy_group_name);
         const buddyList = document.getElementById('buddyList');
         const countBadge = document.getElementById('buddyCountBadge');
 
         if (countBadge) countBadge.textContent = `${buddies.length} Members`;
         if (buddyList) {
-          buddyList.innerHTML = buddies.map(b => `
-            <li class="task-item">
-              <div><strong>${b.full_name}</strong> ("${b.nickname}")</div>
-              <span class="badge">Buddy</span>
-            </li>
-          `).join('') || '<li class="subtext">No buddies assigned yet.</li>';
+          buddyList.innerHTML = buddies.map(b => {
+            const displayName = b.nickname ? `${b.nickname} (${b.full_name})` : b.full_name;
+            const isMem = b.role === 'Member';
+
+            return `
+              <li class="task-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px;">
+                <div><strong style="color: var(--text-heading);">${displayName}</strong></div>
+                <span class="badge" style="background: ${isMem ? 'var(--brand-forest)' : 'var(--surface-subtle)'}; color: ${isMem ? '#ffffff' : 'inherit'};">
+                  ${b.role}
+                </span>
+              </li>
+            `;
+          }).join('') || '<li class="subtext">No buddies assigned yet.</li>';
         }
 
         await renderDashboard();
@@ -427,9 +509,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tambay_sessions' }, async () => {
         await renderDashboard();
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bids' }, async () => {
-        if (document.getElementById('tab-bidding')?.classList.contains('active')) await renderBidding();
-      })
       .subscribe();
   }
 
@@ -457,7 +536,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => { btn.textContent = orig; }, 1400);
   });
 
-  // Tab Switching
+  // Tab Navigation Delegator
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const tabId = btn.dataset.tab;
@@ -477,14 +556,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (tabId === 'tab-schedule') {
           await renderAnnouncementsBoard();
           await renderWhen2Meet();
-        } else if (tabId === 'tab-bidding') {
-          await renderBidding();
+        } else if (tabId === 'racomm-buddy-groups') {
+          await renderBuddyGroupBoard();
         }
       }
     });
   });
 
-  // Universal Manual Code Validator Modal
+  // Universal Code Validation Modal
   const valModal = document.getElementById('manualCodeModal');
   document.getElementById('manualValidateBtn')?.addEventListener('click', () => {
     if (valModal) {
@@ -511,7 +590,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await handleAuth();
   });
 
-  // Automated Time-In / Time-Out QR Trigger
+  // Dual Action Time-In / Time-Out QR Trigger
   document.getElementById('showQrBtn')?.addEventListener('click', async () => {
     const container = document.getElementById('qrDisplayContainer');
     const canvas = document.getElementById('qrcodeCanvas');
@@ -545,7 +624,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (container) container.style.display = 'none';
   });
 
-  // Perks
+  // Perks Redemptions
   document.getElementById('buyDeadlineBtn')?.addEventListener('click', async () => {
     if (await spendCurrency(30)) {
       showToast('Redeemed +2 days deadline extension.', 'success');
@@ -564,7 +643,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Events
+  // Event Passcode Verification
   document.getElementById('eventList')?.addEventListener('click', async (e) => {
     if (e.target.classList.contains('event-checkin-btn')) {
       const id = e.target.dataset.id;
@@ -578,7 +657,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // RAComm Policies
+  // Policy Toggles
   document.getElementById('set1xBtn')?.addEventListener('click', async () => {
     if (await updateGlobalSettings('hourly_multiplier', '1.0')) {
       showToast('Multiplier set to 1.0x', 'info');
@@ -618,38 +697,62 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Buddy Bidding Actions
-  document.getElementById('biddingFamiliesContainer')?.addEventListener('click', async (e) => {
-    if (e.target.classList.contains('bid-submit-btn')) {
-      const famId = e.target.dataset.id;
-      const input = document.getElementById(`bid-in-${famId}`);
-      const val = parseInt(input?.value, 10);
-      if (isNaN(val)) return;
-      const res = await placeBid(famId, val);
-      showToast(res.message, res.success ? 'success' : 'error');
-      if (res.success) await renderBidding();
+  // Buddy Group Dashboard Controls
+  document.getElementById('refreshBuddyGroupsBtn')?.addEventListener('click', async () => {
+    await renderBuddyGroupBoard();
+    showToast('Buddy groups refreshed.', 'info');
+  });
+
+  document.getElementById('createGroupDashboardBtn')?.addEventListener('click', async () => {
+    const input = document.getElementById('newGroupNameInputDashboard');
+    const name = input?.value.trim();
+    if (!name) return;
+    if (await createBuddyGroup(name)) {
+      input.value = '';
+      showToast(`Group "${name}" created.`, 'success');
+      await renderBuddyGroupBoard();
     }
   });
 
-  document.getElementById('startBiddingBtn')?.addEventListener('click', async () => {
-    if (await adminUpdateBiddingState(true)) {
-      showToast('Bidding round opened.', 'success');
-      await renderBidding();
+  document.getElementById('buddyGroupsBoard')?.addEventListener('click', async (e) => {
+    if (e.target.classList.contains('delete-group-btn')) {
+      if (confirm('Delete this buddy group?')) {
+        if (await deleteBuddyGroup(e.target.dataset.id)) {
+          showToast('Group deleted.', 'info');
+          await renderBuddyGroupBoard();
+        }
+      }
     }
   });
 
-  document.getElementById('stopBiddingBtn')?.addEventListener('click', async () => {
-    if (await adminUpdateBiddingState(false)) {
-      showToast('Bidding round paused.', 'info');
-      await renderBidding();
+  document.getElementById('buddyGroupsBoard')?.addEventListener('change', async (e) => {
+    if (e.target.classList.contains('reassign-applicant-select')) {
+      const applicantId = e.target.dataset.id;
+      const newGroup = e.target.value;
+      if (await assignApplicantBuddyGroup(applicantId, newGroup)) {
+        showToast(`Applicant assigned to ${newGroup}`, 'success');
+        await renderBuddyGroupBoard();
+        await renderRoster();
+      }
+    }
+
+    if (e.target.classList.contains('reassign-member-select')) {
+      const memberId = e.target.dataset.id;
+      const newGroup = e.target.value;
+      if (await assignMemberBuddyGroup(memberId, newGroup)) {
+        showToast(`Member assigned to ${newGroup}`, 'success');
+        await renderBuddyGroupBoard();
+      }
     }
   });
 
-  document.getElementById('finalizeWinnersBtn')?.addEventListener('click', async () => {
-    if (confirm('Finalize bidding round and assign families?')) {
-      if (await adminResolveBidding()) {
-        showToast('Bidding round resolved and locked.', 'success');
-        await handleAuth();
+  document.getElementById('saveAssignedGroupBtn')?.addEventListener('click', async () => {
+    const select = document.getElementById('inspectBuddyGroupSelect');
+    const groupName = select?.value;
+    if (inspectedApplicantId && groupName) {
+      if (await assignApplicantBuddyGroup(inspectedApplicantId, groupName)) {
+        showToast(`Assigned to ${groupName}!`, 'success');
+        await renderRoster();
       }
     }
   });
@@ -697,7 +800,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await renderWhen2Meet();
   });
 
-  // Roster Search
+  // Applicant Roster Search
   document.getElementById('searchApplicantInput')?.addEventListener('input', (e) => {
     const term = e.target.value.toLowerCase().trim();
     document.querySelectorAll('#applicantRosterTbody tr').forEach(row => {
@@ -791,7 +894,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     win.document.close();
   });
 
-  // Onboarding Form
+  // Onboarding Submission
   document.getElementById('onboardingForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = document.getElementById('onboardFullName')?.value.trim();
