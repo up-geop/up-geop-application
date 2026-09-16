@@ -77,7 +77,7 @@
       <div id="member-hub-view" class="tab-content active">
         <section class="card">
           <div class="card-header">
-            <h2>Member Verification </h2>
+            <h2>Member Verification</h2>
             <span class="badge" style="background: var(--brand-forest); color: white;">Verifier</span>
           </div>
           <p class="subtext">Verify applicant tasks or record time-in and time-out logs.</p>
@@ -182,7 +182,7 @@
         <div class="stats-grid">
           <div class="stat-box">
             <label>Signatories</label>
-            <div class="stat-val"><span id="overviewSigText">0/18</span></div>
+            <div class="stat-val"><span id="overviewSigText">0/21</span></div>
           </div>
           <div class="stat-box">
             <label>Tambay Hours</label>
@@ -238,7 +238,7 @@
         <section class="card">
           <div class="card-header">
             <h2>Official Events</h2>
-            <span class="badge" id="eventBadge">0 Attended</span>
+            <span class="badge" id="eventBadge">0 / 5 Attended (0%)</span>
           </div>
           <ul class="task-list" id="eventList"></ul>
         </section>
@@ -314,30 +314,52 @@
       </div>
     </div>
 
-    <div id="adminInspectionModal" class="modal-backdrop" role="dialog" aria-modal="true">
-      <div class="modal-box" style="max-width: 600px; max-height: 85vh; overflow-y: auto;">
-        <h3 id="inspectApplicantName">Applicant Details</h3>
-        <small id="inspectApplicantEmail" style="color: var(--text-muted);"></small>
+    <!-- Mobile-Optimized Applicant Inspection Modal -->
+    <div id="adminInspectionModal" class="modal-backdrop" role="dialog" aria-modal="true" style="display: none;">
+      <div class="modal-dialog">
+        <!-- Sticky Modal Header -->
+        <div class="modal-header-bar">
+          <div>
+            <h2 id="inspectApplicantName" style="font-family: var(--font-display); color: var(--brand-forest); font-size: 1.2rem; margin-bottom: 2px;">Applicant Details</h2>
+            <small id="inspectApplicantEmail" class="subtext">ID: ------</small>
+          </div>
+          <button id="closeInspectModalBtn" class="btn btn-secondary" style="padding: 4px 10px; font-size: 1.1rem; line-height: 1;">&times;</button>
+        </div>
 
-        <div style="margin: 14px 0 10px; background: var(--surface-subtle); padding: 10px; border-radius: var(--radius-sm);">
-          <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Assigned Buddy Group:</label>
-          <div style="display: flex; gap: 8px;">
-            <select id="inspectBuddyGroupSelect" style="flex: 1; min-height: 38px;"></select>
-            <button id="saveAssignedGroupBtn" class="btn btn-checkin" style="min-height: 38px; padding: 4px 12px; font-size: 0.8rem;">Assign</button>
+        <!-- Scrollable Modal Content Body -->
+        <div class="modal-scrollable-body">
+          <!-- Buddy Group Assignment -->
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted);">Assigned Buddy Group:</label>
+            <div style="display: flex; gap: 8px;">
+              <select id="inspectBuddyGroupSelect" style="flex: 1; min-height: 38px;"></select>
+              <button id="saveAssignedGroupBtn" class="btn btn-checkin" style="min-height: 38px; padding: 4px 14px; font-size: 0.8rem;">Save</button>
+            </div>
+          </div>
+
+          <!-- Injected Responsive Container for Events & Evaluation Scores -->
+          <div id="inspectPanelsWrapper" class="modal-inner-grid"></div>
+
+          <!-- Signatories Task Check-offs -->
+          <div style="padding: 12px; background: var(--surface-subtle); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+            <h4 style="margin-bottom: 8px; color: var(--brand-forest); font-size: 0.88rem;">Signatory Tasks Check-off</h4>
+            <div id="inspectSignatoriesList" style="display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto;"></div>
+          </div>
+
+          <!-- Tambay Session Logs History -->
+          <div style="padding: 12px; background: var(--surface-subtle); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+            <h4 style="margin-bottom: 8px; color: var(--brand-forest); font-size: 0.88rem;">Tambay Session Logs</h4>
+            <div id="inspectTambayLogsList" style="display: flex; flex-direction: column; gap: 4px; max-height: 120px; overflow-y: auto;"></div>
           </div>
         </div>
 
-        <div style="display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap;">
-          <button id="adminAddHoursBtn" class="btn btn-checkin" style="min-height: 36px; font-size: 0.78rem;">Adjust Hours</button>
-          <button id="adminEditTokensBtn" class="btn btn-secondary" style="min-height: 36px; font-size: 0.78rem;">Set Tokens</button>
-          <button id="adminExportPdfBtn" class="btn btn-secondary" style="min-height: 36px; font-size: 0.78rem;">Export PDF</button>
-          <button id="adminDeleteApplicantBtn" class="btn" style="min-height: 36px; font-size: 0.78rem; background: #b33a2b;">Delete</button>
+        <!-- Sticky Modal Footer Actions -->
+        <div class="modal-actions-bar">
+          <button id="adminAddHoursBtn" class="btn btn-secondary" style="flex: 1; min-height: 36px; font-size: 0.78rem;">Adjust Hours</button>
+          <button id="adminEditTokensBtn" class="btn btn-secondary" style="flex: 1; min-height: 36px; font-size: 0.78rem;">Set Tokens</button>
+          <button id="adminExportPdfBtn" class="btn btn-secondary" style="flex: 1; min-height: 36px; font-size: 0.78rem;">Export PDF</button>
+          <button id="adminDeleteApplicantBtn" class="btn" style="flex: 1; min-height: 36px; font-size: 0.78rem; background: #9e2a2b; color: #fff;">Delete</button>
         </div>
-        <h4 style="margin: 12px 0 6px;">Signatories</h4>
-        <div id="inspectSignatoriesList"></div>
-        <h4 style="margin: 12px 0 6px;">Tambay Logs</h4>
-        <div id="inspectTambayLogsList" style="max-height: 120px; overflow-y: auto;"></div>
-        <button id="closeInspectModalBtn" class="btn btn-secondary" style="width: 100%; margin-top: 12px;">Close</button>
       </div>
     </div>
 
