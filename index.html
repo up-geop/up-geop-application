@@ -9,7 +9,7 @@
   <link rel="icon" href="geop.png" />
   <meta name="theme-color" content="#1b382b" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
   <link rel="stylesheet" href="styles.css" />
@@ -252,22 +252,72 @@
         </section>
       </div>
 
+      <!-- Shop / Perks Tab -->
       <div id="tab-perks" class="tab-content">
+        <!-- Communal Batch Crowdfund Pot -->
+        <section class="card" style="border: 2px solid var(--brand-clay); background: var(--surface-subtle);">
+          <div class="card-header">
+            <div>
+              <span class="badge" style="background: var(--brand-clay); color: #fff; margin-bottom: 4px;">Batch Goal (Crowdfunded)</span>
+              <h2>Buddy Task Deadline Extension (+2 Days)</h2>
+              <p class="subtext">All applicants chip in AC together. Reaching 200 AC extends the Buddy Tasks deadline for the whole batch!</p>
+            </div>
+            <span id="batchPotBadge" class="badge" style="font-size: 0.85rem; font-weight: 700;">0 / 200 AC</span>
+          </div>
+
+          <div style="background: #e5ded0; height: 18px; border-radius: 9px; overflow: hidden; margin-bottom: 12px; border: 1px solid var(--border-medium);">
+            <div id="batchPotProgressBar" style="background: var(--brand-clay); height: 100%; width: 0%; transition: width 0.3s ease;"></div>
+          </div>
+
+          <div id="potContributionControls" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+            <input type="number" id="potContribAmount" min="5" max="100" step="5" value="10" style="width: 110px;" placeholder="AC Amount" />
+            <button id="contributePotBtn" class="btn btn-checkin">Chip In AC</button>
+            <span class="subtext" style="margin-left: auto;">Balance: <strong id="userCurrencyTextPot">--</strong> AC</span>
+          </div>
+          <div id="potUnlockedBanner" style="display: none; color: var(--brand-forest); font-weight: 700; margin-top: 8px;">
+            🎉 Goal Met! +2 Days Buddy Task Extension unlocked for all applicants!
+          </div>
+        </section>
+
+        <!-- Individual Perks Grid -->
         <section class="card">
           <div class="card-header">
-            <h2>Perks Exchange</h2>
+            <div>
+              <h2>Individual Perks</h2>
+              <p class="subtext">Use your personal AppCoins to optimize your journey.</p>
+            </div>
             <span class="badge">Balance: <strong id="userCurrencyText" style="margin-left: 4px;">100</strong> AC</span>
           </div>
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
-            <div class="card" style="text-align: center; margin: 0;">
-              <h3>Deadline Extension</h3>
-              <p class="subtext">+2 days to task deadline</p>
-              <button id="buyDeadlineBtn" class="btn btn-checkin">Redeem (30 AC)</button>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px;">
+            <!-- Tambay Multiplier Boost -->
+            <div class="card" style="margin: 0; display: flex; flex-direction: column; justify-content: space-between; border-color: var(--border-medium);">
+              <div>
+                <span class="badge" style="background: var(--brand-mint-subtle); color: var(--brand-forest); margin-bottom: 6px;">Session Boost</span>
+                <h3 style="font-size: 1.05rem; margin-bottom: 4px;">1.5× Tambay Multiplier</h3>
+                <p class="subtext">Multiplies the hours credited on your very next tambay session by 1.5×.</p>
+              </div>
+              <button id="buyTambayBoostBtn" class="btn btn-checkin" style="margin-top: 14px;">Activate (40 AC)</button>
             </div>
-            <div class="card" style="text-align: center; margin: 0;">
-              <h3>Task Swap</h3>
-              <p class="subtext">Swap 1 signatory task</p>
-              <button id="buyTaskSwapBtn" class="btn btn-checkin">Redeem (50 AC)</button>
+
+            <!-- Random Trait Swap -->
+            <div class="card" style="margin: 0; display: flex; flex-direction: column; justify-content: space-between; border-color: var(--border-medium);">
+              <div>
+                <span class="badge" style="margin-bottom: 6px;">Signatory Lifeline</span>
+                <h3 style="font-size: 1.05rem; margin-bottom: 4px;">Random Trait Swap</h3>
+                <p class="subtext">Rerolls an uncompleted resident member signatory task into a new random trait.</p>
+              </div>
+              <button id="openRandomSwapModalBtn" class="btn btn-checkin" style="margin-top: 14px;">Swap Random (30 AC)</button>
+            </div>
+
+            <!-- Specific Trait Selection -->
+            <div class="card" style="margin: 0; display: flex; flex-direction: column; justify-content: space-between; border-color: var(--border-medium);">
+              <div>
+                <span class="badge" style="margin-bottom: 6px;">Signatory Lifeline</span>
+                <h3 style="font-size: 1.05rem; margin-bottom: 4px;">Specific Trait Selection</h3>
+                <p class="subtext">Choose the exact signatory trait you prefer from the full available pool.</p>
+              </div>
+              <button id="openSpecificSwapModalBtn" class="btn btn-checkin" style="margin-top: 14px;">Choose Trait (50 AC)</button>
             </div>
           </div>
         </section>
@@ -322,10 +372,32 @@
       </div>
     </div>
 
+    <!-- Trait Swap Modal -->
+    <div id="swapTraitModal" class="modal-backdrop" role="dialog" aria-modal="true" style="display: none;">
+      <div class="modal-box">
+        <h3 id="swapModalTitle">Swap Signatory Task</h3>
+        <p class="subtext" id="swapModalSubtext" style="margin-bottom: 12px;">Select the pending signatory you want to change.</p>
+
+        <div style="margin: 12px 0;">
+          <label style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 4px;">Target Signatory Task:</label>
+          <select id="swapTargetSigSelect" style="width: 100%; margin-bottom: 12px;"></select>
+
+          <div id="specificTraitContainer" style="display: none;">
+            <label style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 4px;">Choose New Trait:</label>
+            <select id="swapNewTraitSelect" style="width: 100%; margin-bottom: 12px;"></select>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 8px;">
+          <button id="confirmSwapBtn" class="btn btn-checkin" style="flex: 1;">Confirm Swap</button>
+          <button id="cancelSwapBtn" class="btn btn-secondary" style="flex: 1;">Cancel</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Mobile-Optimized Applicant Inspection Modal -->
     <div id="adminInspectionModal" class="modal-backdrop" role="dialog" aria-modal="true" style="display: none;">
       <div class="modal-dialog">
-        <!-- Sticky Modal Header -->
         <div class="modal-header-bar">
           <div>
             <h2 id="inspectApplicantName" style="font-family: var(--font-display); color: var(--brand-forest); font-size: 1.2rem; margin-bottom: 2px;">Applicant Details</h2>
@@ -334,9 +406,7 @@
           <button id="closeInspectModalBtn" class="btn btn-secondary" style="padding: 4px 10px; font-size: 1.1rem; line-height: 1;">&times;</button>
         </div>
 
-        <!-- Scrollable Modal Content Body -->
         <div class="modal-scrollable-body">
-          <!-- Buddy Group Assignment -->
           <div style="display: flex; flex-direction: column; gap: 4px;">
             <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted);">Assigned Buddy Group:</label>
             <div style="display: flex; gap: 8px;">
@@ -345,23 +415,19 @@
             </div>
           </div>
 
-          <!-- Injected Responsive Container for Events & Evaluation Scores -->
           <div id="inspectPanelsWrapper" class="modal-inner-grid"></div>
 
-          <!-- Signatories Task Check-offs -->
           <div style="padding: 12px; background: var(--surface-subtle); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
             <h4 style="margin-bottom: 8px; color: var(--brand-forest); font-size: 0.88rem;">Signatory Tasks Check-off</h4>
             <div id="inspectSignatoriesList" style="display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto;"></div>
           </div>
 
-          <!-- Tambay Session Logs History -->
           <div style="padding: 12px; background: var(--surface-subtle); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
             <h4 style="margin-bottom: 8px; color: var(--brand-forest); font-size: 0.88rem;">Tambay Session Logs</h4>
             <div id="inspectTambayLogsList" style="display: flex; flex-direction: column; gap: 4px; max-height: 120px; overflow-y: auto;"></div>
           </div>
         </div>
 
-        <!-- Sticky Modal Footer Actions -->
         <div class="modal-actions-bar">
           <button id="adminAddHoursBtn" class="btn btn-secondary" style="flex: 1; min-height: 36px; font-size: 0.78rem;">Adjust Hours</button>
           <button id="adminEditTokensBtn" class="btn btn-secondary" style="flex: 1; min-height: 36px; font-size: 0.78rem;">Set Tokens</button>
