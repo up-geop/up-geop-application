@@ -57,7 +57,7 @@ export function showToast(message, type = 'info') {
   if (!container) return;
   const toast = document.createElement('div');
   toast.className = `toast toast-${type}`;
-  toast.innerHTML = `<span>${message}</span><button style="background:none; border:none; font-size:1.1rem; cursor:pointer;">&times;</button>`;
+  toast.innerHTML = `<span>${message}</span><button style="background:none; border:none; font-size:1.1rem; color:inherit; cursor:pointer;">&times;</button>`;
   toast.querySelector('button').onclick = () => toast.remove();
   container.appendChild(toast);
   setTimeout(() => {
@@ -279,7 +279,7 @@ async function renderDashboard() {
   const tambayRatio = Math.min(tambayHours / CONFIG.TARGET_TAMBAY_HOURS, 1);
   const attendedEvents = events.filter(e => e.attended).length;
 
-  // Grade Breakdown (Total: 100%)
+  // Grade Breakdown (100% total)
   const eventPoints = attendedEvents * 5;                                    // Max 25% (5% each)
   const sigPoints = Number((sigRatio * 15).toFixed(2));                      // Max 15%
   const tambayPoints = Number((tambayRatio * 5).toFixed(2));                 // Max 5%
@@ -323,11 +323,10 @@ async function renderDashboard() {
   const sigContainer = document.getElementById('signatoryList');
   if (sigContainer) await renderSignatoriesTab(sigContainer);
 
-  // Official Events List (Read-only status for applicants)
   const eventList = document.getElementById('eventList');
   if (eventList) {
     eventList.innerHTML = events.map(evt => `
-      <li class="task-item" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; margin-bottom: 8px;">
+      <li class="task-item" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; margin-bottom: 8px;">
         <div>
           <strong style="color: var(--brand-forest); font-size: 0.95rem;">${evt.name}</strong>
           <div style="margin-top: 2px;">
@@ -380,7 +379,7 @@ async function openInspection(appId) {
   const p = details.profile;
 
   document.getElementById('inspectApplicantName').textContent = `${p.full_name} ("${p.nickname}")`;
-  document.getElementById('inspectApplicantEmail').textContent = `ID: ${p.id} | Balance: ${p.currency} AC`;
+  document.getElementById('inspectApplicantEmail').textContent = `ID: ${p.id} | Balance: ${p.currency ?? 100} AC`;
 
   const groups = await getManagedBuddyGroups();
   const select = document.getElementById('inspectBuddyGroupSelect');
@@ -391,101 +390,95 @@ async function openInspection(appId) {
     `;
   }
 
-  // 1. Official Events Attendance Box (RAComm Officer Check-off)
-  let eventBox = document.getElementById('inspectEventsContainer');
-  if (!eventBox) {
-    eventBox = document.createElement('div');
-    eventBox.id = 'inspectEventsContainer';
-    eventBox.style = 'margin: 14px 0; padding: 12px; background: var(--surface-subtle); border-radius: 6px;';
-    const sigParent = document.getElementById('inspectSignatoriesList')?.parentElement;
-    if (sigParent) sigParent.parentElement.insertBefore(eventBox, sigParent);
-  }
+  // Retrieve responsive wrapper
+  const panelsWrapper = document.getElementById('inspectPanelsWrapper');
+  if (panelsWrapper) {
+    panelsWrapper.innerHTML = `
+      <!-- Official Events Attendance Block -->
+      <div style="padding: 12px; background: var(--surface-subtle); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); width: 100%;">
+        <h4 style="margin: 0 0 8px 0; color: var(--brand-forest); font-size: 0.88rem;">Official Events Attendance (5% each)</h4>
+        <div style="display: flex; flex-direction: column; gap: 6px; font-size: 0.82rem;">
+          ${events.map(evt => `
+            <label style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #fff; border-radius: 4px; border: 1px solid var(--border-subtle); cursor: pointer;">
+              <span style="font-size: 0.8rem;">${evt.name}</span>
+              <input type="checkbox" class="admin-event-check" data-event-id="${evt.id}" ${evt.attended ? 'checked' : ''} />
+            </label>
+          `).join('')}
+        </div>
+      </div>
 
-  eventBox.innerHTML = `
-    <h4 style="margin: 0 0 8px 0; color: var(--brand-forest); font-size: 0.9rem;">Official Events Attendance (5% each)</h4>
-    <div style="display: flex; flex-direction: column; gap: 6px; font-size: 0.82rem;">
-      ${events.map(evt => `
-        <label style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #fff; border-radius: 4px; border: 1px solid var(--border-subtle); cursor: pointer;">
-          <span>${evt.name}</span>
-          <input type="checkbox" class="admin-event-check" data-event-id="${evt.id}" ${evt.attended ? 'checked' : ''} />
-        </label>
-      `).join('')}
-    </div>
-  `;
+      <!-- Evaluation Scores Block -->
+      <div style="padding: 12px; background: var(--surface-subtle); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); width: 100%;">
+        <h4 style="margin: 0 0 8px 0; color: var(--brand-forest); font-size: 0.88rem;">Evaluation Scores (Manual)</h4>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.8rem;">
+          <label style="display: flex; flex-direction: column; gap: 2px;">
+            <span>Interview (15%):</span>
+            <input type="number" id="gradeInterviewInput" min="0" max="15" step="0.5" value="${p.grade_interview || 0}" style="width: 100%; padding: 4px; font-size: 0.8rem;" />
+          </label>
+          <label style="display: flex; flex-direction: column; gap: 2px;">
+            <span>OGT 1 & 2 (20%):</span>
+            <input type="number" id="gradeOgtInput" min="0" max="20" step="0.5" value="${p.grade_ogt || 0}" style="width: 100%; padding: 4px; font-size: 0.8rem;" />
+          </label>
+          <label style="display: flex; flex-direction: column; gap: 2px;">
+            <span>Consti (10%):</span>
+            <input type="number" id="gradeConstiInput" min="0" max="10" step="0.5" value="${p.grade_consti_quiz || 0}" style="width: 100%; padding: 4px; font-size: 0.8rem;" />
+          </label>
+          <label style="display: flex; flex-direction: column; gap: 2px;">
+            <span>Buddy (10%):</span>
+            <input type="number" id="gradeBuddyInput" min="0" max="10" step="0.5" value="${p.grade_buddy_tasks || 0}" style="width: 100%; padding: 4px; font-size: 0.8rem;" />
+          </label>
+        </div>
+        <button class="btn btn-checkin" id="saveManualGradesBtn" style="margin-top: 10px; width: 100%; min-height: 34px; font-size: 0.8rem;">
+          Save Evaluation Scores
+        </button>
+      </div>
+    `;
 
-  eventBox.querySelectorAll('.admin-event-check').forEach(chk => {
-    chk.addEventListener('change', async (e) => {
-      const eventId = e.target.dataset.eventId;
-      const checked = e.target.checked;
-      const success = await adminToggleEventAttendance(inspectedApplicantId, eventId, checked, currentUser.email);
-      if (success) {
-        showToast(`Attendance ${checked ? 'credited (+5%)' : 'removed'}.`, 'success');
+    // Checkbox Attendance Handler
+    panelsWrapper.querySelectorAll('.admin-event-check').forEach(chk => {
+      chk.addEventListener('change', async (e) => {
+        const eventId = e.target.dataset.eventId;
+        const checked = e.target.checked;
+        const success = await adminToggleEventAttendance(inspectedApplicantId, eventId, checked, currentUser.email);
+        if (success) {
+          showToast(`Attendance ${checked ? 'credited (+5%)' : 'removed'}.`, 'success');
+          await renderRoster();
+        } else {
+          showToast('Failed to update attendance.', 'error');
+          e.target.checked = !checked;
+        }
+      });
+    });
+
+    // Save Scores Handler
+    document.getElementById('saveManualGradesBtn')?.addEventListener('click', async () => {
+      const grades = {
+        interview: document.getElementById('gradeInterviewInput').value,
+        ogt: document.getElementById('gradeOgtInput').value,
+        constiQuiz: document.getElementById('gradeConstiInput').value,
+        buddyTasks: document.getElementById('gradeBuddyInput').value
+      };
+      if (await adminUpdateApplicantGrades(inspectedApplicantId, grades)) {
+        showToast('Evaluation scores saved.', 'success');
         await renderRoster();
       } else {
-        showToast('Failed to update event attendance. Check permissions.', 'error');
-        e.target.checked = !checked;
+        showToast('Failed to save scores.', 'error');
       }
     });
-  });
-
-  // 2. Evaluation Scores (Manual Grade Inputs)
-  let gradeBox = document.getElementById('inspectGradesContainer');
-  if (!gradeBox) {
-    gradeBox = document.createElement('div');
-    gradeBox.id = 'inspectGradesContainer';
-    gradeBox.style = 'margin: 14px 0; padding: 12px; background: var(--surface-subtle); border-radius: 6px;';
-    const sigParent = document.getElementById('inspectSignatoriesList')?.parentElement;
-    if (sigParent) sigParent.parentElement.insertBefore(gradeBox, sigParent);
   }
 
-  gradeBox.innerHTML = `
-    <h4 style="margin: 0 0 8px 0; color: var(--brand-forest); font-size: 0.9rem;">Evaluation Scores (Manual Grades)</h4>
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.8rem;">
-      <label>Interview (15%):
-        <input type="number" id="gradeInterviewInput" min="0" max="15" step="0.5" value="${p.grade_interview || 0}" style="width:100%; padding:4px; font-size:0.8rem;" />
-      </label>
-      <label>OGT 1 & 2 (20%):
-        <input type="number" id="gradeOgtInput" min="0" max="20" step="0.5" value="${p.grade_ogt || 0}" style="width:100%; padding:4px; font-size:0.8rem;" />
-      </label>
-      <label>Consti Quiz (10%):
-        <input type="number" id="gradeConstiInput" min="0" max="10" step="0.5" value="${p.grade_consti_quiz || 0}" style="width:100%; padding:4px; font-size:0.8rem;" />
-      </label>
-      <label>Buddy Tasks (10%):
-        <input type="number" id="gradeBuddyInput" min="0" max="10" step="0.5" value="${p.grade_buddy_tasks || 0}" style="width:100%; padding:4px; font-size:0.8rem;" />
-      </label>
-    </div>
-    <button class="btn btn-checkin" id="saveManualGradesBtn" style="margin-top: 10px; width: 100%; min-height: 32px; font-size: 0.8rem;">
-      Save Evaluation Scores
-    </button>
-  `;
-
-  document.getElementById('saveManualGradesBtn')?.addEventListener('click', async () => {
-    const grades = {
-      interview: document.getElementById('gradeInterviewInput').value,
-      ogt: document.getElementById('gradeOgtInput').value,
-      constiQuiz: document.getElementById('gradeConstiInput').value,
-      buddyTasks: document.getElementById('gradeBuddyInput').value
-    };
-    if (await adminUpdateApplicantGrades(inspectedApplicantId, grades)) {
-      showToast('Evaluation scores saved.', 'success');
-      await renderRoster();
-    } else {
-      showToast('Failed to save scores.', 'error');
-    }
-  });
-
-  // 3. Signatories Checkboxes
+  // Signatories Checkboxes
   const sigList = document.getElementById('inspectSignatoriesList');
   if (sigList) {
     sigList.innerHTML = (details.signatories || []).map(s => `
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid var(--border-subtle); font-size:0.8rem;">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--border-subtle); font-size:0.8rem;">
         <span>[${s.committee_name}] ${s.task}</span>
         <input type="checkbox" class="admin-sig-check" data-id="${s.id}" ${s.completed ? 'checked' : ''} />
       </div>
     `).join('');
   }
 
-  // 4. Tambay Logs
+  // Tambay Logs
   const logList = document.getElementById('inspectTambayLogsList');
   if (logList) {
     logList.innerHTML = (details.tambayLogs || []).map(l => `
@@ -992,7 +985,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await renderRoster();
         await renderBuddyGroupBoard();
       } else {
-        showToast('Failed to delete applicant profile. Check permissions.', 'error');
+        showToast('Failed to delete applicant profile.', 'error');
       }
     }
   });
