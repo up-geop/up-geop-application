@@ -13,9 +13,9 @@ export const CONFIG = {
   },
   SHEETS: {
     // Traits_Pool (gid=0)
-    TRAITS_CSV_URL: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRUM49iGYGFrwckeq-pSZv65dVWYi7yqE2DIYcpBfZKxFTqIc-1l-CXa6U1TvmGE3oqf8NhjWq29qeC/pub?gid=0&single=true&output=csv',
+    TRAITS_CSV_URL: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRUM49iGYGFrwckeq-pSZv65dVWYi7yqE2DIYcpBfZKxFTqIc-1l-CXa6U1TvmGE3oqf8NhjWq29qeC/pubhtml?gid=0&single=true',
     // Tasks_Pool (gid=448373194)
-    TASKS_CSV_URL: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRUM49iGYGFrwckeq-pSZv65dVWYi7yqE2DIYcpBfZKxFTqIc-1l-CXa6U1TvmGE3oqf8NhjWq29qeC/pub?gid=448373194&single=true&output=csv'
+    TASKS_CSV_URL: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRUM49iGYGFrwckeq-pSZv65dVWYi7yqE2DIYcpBfZKxFTqIc-1l-CXa6U1TvmGE3oqf8NhjWq29qeC/pubhtml?gid=448373194&single=true'
   }
 };
 
