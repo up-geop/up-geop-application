@@ -6,6 +6,7 @@
   <title>UP GEOP - Applicant Progress Portal</title>
   
   <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="geop.png" />
   <meta name="theme-color" content="#1b382b" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -13,16 +14,6 @@
 
   <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
-  <script>
-    window.OneSignalDeferred = window.OneSignalDeferred || [];
-    OneSignalDeferred.push(async function(OneSignal) {
-      await OneSignal.init({
-        appId: "84954b0d-fb1c-4c2b-a406-1e5828d8c74c",
-        allowLocalhostAsSecureOrigin: true
-      });
-    });
-  </script>
 </head>
 <body>
 
@@ -72,7 +63,7 @@
       </form>
     </div>
 
-    <!-- Member / RAComm View -->
+    <!-- Member / RAComm Dashboard -->
     <div id="memberDashboardContent" style="display: none;">
       <nav id="racommTabNav" class="tab-nav">
         <button class="tab-btn active" data-tab="racomm-roster">Applicant Roster</button>
@@ -141,30 +132,30 @@
             <button id="addEventBtn" class="btn btn-checkin">Add Event</button>
           </div>
 
-          <h2>Blind Buddy Bidding</h2>
-          <div style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap;">
-            <button id="startBiddingBtn" class="btn btn-checkin" style="font-size: 0.8rem;">Open Bidding</button>
-            <button id="stopBiddingBtn" class="btn btn-secondary" style="font-size: 0.8rem;">Close Bidding</button>
-            <button id="finalizeWinnersBtn" class="btn" style="background: var(--brand-clay-deep); font-size: 0.8rem;">Finalize Round</button>
+          <h2>Buddy Group Organizer</h2>
+          <p class="subtext">Manage active groups and configure allocations.</p>
+          <div style="display: flex; gap: 8px; margin: 12px 0 16px; flex-wrap: wrap;">
+            <input type="text" id="newGroupNameInput" placeholder="New Group Name" style="flex: 1; min-width: 200px;" />
+            <button id="createGroupBtn" class="btn btn-checkin">Add Group</button>
           </div>
+          <div id="racommGroupList" style="display: flex; flex-direction: column; gap: 8px;"></div>
         </section>
       </div>
     </div>
 
-    <!-- Applicant View -->
+    <!-- Applicant Dashboard -->
     <div id="applicantDashboardContent" style="display: none;">
       <nav id="applicantTabNav" class="tab-nav">
         <button class="tab-btn active" data-tab="tab-overview">Overview</button>
         <button class="tab-btn" data-tab="tab-signatories">Signatories</button>
         <button class="tab-btn" data-tab="tab-tambay">Tambay & Events</button>
         <button class="tab-btn" data-tab="tab-perks">Perks</button>
-        <button class="tab-btn" data-tab="tab-bidding">Buddy Bidding</button>
         <button class="tab-btn" data-tab="tab-schedule">Schedule</button>
       </nav>
 
       <div id="tab-overview" class="tab-content active">
         <div class="card" style="display: flex; align-items: center; gap: 16px;">
-          <img id="userAvatarHero" src="geop.png" onerror="this.onerror=null; this.src='https://cdn-icons-png.flaticon.com/512/3135/3135715.png';" alt="Avatar" style="width: 56px; height: 56px; border-radius: 8px; object-fit: cover;" />
+          <img id="userAvatarHero" src="geop.png" referrerpolicy="no-referrer" alt="Avatar" style="width: 56px; height: 56px; border-radius: 8px; object-fit: cover;" />
           <div>
             <h2 id="userGreetingHeading" style="font-size: 1.3rem;">Welcome!</h2>
             <p style="font-size: 0.85rem; color: var(--text-muted);">Buddy Group: <strong id="buddyGroupName" style="color: var(--brand-forest);">Unassigned</strong></p>
@@ -220,7 +211,7 @@
           <button id="showQrBtn" class="btn btn-checkin">Generate Validation Code</button>
 
           <div id="qrDisplayContainer" style="display: none; text-align: center; margin-top: 16px; padding: 16px; background: var(--surface-subtle); border-radius: var(--radius-sm);">
-            <div id="qrcodeCanvas" style="display: flex; justify-content: center; margin-bottom: 12px;"></div>
+            <div id="qrcodeCanvas" style="display: flex; flex-direction: column; align-items: center; margin-bottom: 12px;"></div>
             <div style="font-family: var(--font-mono); font-size: 1.6rem; font-weight: 700; letter-spacing: 4px; color: var(--brand-forest);" id="applicantShortCodeText">------</div>
             <button type="button" class="copy-btn btn btn-secondary" data-copy-target="applicantShortCodeText" style="min-height: 36px; padding: 4px 10px; margin-top: 8px;">Copy Code</button>
             <div style="margin-top: 12px;"><button id="closeQrBtn" class="btn btn-secondary" style="min-height: 36px;">Close</button></div>
@@ -254,19 +245,6 @@
               <button id="buyTaskSwapBtn" class="btn btn-checkin">Redeem (50 AC)</button>
             </div>
           </div>
-        </section>
-      </div>
-
-      <div id="tab-bidding" class="tab-content">
-        <section class="card">
-          <div class="card-header">
-            <h2>Blind Buddy Bidding</h2>
-            <span class="badge">Available: <strong id="biddingAvailableAC" style="margin-left: 4px;">100</strong> AC</span>
-          </div>
-          <div id="biddingStatusBanner" class="badge" style="display: none; width: 100%; justify-content: center; background: #fbeae8; color: #b33a2b; margin-bottom: 12px; padding: 8px;">
-            Bidding is currently closed.
-          </div>
-          <div id="biddingFamiliesContainer" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px;"></div>
         </section>
       </div>
     </div>
@@ -323,6 +301,15 @@
       <div class="modal-box" style="max-width: 600px; max-height: 85vh; overflow-y: auto;">
         <h3 id="inspectApplicantName">Applicant Details</h3>
         <small id="inspectApplicantEmail" style="color: var(--text-muted);"></small>
+
+        <div style="margin: 14px 0 10px; background: var(--surface-subtle); padding: 10px; border-radius: var(--radius-sm);">
+          <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Assigned Buddy Group:</label>
+          <div style="display: flex; gap: 8px;">
+            <select id="inspectBuddyGroupSelect" style="flex: 1; min-height: 38px;"></select>
+            <button id="saveAssignedGroupBtn" class="btn btn-checkin" style="min-height: 38px; padding: 4px 12px; font-size: 0.8rem;">Assign</button>
+          </div>
+        </div>
+
         <div style="display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap;">
           <button id="adminAddHoursBtn" class="btn btn-checkin" style="min-height: 36px; font-size: 0.78rem;">Adjust Hours</button>
           <button id="adminEditTokensBtn" class="btn btn-secondary" style="min-height: 36px; font-size: 0.78rem;">Set Tokens</button>
