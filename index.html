@@ -70,6 +70,7 @@
         <button class="tab-btn active" data-tab="member-hub-view">Verification Hub</button>
         <button class="tab-btn racomm-only-tab" data-tab="racomm-roster" style="display: none;">Applicant Roster</button>
         <button class="tab-btn racomm-only-tab" data-tab="racomm-buddy-groups" style="display: none;">Buddy Groups</button>
+        <button class="tab-btn racomm-only-tab" data-tab="racomm-buddy-tasks" style="display: none;">Buddy Tasks</button>
         <button class="tab-btn racomm-only-tab" data-tab="racomm-settings" style="display: none;">Settings & Controls</button>
         <button class="tab-btn" data-tab="tab-schedule">Schedule & Announcements</button>
       </nav>
@@ -134,6 +135,46 @@
           </div>
 
           <div id="buddyGroupsBoard" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;"></div>
+        </section>
+      </div>
+
+      <!-- RAComm: Buddy Tasks Manager -->
+      <div id="racomm-buddy-tasks" class="tab-content">
+        <section class="card">
+          <div class="card-header">
+            <div>
+              <h2>Assign Buddy Tasks</h2>
+              <p class="subtext">Assign required milestone tasks to applicants with dynamic deadlines.</p>
+            </div>
+            <span class="badge" style="background: var(--brand-forest); color: #fff;">Officer Only</span>
+          </div>
+
+          <form id="createBuddyTaskForm" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; background: var(--surface-subtle); padding: 16px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+            <div>
+              <label style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 4px;">Task Title</label>
+              <input type="text" id="buddyTaskTitleInput" required placeholder="e.g. Group Photo at Sunken Garden" style="width: 100%;" />
+            </div>
+            <div>
+              <label style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 4px;">Description / Instructions</label>
+              <textarea id="buddyTaskDescInput" rows="2" placeholder="e.g. Take a group selfie with your assigned resident members." style="width: 100%;"></textarea>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px;">
+              <div>
+                <label style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 4px;">Target Audience</label>
+                <select id="buddyTaskTargetGroupSelect" style="width: 100%;">
+                  <option value="ALL">All Applicants (Universal)</option>
+                </select>
+              </div>
+              <div>
+                <label style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 4px;">Official Deadline</label>
+                <input type="datetime-local" id="buddyTaskDeadlineInput" required style="width: 100%;" />
+              </div>
+            </div>
+            <button type="submit" class="btn btn-checkin" style="align-self: flex-start; margin-top: 4px;">Publish Buddy Task</button>
+          </form>
+
+          <h3 style="font-family: var(--font-display); color: var(--brand-forest); margin-bottom: 8px;">Active Buddy Tasks</h3>
+          <div id="racommBuddyTasksList" style="display: flex; flex-direction: column; gap: 10px;"></div>
         </section>
       </div>
 
@@ -206,6 +247,18 @@
           <div style="background: var(--surface-subtle); height: 16px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border-medium);">
             <div id="progressBar" style="background: var(--brand-forest); height: 100%; width: 0%; transition: width 0.3s ease;"></div>
           </div>
+        </section>
+
+        <!-- Active Buddy Tasks Widget on Applicant Overview -->
+        <section class="card" style="border: 2px solid var(--brand-forest);">
+          <div class="card-header">
+            <div>
+              <h2>Assigned Buddy Tasks</h2>
+              <p class="subtext">Deadlines extend by +2 days when the Batch Shop Goal is funded!</p>
+            </div>
+            <span id="buddyTaskSummaryBadge" class="badge">0 / 0 Done</span>
+          </div>
+          <div id="applicantOverviewBuddyTasks" style="display: flex; flex-direction: column; gap: 10px;"></div>
         </section>
 
         <section class="card">
@@ -305,7 +358,7 @@
               <div>
                 <span class="badge" style="margin-bottom: 6px;">Signatory Lifeline</span>
                 <h3 style="font-size: 1.05rem; margin-bottom: 4px;">Random Trait Swap</h3>
-                <p class="subtext">Rerolls an uncompleted resident member signatory task into a new random trait.</p>
+                <p class="subtext">Rerolls an uncompleted resident member signatory trait into a new unique trait from the pool.</p>
               </div>
               <button id="openRandomSwapModalBtn" class="btn btn-checkin" style="margin-top: 14px;">Swap Random (30 AC)</button>
             </div>
@@ -315,7 +368,7 @@
               <div>
                 <span class="badge" style="margin-bottom: 6px;">Signatory Lifeline</span>
                 <h3 style="font-size: 1.05rem; margin-bottom: 4px;">Specific Trait Selection</h3>
-                <p class="subtext">Choose the exact signatory trait you prefer from the full available pool.</p>
+                <p class="subtext">Choose the exact unique signatory trait you prefer from the full available pool.</p>
               </div>
               <button id="openSpecificSwapModalBtn" class="btn btn-checkin" style="margin-top: 14px;">Choose Trait (50 AC)</button>
             </div>
@@ -375,7 +428,7 @@
     <!-- Trait Swap Modal -->
     <div id="swapTraitModal" class="modal-backdrop" role="dialog" aria-modal="true" style="display: none;">
       <div class="modal-box">
-        <h3 id="swapModalTitle">Swap Signatory Task</h3>
+        <h3 id="swapModalTitle">Swap Signatory Trait</h3>
         <p class="subtext" id="swapModalSubtext" style="margin-bottom: 12px;">Select the pending signatory you want to change.</p>
 
         <div style="margin: 12px 0;">
