@@ -44,7 +44,7 @@ export async function renderSignatoriesTab(container) {
         </small>
       </div>
 
-      <!-- Committee Filter Pills (Uses .committee-filter-btn instead of .tab-btn) -->
+      <!-- Committee Filter Pills -->
       <div id="committeeFilterBar" style="display: flex; gap: 8px; overflow-x: auto; padding-bottom: 12px; margin-bottom: 20px;">
         ${categories.map(cat => `
           <button type="button" 
@@ -107,14 +107,28 @@ export async function renderSignatoriesTab(container) {
                       </span>
                     </div>
 
-                    ${task.task_pool && task.task_pool.length > 0 && !task.selected_task ? `
-                      <select class="sig-task-select" data-sig-id="${task.id}" style="width: 100%; margin-bottom: 8px; font-size: 0.82rem;">
-                        <option value="">-- Choose a task from pool --</option>
-                        ${task.task_pool.map(t => `<option value="${t}">${t}</option>`).join('')}
-                      </select>
-                    ` : `
-                      <strong style="display: block; font-size: 0.9rem; margin-bottom: 10px;">${task.selected_task || task.task}</strong>
-                    `}
+                    <!-- Permanent Committee Member Trait Display -->
+                    <div style="margin-bottom: 10px;">
+                      <strong style="display: block; font-size: 0.92rem; color: var(--brand-forest); margin-bottom: 4px;">
+                        ${task.trait_description || task.task || 'Find a committee member'}
+                      </strong>
+                      ${task.selected_task ? `
+                        <div style="font-size: 0.82rem; color: var(--text-muted); background: var(--surface-subtle); padding: 6px 10px; border-radius: 4px; margin-top: 4px;">
+                          <strong>Selected Task:</strong> ${task.selected_task}
+                        </div>
+                      ` : ''}
+                    </div>
+
+                    <!-- Task Pool Selection Dropdown -->
+                    ${task.task_pool && task.task_pool.length > 0 && !task.selected_task && !task.completed ? `
+                      <div style="margin-bottom: 10px;">
+                        <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Assign a Task:</label>
+                        <select class="sig-task-select" data-sig-id="${task.id}" style="width: 100%; font-size: 0.82rem; padding: 6px;">
+                          <option value="">-- Choose a task from pool --</option>
+                          ${task.task_pool.map(t => `<option value="${t}">${t}</option>`).join('')}
+                        </select>
+                      </div>
+                    ` : ''}
 
                     ${!task.completed ? `
                       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 10px;">
@@ -139,10 +153,8 @@ export async function renderSignatoriesTab(container) {
     </section>
   `;
 
-  // Apply default filtering
   filterCommitteeCards(activeCategory);
 
-  // Committee Filter Button Click Handler (Toggles cards without hiding tab-signatories)
   const filterBar = container.querySelector('#committeeFilterBar');
   if (filterBar) {
     filterBar.addEventListener('click', (e) => {
@@ -173,7 +185,6 @@ export async function renderSignatoriesTab(container) {
     });
   }
 
-  // Task Pool Selection Handler
   container.querySelectorAll('.sig-task-select').forEach(select => {
     select.addEventListener('change', async (e) => {
       const val = e.target.value;
@@ -186,7 +197,6 @@ export async function renderSignatoriesTab(container) {
     });
   });
 
-  // Inputs Debounce
   container.querySelectorAll('.sig-input').forEach(inp => {
     inp.addEventListener('change', async (e) => {
       const sigId = e.target.dataset.sigId;
@@ -198,7 +208,6 @@ export async function renderSignatoriesTab(container) {
     });
   });
 
-  // Generate Signatory Code Button Handler
   container.querySelectorAll('.trigger-sig-code-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const sigId = e.target.dataset.sigId;
@@ -228,7 +237,6 @@ export async function renderSignatoriesTab(container) {
         `;
       }
 
-      // Switch view to Tambay & Events or display modal to reveal the QR code
       if (qrModal) {
         qrModal.style.display = 'block';
         const tambayTabBtn = document.querySelector('#applicantTabNav [data-tab="tab-tambay"]');
