@@ -1,4 +1,4 @@
-import { CONFIG } from './config.js?v=1.1';
+import { CONFIG } from './config.js?';
 import {
   supabase,
   getSignatories,
@@ -41,10 +41,10 @@ import {
   getApplicantBuddyTaskCompletions,
   toggleBuddyTaskCompletion,
   updateOfficialEventDate
-} from './storage.js?v=1.1';
-import { renderSignatoriesTab } from './signatories.js?v=1.1';
-import { getEvents, adminToggleEventAttendance, generateGoogleCalendarUrl } from './events.js?v=1.1';
-import { signInWithGoogle, signOutUser, getCurrentUser, getUserProfileData, createApplicantProfile } from './auth.js?v=1.1';
+} from './storage.js?';
+import { renderSignatoriesTab } from './signatories.js?';
+import { getEvents, adminToggleEventAttendance, generateGoogleCalendarUrl } from './events.js?';
+import { signInWithGoogle, signOutUser, getCurrentUser, getUserProfileData, createApplicantProfile } from './auth.js?';
 
 let currentUser = null;
 let timerInterval = null;
