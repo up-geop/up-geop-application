@@ -1,19 +1,18 @@
 export const CONFIG = {
   TARGET_TAMBAY_HOURS: 10,
+  MEMBER_SIGNATORY_LIMIT: 4,
   WEIGHTS: {
-    SIGNATORIES: 0.4, // 40%
-    TAMBAY: 0.3,      // 30%
-    EVENTS: 0.3       // 30%
+    SIGNATORIES: 0.40,
+    TAMBAY: 0.30,
+    EVENTS: 0.30
   }
 };
 
-export const DEFAULT_SIGNATORIES = [
-  { id: "sig-1", role: "Executive Board Member", task: "Play a quick card or board game", completed: false },
-  { id: "sig-2", role: "Academics Committee Member", task: "Ask for course or study tips", completed: false },
-  { id: "sig-3", role: "Events Committee Member", task: "Help set up or clean after an event", completed: false }
-];
-
-export const DEFAULT_EVENTS = [
-  { id: "evt-101", name: "General Assembly & Orientation", passkey: "GA2026", attended: false },
-  { id: "evt-102", name: "Recruitment Workshop", passkey: "WORKSHOP101", attended: false }
+export const COMMITTEES_LIST = [
+  { name: 'Academics', vp: 'VP for Academic Affairs' },
+  { name: 'Publicity', vp: 'VP for Publicity Affairs' },
+  { name: 'RAComm', vp: 'Recruitment & Applications Committee Head' },
+  { name: 'Internal', vp: 'VP for Internal Affairs' },
+  { name: 'External', vp: 'VP for External Affairs' },
+  { name: 'Finance', vp: 'VP for Finance Affairs' }
 ];
