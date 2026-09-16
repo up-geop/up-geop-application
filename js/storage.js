@@ -319,13 +319,13 @@ export async function getBuddyGroupMembers(groupName) {
     .eq('buddy_group_name', groupName);
 
   const formattedApplicants = (applicants || []).map(a => ({
-    name: a.full_name,
-    nickname: a.nickname,
+    full_name: a.full_name || 'Applicant',
+    nickname: a.nickname || '',
     role: 'Applicant'
   }));
 
   const formattedMembers = (members || []).map(m => ({
-    name: m.full_name,
+    full_name: m.full_name || 'Member',
     nickname: '',
     role: 'Member'
   }));
@@ -365,6 +365,24 @@ export async function assignApplicantBuddyGroup(applicantId, groupName) {
     .from('profiles')
     .update({ buddy_group_name: groupName })
     .eq('id', applicantId);
+  return !error;
+}
+
+export async function getAllMembersList() {
+  if (!supabase) return [];
+  const { data } = await supabase
+    .from('members')
+    .select('id, email, full_name, racomm, buddy_group_name')
+    .order('full_name', { ascending: true });
+  return data || [];
+}
+
+export async function assignMemberBuddyGroup(memberId, groupName) {
+  if (!supabase || !memberId || !groupName) return false;
+  const { error } = await supabase
+    .from('members')
+    .update({ buddy_group_name: groupName })
+    .eq('id', memberId);
   return !error;
 }
 
