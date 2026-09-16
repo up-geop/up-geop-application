@@ -9,6 +9,11 @@ import { showToast } from './app.js';
 
 let activeCategory = 'ALL';
 
+function cleanTraitText(text) {
+  if (!text) return '';
+  return text.replace(/^find\s+(another\s+)?member\s+(who\s+)?/i, '').trim();
+}
+
 export async function renderSignatoriesTab(container) {
   if (!container) return;
   const signatories = await getSignatories();
@@ -98,53 +103,58 @@ export async function renderSignatoriesTab(container) {
 
               <!-- Member Tasks -->
               <div style="display: flex; flex-direction: column; gap: 12px;">
-                ${memberTasks.map((task, idx) => `
-                  <div class="card" style="margin: 0; border-color: ${task.completed ? 'var(--brand-mint)' : 'var(--border-subtle)'}; background: ${task.completed ? 'var(--brand-mint-subtle)' : 'var(--surface)'};">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                      <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">Member Task #${idx + 1}</span>
-                      <span class="badge" style="background: ${task.completed ? 'var(--brand-mint)' : 'var(--surface-subtle)'}; color: ${task.completed ? '#fff' : 'inherit'};">
-                        ${task.completed ? 'Completed' : 'Pending'}
-                      </span>
-                    </div>
+                ${memberTasks.map((task, idx) => {
+                  const rawTrait = task.trait_description || task.task || 'Committee Member';
+                  const cleanedTrait = cleanTraitText(rawTrait);
 
-                    <!-- Permanent Committee Member Trait Display -->
-                    <div style="margin-bottom: 10px;">
-                      <strong style="display: block; font-size: 0.92rem; color: var(--brand-forest); margin-bottom: 4px;">
-                        ${task.trait_description || task.task || 'Find a committee member'}
-                      </strong>
-                      ${task.selected_task ? `
-                        <div style="font-size: 0.82rem; color: var(--text-muted); background: var(--surface-subtle); padding: 6px 10px; border-radius: 4px; margin-top: 4px;">
-                          <strong>Selected Task:</strong> ${task.selected_task}
+                  return `
+                    <div class="card" style="margin: 0; border-color: ${task.completed ? 'var(--brand-mint)' : 'var(--border-subtle)'}; background: ${task.completed ? 'var(--brand-mint-subtle)' : 'var(--surface)'};">
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">Member Task #${idx + 1}</span>
+                        <span class="badge" style="background: ${task.completed ? 'var(--brand-mint)' : 'var(--surface-subtle)'}; color: ${task.completed ? '#fff' : 'inherit'};">
+                          ${task.completed ? 'Completed' : 'Pending'}
+                        </span>
+                      </div>
+
+                      <!-- Pure Trait Display without Prefixes -->
+                      <div style="margin-bottom: 10px;">
+                        <strong style="display: block; font-size: 0.92rem; color: var(--brand-forest); margin-bottom: 4px;">
+                          ${cleanedTrait}
+                        </strong>
+                        ${task.selected_task ? `
+                          <div style="font-size: 0.82rem; color: var(--text-muted); background: var(--surface-subtle); padding: 6px 10px; border-radius: 4px; margin-top: 4px;">
+                            <strong>Selected Task:</strong> ${task.selected_task}
+                          </div>
+                        ` : ''}
+                      </div>
+
+                      <!-- Task Pool Selection Dropdown -->
+                      ${task.task_pool && task.task_pool.length > 0 && !task.selected_task && !task.completed ? `
+                        <div style="margin-bottom: 10px;">
+                          <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Assign a Task:</label>
+                          <select class="sig-task-select" data-sig-id="${task.id}" style="width: 100%; font-size: 0.82rem; padding: 6px;">
+                            <option value="">-- Choose a task from pool --</option>
+                            ${task.task_pool.map(t => `<option value="${t}">${t}</option>`).join('')}
+                          </select>
                         </div>
                       ` : ''}
+
+                      ${!task.completed ? `
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 10px;">
+                          <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="member_name" placeholder="Member Name" value="${task.member_name || ''}" style="font-size: 0.8rem; padding: 6px;" />
+                          <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="nickname" placeholder="Nickname" value="${task.nickname || ''}" style="font-size: 0.8rem; padding: 6px;" />
+                          <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="favorite_spot" placeholder="Favorite Spot" value="${task.favorite_spot || ''}" style="font-size: 0.8rem; padding: 6px;" />
+                          <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="least_liked_sub" placeholder="Least Liked Sub" value="${task.least_liked_sub || ''}" style="font-size: 0.8rem; padding: 6px;" />
+                        </div>
+                        <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${task.id}" style="width: 100%;">
+                          Generate Signatory Code
+                        </button>
+                      ` : `
+                        <small style="color: var(--brand-forest); font-weight: 600;">Signed by ${task.signed_by || 'Verified Member'}</small>
+                      `}
                     </div>
-
-                    <!-- Task Pool Selection Dropdown -->
-                    ${task.task_pool && task.task_pool.length > 0 && !task.selected_task && !task.completed ? `
-                      <div style="margin-bottom: 10px;">
-                        <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Assign a Task:</label>
-                        <select class="sig-task-select" data-sig-id="${task.id}" style="width: 100%; font-size: 0.82rem; padding: 6px;">
-                          <option value="">-- Choose a task from pool --</option>
-                          ${task.task_pool.map(t => `<option value="${t}">${t}</option>`).join('')}
-                        </select>
-                      </div>
-                    ` : ''}
-
-                    ${!task.completed ? `
-                      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 10px;">
-                        <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="member_name" placeholder="Member Name" value="${task.member_name || ''}" style="font-size: 0.8rem; padding: 6px;" />
-                        <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="nickname" placeholder="Nickname" value="${task.nickname || ''}" style="font-size: 0.8rem; padding: 6px;" />
-                        <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="favorite_spot" placeholder="Favorite Spot" value="${task.favorite_spot || ''}" style="font-size: 0.8rem; padding: 6px;" />
-                        <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="least_liked_sub" placeholder="Least Liked Sub" value="${task.least_liked_sub || ''}" style="font-size: 0.8rem; padding: 6px;" />
-                      </div>
-                      <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${task.id}" style="width: 100%;">
-                        Generate Signatory Code
-                      </button>
-                    ` : `
-                      <small style="color: var(--brand-forest); font-weight: 600;">Signed by ${task.signed_by || 'Verified Member'}</small>
-                    `}
-                  </div>
-                `).join('')}
+                  `;
+                }).join('')}
               </div>
             </div>
           `;
