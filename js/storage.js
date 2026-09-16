@@ -995,3 +995,9 @@ export async function toggleUserAvailabilitySlot(userId, userName, timeSlot, isS
     return !error;
   }
 }
+
+export async function updateOfficialEventDate(eventId, dateIso) {
+  if (!supabase || !eventId) return false;
+  // Hijacks the global_settings table so we don't have to overhaul the database!
+  return await updateGlobalSettings(`event_date_${eventId}`, dateIso);
+}
