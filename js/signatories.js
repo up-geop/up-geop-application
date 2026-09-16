@@ -4,7 +4,8 @@ import {
   getAllMembersList,
   selectTaskForSignatory,
   updateSignatoryAnswer,
-  generateApplicantShortCode
+  generateApplicantShortCode,
+  getAvailableTasksPool
 } from './storage.js';
 import { showToast } from './app.js';
 
@@ -26,9 +27,10 @@ function cleanTraitText(text) {
 
 export async function renderSignatoriesTab(container) {
   if (!container) return;
-  const [signatories, membersList] = await Promise.all([
+  const [signatories, membersList, fallbackTasksPool] = await Promise.all([
     getSignatories(),
-    getAllMembersList()
+    getAllMembersList(),
+    getAvailableTasksPool()
   ]);
 
   const total = signatories.length || 21;
@@ -200,10 +202,11 @@ export async function renderSignatoriesTab(container) {
               <!-- Member Tasks -->
               <div style="display: flex; flex-direction: column; gap: 12px;">
                 ${memberTasks.map((task, idx) => {
-                  const rawTrait = task.trait_description || task.task || 'Committee Member';
+                  const rawTrait = task.trait || task.trait_description || task.task || 'Committee Member';
                   const cleanedTrait = cleanTraitText(rawTrait);
 
-                  const pool = (task.task_pool || []).filter(t => {
+                  const rawPool = (task.task_pool && task.task_pool.length > 0) ? task.task_pool : fallbackTasksPool;
+                  const pool = rawPool.filter(t => {
                     if (task.selected_task && t === task.selected_task) return true;
                     return !completedTasksSet.has(t.trim());
                   });
