@@ -325,7 +325,6 @@ export async function verifyUniversalCode(code, verifierEmail) {
       const { count, error: countErr } = await supabase
         .from('signatories')
         .select('id', { count: 'exact', head: true })
-        .eq('user_id', codeRecord.user_id)
         .eq('signed_by', member.full_name);
 
       if (!countErr && (count || 0) >= 4) {
