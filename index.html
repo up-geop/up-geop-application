@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="styles.css?" />
+  <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -68,9 +68,9 @@
     <div id="memberDashboardContent" style="display: none;">
       <nav id="racommTabNav" class="tab-nav">
         <button class="tab-btn active" data-tab="member-hub-view">Verification Hub</button>
-        <button class="tab-btn racomm-only-tab" data-tab="racomm-roster" style="display: none;">Applicant Roster</button>
+        <button class="tab-btn" data-tab="racomm-roster">Applicant Roster</button>
         <button class="tab-btn racomm-only-tab" data-tab="racomm-buddy-groups" style="display: none;">Buddy Groups</button>
-        <button class="tab-btn racomm-only-tab" data-tab="racomm-buddy-tasks" style="display: none;">Buddy Tasks</button>
+        <button class="tab-btn" data-tab="racomm-buddy-tasks">Buddy Tasks</button>
         <button class="tab-btn racomm-only-tab" data-tab="racomm-settings" style="display: none;">Settings & Controls</button>
         <button class="tab-btn" data-tab="tab-schedule">Schedule & Announcements</button>
       </nav>
@@ -89,7 +89,7 @@
         </section>
       </div>
 
-      <!-- RAComm: Roster View -->
+      <!-- RAComm & Member: Roster View -->
       <div id="racomm-roster" class="tab-content">
         <section class="card">
           <div class="card-header">
@@ -138,9 +138,11 @@
         </section>
       </div>
 
-      <!-- RAComm: Buddy Tasks Manager -->
+      <!-- RAComm & Member: Buddy Tasks Manager -->
       <div id="racomm-buddy-tasks" class="tab-content">
-        <section class="card">
+        
+        <!-- Creation Tools (Hidden for regular members) -->
+        <section class="card" id="officerBuddyTaskControls" style="display: none; border: 2px solid var(--brand-forest);">
           <div class="card-header">
             <div>
               <h2>Assign Buddy Tasks</h2>
@@ -149,7 +151,7 @@
             <span class="badge" style="background: var(--brand-forest); color: #fff;">Officer Only</span>
           </div>
 
-          <form id="createBuddyTaskForm" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; background: var(--surface-subtle); padding: 16px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+          <form id="createBuddyTaskForm" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; background: var(--surface-subtle); padding: 16px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
             <div>
               <label style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 4px;">Task Title</label>
               <input type="text" id="buddyTaskTitleInput" required placeholder="e.g. Group Photo at Sunken Garden" style="width: 100%;" />
@@ -172,8 +174,16 @@
             </div>
             <button type="submit" class="btn btn-checkin" style="align-self: flex-start; margin-top: 4px;">Publish Buddy Task</button>
           </form>
+        </section>
 
-          <h3 style="font-family: var(--font-display); color: var(--brand-forest); margin-bottom: 8px;">Active Buddy Tasks</h3>
+        <!-- Task List (Visible to all members) -->
+        <section class="card">
+          <div class="card-header" style="margin-bottom: 12px;">
+            <div>
+              <h3 style="font-family: var(--font-display); color: var(--brand-forest); margin-bottom: 4px;">Active Buddy Tasks</h3>
+              <p class="subtext">Track the milestone tasks assigned to your buddy group.</p>
+            </div>
+          </div>
           <div id="racommBuddyTasksList" style="display: flex; flex-direction: column; gap: 10px;"></div>
         </section>
       </div>
@@ -195,6 +205,13 @@
               <div style="margin-top: 8px; display: flex; gap: 6px;">
                 <button id="enableCapBtn" class="btn btn-secondary" style="min-height: 36px; padding: 4px 8px; font-size: 0.78rem;">Enable</button>
                 <button id="disableCapBtn" class="btn btn-secondary" style="min-height: 36px; padding: 4px 8px; font-size: 0.78rem;">Disable</button>
+              </div>
+            </div>
+            <div class="card" style="flex: 1; min-width: 200px; margin: 0; padding: 14px;">
+              <strong>Sig Limit (4/Mem): <span id="currentSigLimitText">Active</span></strong>
+              <div style="margin-top: 8px; display: flex; gap: 6px;">
+                <button id="enableSigLimitBtn" class="btn btn-secondary" style="min-height: 36px; padding: 4px 8px; font-size: 0.78rem;">Enable</button>
+                <button id="disableSigLimitBtn" class="btn btn-secondary" style="min-height: 36px; padding: 4px 8px; font-size: 0.78rem;">Disable</button>
               </div>
             </div>
           </div>
@@ -451,7 +468,7 @@
             <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted);">Assigned Buddy Group:</label>
             <div style="display: flex; gap: 8px;">
               <select id="inspectBuddyGroupSelect" style="flex: 1; min-height: 38px;"></select>
-              <button id="saveAssignedGroupBtn" class="btn btn-checkin" style="min-height: 38px; padding: 4px 14px; font-size: 0.8rem;">Save</button>
+              <button id="saveAssignedGroupBtn" class="btn btn-checkin" style="min-height: 38px; padding: 4px 14px; font-size: 0.8rem; display: none;">Save</button>
             </div>
           </div>
 
@@ -468,7 +485,7 @@
           </div>
         </div>
 
-        <div class="modal-actions-bar">
+        <div class="modal-actions-bar" id="adminInspectionActionsBar" style="display: none;">
           <button id="adminAddHoursBtn" class="btn btn-secondary" style="flex: 1; min-height: 36px; font-size: 0.78rem;">Adjust Hours</button>
           <button id="adminEditTokensBtn" class="btn btn-secondary" style="flex: 1; min-height: 36px; font-size: 0.78rem;">Set Tokens</button>
           <button id="adminExportPdfBtn" class="btn btn-secondary" style="flex: 1; min-height: 36px; font-size: 0.78rem;">Export PDF</button>
