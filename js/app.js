@@ -8,6 +8,7 @@ import {
   verifyUniversalCode,
   checkIfResidentMember,
   checkIfRAComm,
+  getMemberProfile,
   getGlobalSettings,
   updateGlobalSettings,
   getAllApplicantsProgress,
@@ -99,17 +100,22 @@ function stopTimer() {
   if (timerInterval) clearInterval(timerInterval);
 }
 
-function updateSettingsButtons(mult, capEnabled) {
+function updateSettingsButtons(mult, capEnabled, sigLimitEnabled) {
   const btn1x = document.getElementById('set1xBtn');
   const btn2x = document.getElementById('set2xBtn');
   const btnEn = document.getElementById('enableCapBtn');
   const btnDis = document.getElementById('disableCapBtn');
+  const btnSigEn = document.getElementById('enableSigLimitBtn');
+  const btnSigDis = document.getElementById('disableSigLimitBtn');
 
   if (btn1x) btn1x.className = mult === 1.0 ? 'btn btn-checkin' : 'btn btn-secondary';
   if (btn2x) btn2x.className = mult === 2.0 ? 'btn btn-checkin' : 'btn btn-secondary';
   
   if (btnEn) btnEn.className = capEnabled ? 'btn btn-checkin' : 'btn btn-secondary';
   if (btnDis) btnDis.className = !capEnabled ? 'btn btn-checkin' : 'btn btn-secondary';
+
+  if (btnSigEn) btnSigEn.className = sigLimitEnabled ? 'btn btn-checkin' : 'btn btn-secondary';
+  if (btnSigDis) btnSigDis.className = !sigLimitEnabled ? 'btn btn-checkin' : 'btn btn-secondary';
 }
 
 function computeEffectiveDeadline(rawIso, isPotUnlocked) {
@@ -252,6 +258,14 @@ async function renderOfficerBuddyTasksManager() {
     getManagedBuddyGroups()
   ]);
 
+  const isRAComm = await checkIfRAComm(currentUser?.email);
+  let memberGroup = null;
+  
+  if (!isRAComm && currentUser) {
+     const memberProfile = await getMemberProfile(currentUser.email);
+     memberGroup = memberProfile?.buddy_group_name;
+  }
+
   if (groupSelect) {
     groupSelect.innerHTML = `
       <option value="ALL">All Applicants (Universal)</option>
@@ -259,12 +273,21 @@ async function renderOfficerBuddyTasksManager() {
     `;
   }
 
-  if (tasks.length === 0) {
-    container.innerHTML = '<p class="subtext">No buddy tasks created yet.</p>';
+  // If RAComm, show all. If Member, show ALL + their specific group.
+  let relevantTasks = tasks;
+  if (!isRAComm) {
+    relevantTasks = tasks.filter(t => 
+      t.target_group === 'ALL' || 
+      (memberGroup && t.target_group.toLowerCase() === memberGroup.toLowerCase())
+    );
+  }
+
+  if (relevantTasks.length === 0) {
+    container.innerHTML = '<p class="subtext">No buddy tasks assigned to your group yet.</p>';
     return;
   }
 
-  container.innerHTML = tasks.map(t => {
+  container.innerHTML = relevantTasks.map(t => {
     const isPotUnlocked = !!t.is_extended;
     const deadline = computeEffectiveDeadline(t.deadline, isPotUnlocked);
 
@@ -279,9 +302,11 @@ async function renderOfficerBuddyTasksManager() {
             ${isPotUnlocked ? ` | <strong style="color: var(--brand-clay);">Effective (+2d): ${deadline.toLocaleDateString()}</strong>` : ''}
           </small>
         </div>
+        ${isRAComm ? `
         <button class="btn btn-secondary delete-buddy-task-btn" data-id="${t.id}" style="min-height: 30px; padding: 2px 8px; font-size: 0.75rem; color: #9e2a2b;">
           Delete
         </button>
+        ` : ''}
       </div>
     `;
   }).join('');
@@ -592,10 +617,27 @@ async function renderDashboard() {
 
 async function renderRoster() {
   const tbody = document.getElementById('applicantRosterTbody');
-  if (!tbody) return;
+  if (!tbody || !currentUser) return;
 
-  const applicants = await getAllApplicantsProgress();
-  if (applicants.length === 0) {
+  let applicants = await getAllApplicantsProgress();
+  const isRAComm = await checkIfRAComm(currentUser.email);
+
+  if (!isRAComm) {
+    const memberProfile = await getMemberProfile(currentUser.email);
+    const memberGroup = memberProfile?.buddy_group_name;
+    
+    if (!memberGroup || memberGroup === 'Unassigned') {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:16px;">You are not assigned to a Buddy Group yet.</td></tr>';
+      return;
+    }
+    
+    applicants = applicants.filter(app => (app.buddyGroup || '').toLowerCase() === memberGroup.toLowerCase());
+    
+    if (applicants.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:16px;">No applicants in ${memberGroup} yet.</td></tr>`;
+      return;
+    }
+  } else if (applicants.length === 0) {
     tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:16px;">No applicants registered.</td></tr>';
     return;
   }
@@ -608,7 +650,7 @@ async function renderRoster() {
       <td style="font-family:var(--font-mono);">${app.tambayHours} hrs</td>
       <td style="font-family:var(--font-mono); font-weight:700; color:var(--brand-forest);">${app.overallPercent}%</td>
       <td><span class="badge" style="background:${app.isTimedIn ? 'var(--brand-mint-subtle)' : 'var(--surface-subtle)'}; color:${app.isTimedIn ? 'var(--brand-mint)' : 'inherit'};">${app.isTimedIn ? 'Timed In' : 'Offline'}</span></td>
-      <td><button class="btn btn-secondary inspect-btn" data-id="${app.id}" style="min-height:32px; padding:2px 8px; font-size:0.75rem;">Inspect & Grade</button></td>
+      <td><button class="btn btn-secondary inspect-btn" data-id="${app.id}" style="min-height:32px; padding:2px 8px; font-size:0.75rem;">${isRAComm ? 'Inspect & Grade' : 'View Details'}</button></td>
     </tr>
   `).join('');
 }
@@ -616,9 +658,10 @@ async function renderRoster() {
 async function openInspection(appId) {
   inspectedApplicantId = appId;
   const modal = document.getElementById('adminInspectionModal');
-  const [details, events] = await Promise.all([
+  const [details, events, isRAComm] = await Promise.all([
     getApplicantFullDetails(appId),
-    getEvents(appId)
+    getEvents(appId),
+    checkIfRAComm(currentUser.email)
   ]);
 
   if (!details || !modal) return;
@@ -629,12 +672,16 @@ async function openInspection(appId) {
 
   const groups = await getManagedBuddyGroups();
   const select = document.getElementById('inspectBuddyGroupSelect');
+  const saveGrpBtn = document.getElementById('saveAssignedGroupBtn');
+  
   if (select) {
     select.innerHTML = `
       <option value="Unassigned" ${p.buddy_group_name === 'Unassigned' ? 'selected' : ''}>Unassigned</option>
       ${groups.map(g => `<option value="${g.name}" ${p.buddy_group_name === g.name ? 'selected' : ''}>${g.name}</option>`).join('')}
     `;
+    select.disabled = !isRAComm;
   }
+  if (saveGrpBtn) saveGrpBtn.style.display = isRAComm ? 'block' : 'none';
 
   const panelsWrapper = document.getElementById('inspectPanelsWrapper');
   if (panelsWrapper) {
@@ -643,9 +690,9 @@ async function openInspection(appId) {
         <h4 style="margin: 0 0 8px 0; color: var(--brand-forest); font-size: 0.88rem;">Official Events Attendance (5% each)</h4>
         <div style="display: flex; flex-direction: column; gap: 6px; font-size: 0.82rem;">
           ${events.map(evt => `
-            <label style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #fff; border-radius: 4px; border: 1px solid var(--border-subtle); cursor: pointer;">
+            <label style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #fff; border-radius: 4px; border: 1px solid var(--border-subtle); cursor: ${isRAComm ? 'pointer' : 'not-allowed'};">
               <span style="font-size: 0.8rem;">${evt.name}</span>
-              <input type="checkbox" class="admin-event-check" data-event-id="${evt.id}" ${evt.attended ? 'checked' : ''} />
+              <input type="checkbox" class="admin-event-check" data-event-id="${evt.id}" ${evt.attended ? 'checked' : ''} ${!isRAComm ? 'disabled' : ''} />
             </label>
           `).join('')}
         </div>
@@ -656,56 +703,56 @@ async function openInspection(appId) {
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.8rem;">
           <label style="display: flex; flex-direction: column; gap: 2px;">
             <span>Interview (15%):</span>
-            <input type="number" id="gradeInterviewInput" min="0" max="15" step="0.5" value="${p.grade_interview || 0}" style="width: 100%; padding: 4px; font-size: 0.8rem;" />
+            <input type="number" id="gradeInterviewInput" min="0" max="15" step="0.5" value="${p.grade_interview || 0}" style="width: 100%; padding: 4px; font-size: 0.8rem;" ${!isRAComm ? 'disabled' : ''} />
           </label>
           <label style="display: flex; flex-direction: column; gap: 2px;">
             <span>OGT 1 & 2 (20%):</span>
-            <input type="number" id="gradeOgtInput" min="0" max="20" step="0.5" value="${p.grade_ogt || 0}" style="width: 100%; padding: 4px; font-size: 0.8rem;" />
+            <input type="number" id="gradeOgtInput" min="0" max="20" step="0.5" value="${p.grade_ogt || 0}" style="width: 100%; padding: 4px; font-size: 0.8rem;" ${!isRAComm ? 'disabled' : ''} />
           </label>
           <label style="display: flex; flex-direction: column; gap: 2px;">
             <span>Consti (10%):</span>
-            <input type="number" id="gradeConstiInput" min="0" max="10" step="0.5" value="${p.grade_consti_quiz || 0}" style="width: 100%; padding: 4px; font-size: 0.8rem;" />
+            <input type="number" id="gradeConstiInput" min="0" max="10" step="0.5" value="${p.grade_consti_quiz || 0}" style="width: 100%; padding: 4px; font-size: 0.8rem;" ${!isRAComm ? 'disabled' : ''} />
           </label>
           <label style="display: flex; flex-direction: column; gap: 2px;">
             <span>Buddy (10%):</span>
-            <input type="number" id="gradeBuddyInput" min="0" max="10" step="0.01" value="${p.grade_buddy_tasks || 0}" style="width: 100%; padding: 4px; font-size: 0.8rem;" />
+            <input type="number" id="gradeBuddyInput" min="0" max="10" step="0.01" value="${p.grade_buddy_tasks || 0}" style="width: 100%; padding: 4px; font-size: 0.8rem;" ${!isRAComm ? 'disabled' : ''} />
           </label>
         </div>
-        <button class="btn btn-checkin" id="saveManualGradesBtn" style="margin-top: 10px; width: 100%; min-height: 34px; font-size: 0.8rem;">
-          Save Evaluation Scores
-        </button>
+        ${isRAComm ? `<button class="btn btn-checkin" id="saveManualGradesBtn" style="margin-top: 10px; width: 100%; min-height: 34px; font-size: 0.8rem;">Save Evaluation Scores</button>` : ''}
       </div>
     `;
 
-    panelsWrapper.querySelectorAll('.admin-event-check').forEach(chk => {
-      chk.addEventListener('change', async (e) => {
-        const eventId = e.target.dataset.eventId;
-        const checked = e.target.checked;
-        const success = await adminToggleEventAttendance(inspectedApplicantId, eventId, checked, currentUser.email);
-        if (success) {
-          showToast(`Attendance ${checked ? 'credited (+5%)' : 'removed'}.`, 'success');
+    if (isRAComm) {
+      panelsWrapper.querySelectorAll('.admin-event-check').forEach(chk => {
+        chk.addEventListener('change', async (e) => {
+          const eventId = e.target.dataset.eventId;
+          const checked = e.target.checked;
+          const success = await adminToggleEventAttendance(inspectedApplicantId, eventId, checked, currentUser.email);
+          if (success) {
+            showToast(`Attendance ${checked ? 'credited (+5%)' : 'removed'}.`, 'success');
+            await renderRoster();
+          } else {
+            showToast('Failed to update attendance.', 'error');
+            e.target.checked = !checked;
+          }
+        });
+      });
+
+      document.getElementById('saveManualGradesBtn')?.addEventListener('click', async () => {
+        const grades = {
+          interview: document.getElementById('gradeInterviewInput').value,
+          ogt: document.getElementById('gradeOgtInput').value,
+          constiQuiz: document.getElementById('gradeConstiInput').value,
+          buddyTasks: document.getElementById('gradeBuddyInput').value
+        };
+        if (await adminUpdateApplicantGrades(inspectedApplicantId, grades)) {
+          showToast('Evaluation scores saved.', 'success');
           await renderRoster();
         } else {
-          showToast('Failed to update attendance.', 'error');
-          e.target.checked = !checked;
+          showToast('Failed to save scores.', 'error');
         }
       });
-    });
-
-    document.getElementById('saveManualGradesBtn')?.addEventListener('click', async () => {
-      const grades = {
-        interview: document.getElementById('gradeInterviewInput').value,
-        ogt: document.getElementById('gradeOgtInput').value,
-        constiQuiz: document.getElementById('gradeConstiInput').value,
-        buddyTasks: document.getElementById('gradeBuddyInput').value
-      };
-      if (await adminUpdateApplicantGrades(inspectedApplicantId, grades)) {
-        showToast('Evaluation scores saved.', 'success');
-        await renderRoster();
-      } else {
-        showToast('Failed to save scores.', 'error');
-      }
-    });
+    }
   }
 
   const sigList = document.getElementById('inspectSignatoriesList');
@@ -713,7 +760,7 @@ async function openInspection(appId) {
     sigList.innerHTML = (details.signatories || []).map(s => `
       <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--border-subtle); font-size:0.8rem;">
         <span><strong>${s.trait || s.task}</strong> <small style="color:var(--text-muted);">(${s.committee_name || 'Member'})</small></span>
-        <input type="checkbox" class="admin-sig-check" data-id="${s.id}" ${s.completed ? 'checked' : ''} />
+        <input type="checkbox" class="admin-sig-check" data-id="${s.id}" ${s.completed ? 'checked' : ''} ${!isRAComm ? 'disabled' : ''} />
       </div>
     `).join('');
   }
@@ -723,6 +770,11 @@ async function openInspection(appId) {
     logList.innerHTML = (details.tambayLogs || []).map(l => `
       <div style="font-size:0.78rem; padding:2px 0;">+${l.hours} hrs on ${new Date(l.created_at).toLocaleString()}</div>
     `).join('') || '<small class="subtext">No logs recorded.</small>';
+  }
+
+  const actionsBar = document.getElementById('adminInspectionActionsBar');
+  if (actionsBar) {
+    actionsBar.style.display = isRAComm ? 'flex' : 'none';
   }
 
   modal.style.display = 'flex';
@@ -837,18 +889,22 @@ async function handleAuth() {
         tab.style.display = isRAComm ? 'inline-block' : 'none';
       });
 
+      const officerTaskControls = document.getElementById('officerBuddyTaskControls');
+      if (officerTaskControls) officerTaskControls.style.display = isRAComm ? 'block' : 'none';
+
       if (isRAComm) {
         const settings = await getGlobalSettings();
         const multText = document.getElementById('currentMultiplierText');
         const capText = document.getElementById('currentCapText');
+        const sigLimitText = document.getElementById('currentSigLimitText');
+
         if (multText) multText.textContent = `${settings.multiplier}x`;
         if (capText) capText.textContent = settings.dailyCapEnabled ? 'Active' : 'Disabled';
+        if (sigLimitText) sigLimitText.textContent = settings.memberSigLimitEnabled ? 'Active' : 'Disabled';
 
-        updateSettingsButtons(settings.multiplier, settings.dailyCapEnabled);
+        updateSettingsButtons(settings.multiplier, settings.dailyCapEnabled, settings.memberSigLimitEnabled);
 
-        await renderRoster();
         await renderBuddyGroupBoard();
-        await renderOfficerBuddyTasksManager();
         await renderOfficerEventSchedules();
       } else {
         document.querySelectorAll('#racommTabNav .tab-btn').forEach(b => b.classList.remove('active'));
@@ -864,6 +920,11 @@ async function handleAuth() {
           hub.classList.add('active');
         }
       }
+      
+      // Render the filtered Roster and Task lists for EVERYONE
+      await renderRoster();
+      await renderOfficerBuddyTasksManager();
+
     } else {
       if (badge) badge.textContent = 'Applicant';
       if (memDash) memDash.style.display = 'none';
@@ -932,602 +993,626 @@ async function handleAuth() {
   }
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
-  await handleAuth();
+// Prevent attaching duplicate event listeners if the script is loaded twice
+if (!window.__appInitialized) {
+  window.__appInitialized = true;
 
-  // Hunt down and destroy any existing Service Workers to prevent caching
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.getRegistrations().then(function(registrations) {
-      for (let registration of registrations) {
-        registration.unregister();
-      }
-    });
-  }
+  document.addEventListener('DOMContentLoaded', async () => {
+    await handleAuth();
 
-  // Strict Singleton check to ensure Realtime doesn't double-subscribe
-  if (supabase && !window.hasRealtimeSubscribed) {
-    window.hasRealtimeSubscribed = true;
-    
-    supabase.channel('app-db-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async () => {
-        await renderRoster();
-        await renderBuddyGroupBoard();
-        await renderDashboard();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, async () => {
-        await renderBuddyGroupBoard();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'signatories' }, async () => {
-        showToast('Signatory matrix updated.', 'info');
-        await renderDashboard();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'event_attendees' }, async () => {
-        showToast('Event attendance updated.', 'info');
-        await renderDashboard();
-        await renderRoster();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'buddy_tasks' }, async () => {
-        const profile = await getUserProfileData(currentUser?.id);
-        await renderApplicantBuddyTasks(profile?.buddy_group_name);
-        await renderOfficerBuddyTasksManager();
-        await renderShopView();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_contributions' }, async () => {
-        await renderShopView();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'buddy_task_completions' }, async () => {
-        const profile = await getUserProfileData(currentUser?.id);
-        await renderApplicantBuddyTasks(profile?.buddy_group_name);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, async () => {
-        showToast('New announcement posted.', 'info');
-        await renderAnnouncementsBoard();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'availability_slots' }, async () => {
-        await renderWhen2Meet();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tambay_sessions' }, async () => {
-        await renderDashboard();
-        await renderRoster();
-      })
-      .subscribe();
-  }
-
-  document.addEventListener('click', async (e) => {
-    const btn = e.target.closest('.copy-btn');
-    if (!btn) return;
-    const target = document.getElementById(btn.dataset.copyTarget);
-    const text = target?.textContent?.trim();
-    if (!text || text === '------') return;
-
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
+    // Hunt down and destroy any lingering Service Workers
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function(registrations) {
+        for (let registration of registrations) {
+          registration.unregister();
+        }
+      });
     }
 
-    const orig = btn.textContent;
-    btn.textContent = 'Copied!';
-    setTimeout(() => { btn.textContent = orig; }, 1400);
-  });
+    // Strict Singleton check to ensure Realtime doesn't double-subscribe
+    if (supabase && !window.hasRealtimeSubscribed) {
+      window.hasRealtimeSubscribed = true;
+      
+      supabase.channel('app-db-changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async () => {
+          await renderRoster();
+          await renderBuddyGroupBoard();
+          await renderDashboard();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, async () => {
+          await renderBuddyGroupBoard();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'signatories' }, async () => {
+          showToast('Signatory matrix updated.', 'info');
+          await renderDashboard();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'event_attendees' }, async () => {
+          showToast('Event attendance updated.', 'info');
+          await renderDashboard();
+          await renderRoster();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'buddy_tasks' }, async () => {
+          const profile = await getUserProfileData(currentUser?.id);
+          await renderApplicantBuddyTasks(profile?.buddy_group_name);
+          await renderOfficerBuddyTasksManager();
+          await renderShopView();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'task_contributions' }, async () => {
+          await renderShopView();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'buddy_task_completions' }, async () => {
+          const profile = await getUserProfileData(currentUser?.id);
+          await renderApplicantBuddyTasks(profile?.buddy_group_name);
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, async () => {
+          showToast('New announcement posted.', 'info');
+          await renderAnnouncementsBoard();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'availability_slots' }, async () => {
+          await renderWhen2Meet();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tambay_sessions' }, async () => {
+          await renderDashboard();
+          await renderRoster();
+        })
+        .subscribe();
+    }
 
-  document.querySelectorAll('#racommTabNav .tab-btn, #applicantTabNav .tab-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const tabId = btn.dataset.tab;
-      if (!tabId) return;
+    document.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.copy-btn');
+      if (!btn) return;
+      const target = document.getElementById(btn.dataset.copyTarget);
+      const text = target?.textContent?.trim();
+      if (!text || text === '------') return;
 
-      if (tabId === 'racomm-buddy-groups' || tabId === 'racomm-roster' || tabId === 'racomm-settings' || tabId === 'racomm-buddy-tasks') {
-        const isOfficer = await checkIfRAComm(currentUser?.email);
-        if (!isOfficer) {
-          showToast('Access restricted to RAComm officers.', 'error');
-          return;
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+
+      const orig = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = orig; }, 1400);
+    });
+
+    document.querySelectorAll('#racommTabNav .tab-btn, #applicantTabNav .tab-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const tabId = btn.dataset.tab;
+        if (!tabId) return;
+
+        // Roster and Buddy Tasks are excluded from this block so regular members can access them
+        if (tabId === 'racomm-buddy-groups' || tabId === 'racomm-settings') {
+          const isOfficer = await checkIfRAComm(currentUser?.email);
+          if (!isOfficer) {
+            showToast('Access restricted to RAComm officers.', 'error');
+            return;
+          }
+        }
+
+        const parentNav = btn.closest('.tab-nav');
+        if (parentNav) {
+          parentNav.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        }
+        btn.classList.add('active');
+
+        const containerContext = btn.closest('#memberDashboardContent') || btn.closest('#applicantDashboardContent') || document;
+        containerContext.querySelectorAll('.tab-content').forEach(c => {
+          c.style.display = 'none';
+          c.classList.remove('active');
+        });
+
+        const target = document.getElementById(tabId);
+        if (target) {
+          target.style.display = 'block';
+          target.classList.add('active');
+
+          if (tabId === 'tab-schedule') {
+            await renderAnnouncementsBoard();
+            await renderWhen2Meet();
+          } else if (tabId === 'racomm-buddy-groups') {
+            await renderBuddyGroupBoard();
+          } else if (tabId === 'racomm-buddy-tasks') {
+            await renderOfficerBuddyTasksManager();
+          } else if (tabId === 'racomm-roster') {
+            await renderRoster();
+          } else if (tabId === 'tab-perks') {
+            await renderShopView();
+          }
+        }
+      });
+    });
+
+    const valModal = document.getElementById('manualCodeModal');
+    document.getElementById('manualValidateBtn')?.addEventListener('click', () => {
+      if (valModal) {
+        valModal.style.display = 'flex';
+        const inp = document.getElementById('manualCodeInput');
+        if (inp) { inp.value = ''; inp.focus(); }
+      }
+    });
+
+    document.getElementById('cancelManualCodeBtn')?.addEventListener('click', () => {
+      if (valModal) valModal.style.display = 'none';
+    });
+
+    document.getElementById('submitManualCodeBtn')?.addEventListener('click', async () => {
+      const input = document.getElementById('manualCodeInput');
+      const code = input?.value.trim();
+      if (!code || code.length < 6) {
+        showToast('Enter a valid 6-character code.', 'error');
+        return;
+      }
+      const res = await verifyUniversalCode(code, currentUser.email);
+      showToast(res.message, res.success ? 'success' : 'error');
+      if (valModal) valModal.style.display = 'none';
+      await handleAuth();
+    });
+
+    document.getElementById('showQrBtn')?.addEventListener('click', async () => {
+      const container = document.getElementById('qrDisplayContainer');
+      const canvas = document.getElementById('qrcodeCanvas');
+      const text = document.getElementById('applicantShortCodeText');
+
+      const activeSession = await getActiveTambaySession(currentUser.id);
+      const isTimingOut = !!activeSession;
+
+      const code = await generateApplicantShortCode(null, 'TAMBAY');
+      if (text) text.textContent = code || 'ERROR';
+
+      const verifyUrl = `${window.location.origin}${window.location.pathname}?verifyCode=${code}`;
+      
+      if (canvas) {
+        canvas.innerHTML = `
+          <div style="margin-bottom: 8px;">
+            <span class="badge" style="background: ${isTimingOut ? '#b33a2b' : 'var(--brand-forest)'}; color: #ffffff;">
+              ${isTimingOut ? 'Scan to TIME-OUT' : 'Scan to TIME-IN'}
+            </span>
+          </div>
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(verifyUrl)}" 
+               alt="Tambay QR" width="160" height="160" style="border-radius: 6px;" />
+        `;
+      }
+
+      if (container) container.style.display = 'block';
+    });
+
+    document.getElementById('closeQrBtn')?.addEventListener('click', () => {
+      const container = document.getElementById('qrDisplayContainer');
+      if (container) container.style.display = 'none';
+    });
+
+    /* Shop Handlers */
+    document.getElementById('dynamicPotsContainer')?.addEventListener('click', async (e) => {
+      if (e.target.classList.contains('chip-in-btn')) {
+        const taskId = e.target.dataset.taskId;
+        const input = document.getElementById(`chipInAmt-${taskId}`);
+        const amount = parseInt(input?.value, 10);
+        if (!amount || amount <= 0) return;
+
+        const res = await chipInToTask(taskId, amount);
+        showToast(res.message, res.success ? 'success' : 'error');
+        if (res.success) {
+          await handleAuth();
+          await renderShopView();
         }
       }
 
-      const parentNav = btn.closest('.tab-nav');
-      if (parentNav) {
-        parentNav.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      }
-      btn.classList.add('active');
+      if (e.target.classList.contains('withdraw-btn')) {
+        const taskId = e.target.dataset.taskId;
+        const input = document.getElementById(`withdrawAmt-${taskId}`);
+        const amount = parseInt(input?.value, 10);
+        if (!amount || amount <= 0) return;
 
-      const containerContext = btn.closest('#memberDashboardContent') || btn.closest('#applicantDashboardContent') || document;
-      containerContext.querySelectorAll('.tab-content').forEach(c => {
-        c.style.display = 'none';
-        c.classList.remove('active');
-      });
-
-      const target = document.getElementById(tabId);
-      if (target) {
-        target.style.display = 'block';
-        target.classList.add('active');
-
-        if (tabId === 'tab-schedule') {
-          await renderAnnouncementsBoard();
-          await renderWhen2Meet();
-        } else if (tabId === 'racomm-buddy-groups') {
-          await renderBuddyGroupBoard();
-        } else if (tabId === 'racomm-buddy-tasks') {
-          await renderOfficerBuddyTasksManager();
-        } else if (tabId === 'racomm-roster') {
-          await renderRoster();
-        } else if (tabId === 'tab-perks') {
+        const res = await withdrawFromTask(taskId, amount);
+        showToast(res.message, res.success ? 'success' : 'error');
+        if (res.success) {
+          await handleAuth();
           await renderShopView();
         }
       }
     });
-  });
 
-  const valModal = document.getElementById('manualCodeModal');
-  document.getElementById('manualValidateBtn')?.addEventListener('click', () => {
-    if (valModal) {
-      valModal.style.display = 'flex';
-      const inp = document.getElementById('manualCodeInput');
-      if (inp) { inp.value = ''; inp.focus(); }
-    }
-  });
-
-  document.getElementById('cancelManualCodeBtn')?.addEventListener('click', () => {
-    if (valModal) valModal.style.display = 'none';
-  });
-
-  document.getElementById('submitManualCodeBtn')?.addEventListener('click', async () => {
-    const input = document.getElementById('manualCodeInput');
-    const code = input?.value.trim();
-    if (!code || code.length < 6) {
-      showToast('Enter a valid 6-character code.', 'error');
-      return;
-    }
-    const res = await verifyUniversalCode(code, currentUser.email);
-    showToast(res.message, res.success ? 'success' : 'error');
-    if (valModal) valModal.style.display = 'none';
-    await handleAuth();
-  });
-
-  document.getElementById('showQrBtn')?.addEventListener('click', async () => {
-    const container = document.getElementById('qrDisplayContainer');
-    const canvas = document.getElementById('qrcodeCanvas');
-    const text = document.getElementById('applicantShortCodeText');
-
-    const activeSession = await getActiveTambaySession(currentUser.id);
-    const isTimingOut = !!activeSession;
-
-    const code = await generateApplicantShortCode(null, 'TAMBAY');
-    if (text) text.textContent = code || 'ERROR';
-
-    const verifyUrl = `${window.location.origin}${window.location.pathname}?verifyCode=${code}`;
-    
-    if (canvas) {
-      canvas.innerHTML = `
-        <div style="margin-bottom: 8px;">
-          <span class="badge" style="background: ${isTimingOut ? '#b33a2b' : 'var(--brand-forest)'}; color: #ffffff;">
-            ${isTimingOut ? 'Scan to TIME-OUT' : 'Scan to TIME-IN'}
-          </span>
-        </div>
-        <img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(verifyUrl)}" 
-             alt="Tambay QR" width="160" height="160" style="border-radius: 6px;" />
-      `;
-    }
-
-    if (container) container.style.display = 'block';
-  });
-
-  document.getElementById('closeQrBtn')?.addEventListener('click', () => {
-    const container = document.getElementById('qrDisplayContainer');
-    if (container) container.style.display = 'none';
-  });
-
-  /* Shop Handlers */
-  document.getElementById('dynamicPotsContainer')?.addEventListener('click', async (e) => {
-    if (e.target.classList.contains('chip-in-btn')) {
-      const taskId = e.target.dataset.taskId;
-      const input = document.getElementById(`chipInAmt-${taskId}`);
-      const amount = parseInt(input?.value, 10);
-      if (!amount || amount <= 0) return;
-
-      const res = await chipInToTask(taskId, amount);
+    document.getElementById('buyTambayBoostBtn')?.addEventListener('click', async () => {
+      const res = await buyTambayMultiplierBoost();
       showToast(res.message, res.success ? 'success' : 'error');
-      if (res.success) {
-        await handleAuth();
-        await renderShopView();
-      }
-    }
+      if (res.success) await handleAuth();
+    });
 
-    if (e.target.classList.contains('withdraw-btn')) {
-      const taskId = e.target.dataset.taskId;
-      const input = document.getElementById(`withdrawAmt-${taskId}`);
-      const amount = parseInt(input?.value, 10);
-      if (!amount || amount <= 0) return;
+    document.getElementById('swapTargetSigSelect')?.addEventListener('change', async () => {
+      await updateSwapOptions();
+    });
 
-      const res = await withdrawFromTask(taskId, amount);
-      showToast(res.message, res.success ? 'success' : 'error');
-      if (res.success) {
-        await handleAuth();
-        await renderShopView();
-      }
-    }
-  });
+    document.getElementById('openRandomSwapModalBtn')?.addEventListener('click', () => openSwapModal('random'));
+    document.getElementById('openSpecificSwapModalBtn')?.addEventListener('click', () => openSwapModal('specific'));
+    document.getElementById('cancelSwapBtn')?.addEventListener('click', () => {
+      document.getElementById('swapTraitModal').style.display = 'none';
+    });
 
-  document.getElementById('buyTambayBoostBtn')?.addEventListener('click', async () => {
-    const res = await buyTambayMultiplierBoost();
-    showToast(res.message, res.success ? 'success' : 'error');
-    if (res.success) await handleAuth();
-  });
+    document.getElementById('confirmSwapBtn')?.addEventListener('click', async () => {
+      const sigId = document.getElementById('swapTargetSigSelect')?.value;
+      if (!sigId) return;
 
-  document.getElementById('swapTargetSigSelect')?.addEventListener('change', async () => {
-    await updateSwapOptions();
-  });
+      const availableTraits = await getFilteredAvailableTraits(sigId);
 
-  document.getElementById('openRandomSwapModalBtn')?.addEventListener('click', () => openSwapModal('random'));
-  document.getElementById('openSpecificSwapModalBtn')?.addEventListener('click', () => openSwapModal('specific'));
-  document.getElementById('cancelSwapBtn')?.addEventListener('click', () => {
-    document.getElementById('swapTraitModal').style.display = 'none';
-  });
-
-  document.getElementById('confirmSwapBtn')?.addEventListener('click', async () => {
-    const sigId = document.getElementById('swapTargetSigSelect')?.value;
-    if (!sigId) return;
-
-    const availableTraits = await getFilteredAvailableTraits(sigId);
-
-    if (availableTraits.length === 0) {
-      showToast('All available traits from the pool are already assigned to you!', 'error');
-      return;
-    }
-
-    const cost = activeSwapMode === 'specific' ? 50 : 30;
-    let chosenTrait = '';
-
-    if (activeSwapMode === 'specific') {
-      chosenTrait = document.getElementById('swapNewTraitSelect')?.value;
-      if (!chosenTrait) {
-        showToast('Please select a valid trait.', 'error');
+      if (availableTraits.length === 0) {
+        showToast('All available traits from the pool are already assigned to you!', 'error');
         return;
       }
-    } else {
-      chosenTrait = availableTraits[Math.floor(Math.random() * availableTraits.length)];
-    }
 
-    const ok = await swapSignatoryTrait(sigId, chosenTrait, cost);
-    if (ok) {
-      showToast(`Signatory trait updated to: "${chosenTrait}"`, 'success');
-      document.getElementById('swapTraitModal').style.display = 'none';
-      await handleAuth();
-      await renderDashboard();
-    } else {
-      showToast('Insufficient AC balance or failed to swap trait.', 'error');
-    }
-  });
+      const cost = activeSwapMode === 'specific' ? 50 : 30;
+      let chosenTrait = '';
 
-  /* Buddy Tasks Management Handlers */
-  document.getElementById('createBuddyTaskForm')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const title = document.getElementById('buddyTaskTitleInput')?.value.trim();
-    const desc = document.getElementById('buddyTaskDescInput')?.value.trim();
-    const targetGroup = document.getElementById('buddyTaskTargetGroupSelect')?.value;
-    const deadlineVal = document.getElementById('buddyTaskDeadlineInput')?.value;
-
-    if (!title || !deadlineVal) {
-      showToast('Title and deadline are required.', 'error');
-      return;
-    }
-
-    const isoDeadline = new Date(deadlineVal).toISOString();
-    const ok = await createBuddyTask(title, desc, targetGroup, isoDeadline);
-
-    if (ok) {
-      showToast('Buddy task published successfully!', 'success');
-      document.getElementById('buddyTaskTitleInput').value = '';
-      document.getElementById('buddyTaskDescInput').value = '';
-      document.getElementById('buddyTaskDeadlineInput').value = '';
-      await renderOfficerBuddyTasksManager();
-    } else {
-      showToast('Failed to create task.', 'error');
-    }
-  });
-
-  document.getElementById('racommBuddyTasksList')?.addEventListener('click', async (e) => {
-    const btn = e.target.closest('.delete-buddy-task-btn');
-    if (!btn) return;
-    if (confirm('Delete this buddy task?')) {
-      const ok = await deleteBuddyTask(btn.dataset.id);
-      if (ok) {
-        showToast('Task removed.', 'info');
-        await renderOfficerBuddyTasksManager();
-      }
-    }
-  });
-
-  /* Global Settings Controls */
-  document.getElementById('set1xBtn')?.addEventListener('click', async () => {
-    if (await updateGlobalSettings('hourly_multiplier', '1.0')) {
-      showToast('Multiplier set to 1.0x', 'info');
-      const settings = await getGlobalSettings();
-      updateSettingsButtons(settings.multiplier, settings.dailyCapEnabled);
-    }
-  });
-
-  document.getElementById('set2xBtn')?.addEventListener('click', async () => {
-    if (await updateGlobalSettings('hourly_multiplier', '2.0')) {
-      showToast('Multiplier set to 2.0x', 'success');
-      const settings = await getGlobalSettings();
-      updateSettingsButtons(settings.multiplier, settings.dailyCapEnabled);
-    }
-  });
-
-  document.getElementById('enableCapBtn')?.addEventListener('click', async () => {
-    if (await updateGlobalSettings('daily_cap_enabled', 'true')) {
-      showToast('Daily cap enabled', 'info');
-      const settings = await getGlobalSettings();
-      updateSettingsButtons(settings.multiplier, settings.dailyCapEnabled);
-    }
-  });
-
-  document.getElementById('disableCapBtn')?.addEventListener('click', async () => {
-    if (await updateGlobalSettings('daily_cap_enabled', 'false')) {
-      showToast('Daily cap removed', 'info');
-      const settings = await getGlobalSettings();
-      updateSettingsButtons(settings.multiplier, settings.dailyCapEnabled);
-    }
-  });
-
-  /* Save Event Dates Handler */
-  document.getElementById('racommEventScheduleManager')?.addEventListener('click', async (e) => {
-    if (e.target.classList.contains('save-event-date-btn')) {
-      const eventId = e.target.dataset.id;
-      const input = document.getElementById(`eventDate-${eventId}`);
-      
-      if (!input.value) {
-        return showToast('Please select a valid date and time.', 'error');
-      }
-
-      const isoDate = new Date(input.value).toISOString();
-      const ok = await updateOfficialEventDate(eventId, isoDate);
-      
-      if (ok) {
-        showToast('Event schedule updated!', 'success');
-        await renderOfficerEventSchedules();
+      if (activeSwapMode === 'specific') {
+        chosenTrait = document.getElementById('swapNewTraitSelect')?.value;
+        if (!chosenTrait) {
+          showToast('Please select a valid trait.', 'error');
+          return;
+        }
       } else {
-        showToast('Failed to update event schedule.', 'error');
+        chosenTrait = availableTraits[Math.floor(Math.random() * availableTraits.length)];
       }
-    }
-  });
 
-  document.getElementById('refreshBuddyGroupsBtn')?.addEventListener('click', async () => {
-    await renderBuddyGroupBoard();
-    showToast('Buddy groups refreshed.', 'info');
-  });
+      const ok = await swapSignatoryTrait(sigId, chosenTrait, cost);
+      if (ok) {
+        showToast(`Signatory trait updated to: "${chosenTrait}"`, 'success');
+        document.getElementById('swapTraitModal').style.display = 'none';
+        await handleAuth();
+        await renderDashboard();
+      } else {
+        showToast('Insufficient AC balance or failed to swap trait.', 'error');
+      }
+    });
 
-  document.getElementById('createGroupDashboardBtn')?.addEventListener('click', async () => {
-    const input = document.getElementById('newGroupNameInputDashboard');
-    const name = input?.value.trim();
-    if (!name) return;
-    if (await createBuddyGroup(name)) {
-      input.value = '';
-      showToast(`Group "${name}" created.`, 'success');
+    /* Buddy Tasks Management Handlers */
+    document.getElementById('createBuddyTaskForm')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const title = document.getElementById('buddyTaskTitleInput')?.value.trim();
+      const desc = document.getElementById('buddyTaskDescInput')?.value.trim();
+      const targetGroup = document.getElementById('buddyTaskTargetGroupSelect')?.value;
+      const deadlineVal = document.getElementById('buddyTaskDeadlineInput')?.value;
+
+      if (!title || !deadlineVal) {
+        showToast('Title and deadline are required.', 'error');
+        return;
+      }
+
+      const isoDeadline = new Date(deadlineVal).toISOString();
+      const ok = await createBuddyTask(title, desc, targetGroup, isoDeadline);
+
+      if (ok) {
+        showToast('Buddy task published successfully!', 'success');
+        document.getElementById('buddyTaskTitleInput').value = '';
+        document.getElementById('buddyTaskDescInput').value = '';
+        document.getElementById('buddyTaskDeadlineInput').value = '';
+        await renderOfficerBuddyTasksManager();
+      } else {
+        showToast('Failed to create task.', 'error');
+      }
+    });
+
+    document.getElementById('racommBuddyTasksList')?.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.delete-buddy-task-btn');
+      if (!btn) return;
+      if (confirm('Delete this buddy task?')) {
+        const ok = await deleteBuddyTask(btn.dataset.id);
+        if (ok) {
+          showToast('Task removed.', 'info');
+          await renderOfficerBuddyTasksManager();
+        }
+      }
+    });
+
+    /* Global Settings Controls */
+    document.getElementById('set1xBtn')?.addEventListener('click', async () => {
+      if (await updateGlobalSettings('hourly_multiplier', '1.0')) {
+        showToast('Multiplier set to 1.0x', 'info');
+        const settings = await getGlobalSettings();
+        updateSettingsButtons(settings.multiplier, settings.dailyCapEnabled, settings.memberSigLimitEnabled);
+      }
+    });
+
+    document.getElementById('set2xBtn')?.addEventListener('click', async () => {
+      if (await updateGlobalSettings('hourly_multiplier', '2.0')) {
+        showToast('Multiplier set to 2.0x', 'success');
+        const settings = await getGlobalSettings();
+        updateSettingsButtons(settings.multiplier, settings.dailyCapEnabled, settings.memberSigLimitEnabled);
+      }
+    });
+
+    document.getElementById('enableCapBtn')?.addEventListener('click', async () => {
+      if (await updateGlobalSettings('daily_cap_enabled', 'true')) {
+        showToast('Daily cap enabled', 'info');
+        const settings = await getGlobalSettings();
+        updateSettingsButtons(settings.multiplier, settings.dailyCapEnabled, settings.memberSigLimitEnabled);
+      }
+    });
+
+    document.getElementById('disableCapBtn')?.addEventListener('click', async () => {
+      if (await updateGlobalSettings('daily_cap_enabled', 'false')) {
+        showToast('Daily cap removed', 'info');
+        const settings = await getGlobalSettings();
+        updateSettingsButtons(settings.multiplier, settings.dailyCapEnabled, settings.memberSigLimitEnabled);
+      }
+    });
+
+    document.getElementById('enableSigLimitBtn')?.addEventListener('click', async () => {
+      if (await updateGlobalSettings('member_sig_limit_enabled', 'true')) {
+        showToast('Global 4-signature limit enabled', 'info');
+        const settings = await getGlobalSettings();
+        document.getElementById('currentSigLimitText').textContent = 'Active';
+        updateSettingsButtons(settings.multiplier, settings.dailyCapEnabled, settings.memberSigLimitEnabled);
+      }
+    });
+
+    document.getElementById('disableSigLimitBtn')?.addEventListener('click', async () => {
+      if (await updateGlobalSettings('member_sig_limit_enabled', 'false')) {
+        showToast('Global 4-signature limit disabled', 'info');
+        const settings = await getGlobalSettings();
+        document.getElementById('currentSigLimitText').textContent = 'Disabled';
+        updateSettingsButtons(settings.multiplier, settings.dailyCapEnabled, settings.memberSigLimitEnabled);
+      }
+    });
+
+    /* Save Event Dates Handler */
+    document.getElementById('racommEventScheduleManager')?.addEventListener('click', async (e) => {
+      if (e.target.classList.contains('save-event-date-btn')) {
+        const eventId = e.target.dataset.id;
+        const input = document.getElementById(`eventDate-${eventId}`);
+        
+        if (!input.value) {
+          return showToast('Please select a valid date and time.', 'error');
+        }
+
+        const isoDate = new Date(input.value).toISOString();
+        const ok = await updateOfficialEventDate(eventId, isoDate);
+        
+        if (ok) {
+          showToast('Event schedule updated!', 'success');
+          await renderOfficerEventSchedules();
+        } else {
+          showToast('Failed to update event schedule.', 'error');
+        }
+      }
+    });
+
+    document.getElementById('refreshBuddyGroupsBtn')?.addEventListener('click', async () => {
       await renderBuddyGroupBoard();
-    }
-  });
+      showToast('Buddy groups refreshed.', 'info');
+    });
 
-  document.getElementById('buddyGroupsBoard')?.addEventListener('click', async (e) => {
-    if (e.target.classList.contains('delete-group-btn')) {
-      if (confirm('Delete this buddy group?')) {
-        if (await deleteBuddyGroup(e.target.dataset.id)) {
-          showToast('Group deleted.', 'info');
+    document.getElementById('createGroupDashboardBtn')?.addEventListener('click', async () => {
+      const input = document.getElementById('newGroupNameInputDashboard');
+      const name = input?.value.trim();
+      if (!name) return;
+      if (await createBuddyGroup(name)) {
+        input.value = '';
+        showToast(`Group "${name}" created.`, 'success');
+        await renderBuddyGroupBoard();
+      }
+    });
+
+    document.getElementById('buddyGroupsBoard')?.addEventListener('click', async (e) => {
+      if (e.target.classList.contains('delete-group-btn')) {
+        if (confirm('Delete this buddy group?')) {
+          if (await deleteBuddyGroup(e.target.dataset.id)) {
+            showToast('Group deleted.', 'info');
+            await renderBuddyGroupBoard();
+          }
+        }
+      }
+    });
+
+    document.getElementById('buddyGroupsBoard')?.addEventListener('change', async (e) => {
+      if (e.target.classList.contains('reassign-applicant-select')) {
+        const applicantId = e.target.dataset.id;
+        const newGroup = e.target.value;
+        if (await assignApplicantBuddyGroup(applicantId, newGroup)) {
+          showToast(`Applicant assigned to ${newGroup}`, 'success');
+          await renderBuddyGroupBoard();
+          await renderRoster();
+        }
+      }
+
+      if (e.target.classList.contains('reassign-member-select')) {
+        const memberId = e.target.dataset.id;
+        const newGroup = e.target.value;
+        if (await assignMemberBuddyGroup(memberId, newGroup)) {
+          showToast(`Member assigned to ${newGroup}`, 'success');
           await renderBuddyGroupBoard();
         }
       }
-    }
-  });
+    });
 
-  document.getElementById('buddyGroupsBoard')?.addEventListener('change', async (e) => {
-    if (e.target.classList.contains('reassign-applicant-select')) {
-      const applicantId = e.target.dataset.id;
-      const newGroup = e.target.value;
-      if (await assignApplicantBuddyGroup(applicantId, newGroup)) {
-        showToast(`Applicant assigned to ${newGroup}`, 'success');
-        await renderBuddyGroupBoard();
-        await renderRoster();
-      }
-    }
-
-    if (e.target.classList.contains('reassign-member-select')) {
-      const memberId = e.target.dataset.id;
-      const newGroup = e.target.value;
-      if (await assignMemberBuddyGroup(memberId, newGroup)) {
-        showToast(`Member assigned to ${newGroup}`, 'success');
-        await renderBuddyGroupBoard();
-      }
-    }
-  });
-
-  document.getElementById('saveAssignedGroupBtn')?.addEventListener('click', async () => {
-    const select = document.getElementById('inspectBuddyGroupSelect');
-    const groupName = select?.value;
-    if (inspectedApplicantId && groupName) {
-      if (await assignApplicantBuddyGroup(inspectedApplicantId, groupName)) {
-        showToast(`Assigned to ${groupName}!`, 'success');
-        await renderRoster();
-        await renderBuddyGroupBoard();
-      }
-    }
-  });
-
-  document.getElementById('postAnnouncementBtn')?.addEventListener('click', async () => {
-    const titleIn = document.getElementById('announcementTitleInput');
-    const contentIn = document.getElementById('announcementContentInput');
-    if (!titleIn?.value.trim() || !contentIn?.value.trim()) return;
-
-    if (await createAnnouncement(titleIn.value.trim(), contentIn.value.trim(), currentUser.email, null)) {
-      titleIn.value = '';
-      contentIn.value = '';
-      showToast('Announcement posted.', 'success');
-      await renderAnnouncementsBoard();
-    }
-  });
-
-  document.getElementById('announcementsList')?.addEventListener('click', async (e) => {
-    if (e.target.classList.contains('delete-ann-btn')) {
-      if (confirm('Delete this announcement?')) {
-        if (await deleteAnnouncement(e.target.dataset.id)) {
-          showToast('Announcement removed.', 'info');
-          await renderAnnouncementsBoard();
+    document.getElementById('saveAssignedGroupBtn')?.addEventListener('click', async () => {
+      const select = document.getElementById('inspectBuddyGroupSelect');
+      const groupName = select?.value;
+      if (inspectedApplicantId && groupName) {
+        if (await assignApplicantBuddyGroup(inspectedApplicantId, groupName)) {
+          showToast(`Assigned to ${groupName}!`, 'success');
+          await renderRoster();
+          await renderBuddyGroupBoard();
         }
       }
-    }
-  });
-
-  document.getElementById('when2meetStartDateInput')?.addEventListener('change', async (e) => {
-    if (e.target.value) {
-      currentMonday = getMonday(new Date(e.target.value));
-      await renderWhen2Meet();
-    }
-  });
-
-  document.getElementById('availabilityGridTbody')?.addEventListener('click', async (e) => {
-    const cell = e.target.closest('.w2m-cell');
-    if (!cell || !currentUser) return;
-
-    const slot = cell.dataset.slot;
-    const isMine = cell.dataset.mine === 'true';
-
-    const profile = await getUserProfileData(currentUser.id);
-    const displayName = profile?.nickname || profile?.full_name || currentUser.email.split('@')[0];
-
-    const ok = await toggleUserAvailabilitySlot(currentUser.id, displayName, slot, isMine);
-    if (!ok) {
-      showToast('Could not update slot. Please check your connection.', 'error');
-    }
-    await renderWhen2Meet();
-  });
-
-  document.getElementById('searchApplicantInput')?.addEventListener('input', (e) => {
-    const term = e.target.value.toLowerCase().trim();
-    document.querySelectorAll('#applicantRosterTbody tr').forEach(row => {
-      row.style.display = row.textContent.toLowerCase().includes(term) ? '' : 'none';
     });
-  });
 
-  document.getElementById('applicantRosterTbody')?.addEventListener('click', async (e) => {
-    if (e.target.classList.contains('inspect-btn')) {
-      await openInspection(e.target.dataset.id);
-    }
-  });
+    document.getElementById('postAnnouncementBtn')?.addEventListener('click', async () => {
+      const titleIn = document.getElementById('announcementTitleInput');
+      const contentIn = document.getElementById('announcementContentInput');
+      if (!titleIn?.value.trim() || !contentIn?.value.trim()) return;
 
-  document.getElementById('closeInspectModalBtn')?.addEventListener('click', () => {
-    const m = document.getElementById('adminInspectionModal');
-    if (m) m.style.display = 'none';
-  });
-
-  document.getElementById('adminAddHoursBtn')?.addEventListener('click', async () => {
-    const val = prompt('Enter hours to credit (+/-):');
-    if (val && !isNaN(val)) {
-      await adminAdjustTambayHours(inspectedApplicantId, parseFloat(val));
-      showToast('Hours adjusted.', 'success');
-      await openInspection(inspectedApplicantId);
-      await renderRoster();
-    }
-  });
-
-  document.getElementById('adminEditTokensBtn')?.addEventListener('click', async () => {
-    const val = prompt('Enter new token balance:');
-    if (val && !isNaN(val)) {
-      await adminAdjustTokens(inspectedApplicantId, parseInt(val, 10));
-      showToast('Balance updated.', 'success');
-      await openInspection(inspectedApplicantId);
-    }
-  });
-
-  document.getElementById('inspectSignatoriesList')?.addEventListener('change', async (e) => {
-    if (e.target.classList.contains('admin-sig-check')) {
-      await adminToggleApplicantSignatory(e.target.dataset.id, e.target.checked);
-      showToast('Signatory status updated.', 'success');
-      await renderRoster();
-    }
-  });
-
-  document.getElementById('adminDeleteApplicantBtn')?.addEventListener('click', async () => {
-    if (inspectedApplicantId && confirm('Delete this applicant profile? This action is permanent.')) {
-      const success = await deleteApplicantProfile(inspectedApplicantId);
-      if (success) {
-        document.getElementById('adminInspectionModal').style.display = 'none';
-        showToast('Profile deleted successfully.', 'info');
-        await renderRoster();
-        await renderBuddyGroupBoard();
-      } else {
-        showToast('Failed to delete applicant profile.', 'error');
+      if (await createAnnouncement(titleIn.value.trim(), contentIn.value.trim(), currentUser.email, null)) {
+        titleIn.value = '';
+        contentIn.value = '';
+        showToast('Announcement posted.', 'success');
+        await renderAnnouncementsBoard();
       }
-    }
+    });
+
+    document.getElementById('announcementsList')?.addEventListener('click', async (e) => {
+      if (e.target.classList.contains('delete-ann-btn')) {
+        if (confirm('Delete this announcement?')) {
+          if (await deleteAnnouncement(e.target.dataset.id)) {
+            showToast('Announcement removed.', 'info');
+            await renderAnnouncementsBoard();
+          }
+        }
+      }
+    });
+
+    document.getElementById('when2meetStartDateInput')?.addEventListener('change', async (e) => {
+      if (e.target.value) {
+        currentMonday = getMonday(new Date(e.target.value));
+        await renderWhen2Meet();
+      }
+    });
+
+    document.getElementById('availabilityGridTbody')?.addEventListener('click', async (e) => {
+      const cell = e.target.closest('.w2m-cell');
+      if (!cell || !currentUser) return;
+
+      const slot = cell.dataset.slot;
+      const isMine = cell.dataset.mine === 'true';
+
+      const profile = await getUserProfileData(currentUser.id);
+      const displayName = profile?.nickname || profile?.full_name || currentUser.email.split('@')[0];
+
+      const ok = await toggleUserAvailabilitySlot(currentUser.id, displayName, slot, isMine);
+      if (!ok) {
+        showToast('Could not update slot. Please check your connection.', 'error');
+      }
+      await renderWhen2Meet();
+    });
+
+    document.getElementById('searchApplicantInput')?.addEventListener('input', (e) => {
+      const term = e.target.value.toLowerCase().trim();
+      document.querySelectorAll('#applicantRosterTbody tr').forEach(row => {
+        row.style.display = row.textContent.toLowerCase().includes(term) ? '' : 'none';
+      });
+    });
+
+    document.getElementById('applicantRosterTbody')?.addEventListener('click', async (e) => {
+      if (e.target.classList.contains('inspect-btn')) {
+        await openInspection(e.target.dataset.id);
+      }
+    });
+
+    document.getElementById('closeInspectModalBtn')?.addEventListener('click', () => {
+      const m = document.getElementById('adminInspectionModal');
+      if (m) m.style.display = 'none';
+    });
+
+    document.getElementById('adminAddHoursBtn')?.addEventListener('click', async () => {
+      const val = prompt('Enter hours to credit (+/-):');
+      if (val && !isNaN(val)) {
+        await adminAdjustTambayHours(inspectedApplicantId, parseFloat(val));
+        showToast('Hours adjusted.', 'success');
+        await openInspection(inspectedApplicantId);
+        await renderRoster();
+      }
+    });
+
+    document.getElementById('adminEditTokensBtn')?.addEventListener('click', async () => {
+      const val = prompt('Enter new token balance:');
+      if (val && !isNaN(val)) {
+        await adminAdjustTokens(inspectedApplicantId, parseInt(val, 10));
+        showToast('Balance updated.', 'success');
+        await openInspection(inspectedApplicantId);
+      }
+    });
+
+    document.getElementById('inspectSignatoriesList')?.addEventListener('change', async (e) => {
+      if (e.target.classList.contains('admin-sig-check')) {
+        await adminToggleApplicantSignatory(e.target.dataset.id, e.target.checked);
+        showToast('Signatory status updated.', 'success');
+        await renderRoster();
+      }
+    });
+
+    document.getElementById('adminDeleteApplicantBtn')?.addEventListener('click', async () => {
+      if (inspectedApplicantId && confirm('Delete this applicant profile? This action is permanent.')) {
+        const success = await deleteApplicantProfile(inspectedApplicantId);
+        if (success) {
+          document.getElementById('adminInspectionModal').style.display = 'none';
+          showToast('Profile deleted successfully.', 'info');
+          await renderRoster();
+          await renderBuddyGroupBoard();
+        } else {
+          showToast('Failed to delete applicant profile.', 'error');
+        }
+      }
+    });
+
+    document.getElementById('adminExportPdfBtn')?.addEventListener('click', async () => {
+      // 1. Open the tab IMMEDIATELY before awaiting anything to bypass popup blockers
+      const win = window.open('', '_blank');
+      if (!win) {
+        showToast('Popup blocked! Please allow popups for this site.', 'error');
+        return;
+      }
+      
+      win.document.write('<h3 style="font-family: sans-serif; color: #1b382b;">Loading report...</h3>');
+
+      // 2. Fetch the data
+      const details = await getApplicantFullDetails(inspectedApplicantId);
+      if (!details) {
+        win.close();
+        return;
+      }
+      
+      const p = details.profile;
+      
+      // 3. Overwrite the loading text with the real data
+      win.document.open();
+      win.document.write(`
+        <html>
+          <head>
+            <title>Applicant Report - ${p.full_name}</title>
+            <style>
+              body { font-family: sans-serif; padding: 24px; color: #2a2016; }
+              h2 { color: #C1272D; border-bottom: 2px solid #FBB03B; padding-bottom: 6px; }
+              table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 0.85rem; }
+              th, td { border: 1px solid #DCD4C5; padding: 8px; text-align: left; }
+              th { background: #EBE5DA; }
+            </style>
+          </head>
+          <body>
+            <h2>UP GEOP Applicant Summary</h2>
+            <p><strong>Full Name:</strong> ${p.full_name} (${p.nickname})</p>
+            <p><strong>Buddy Family:</strong> ${p.buddy_group_name}</p>
+            <p><strong>Evaluation Grades:</strong> Interview: ${p.grade_interview || 0}/15 | OGT: ${p.grade_ogt || 0}/20 | Consti: ${p.grade_consti_quiz || 0}/10 | Buddy: ${p.grade_buddy_tasks || 0}/10</p>
+            <h3>Signatories</h3>
+            <table>
+              <thead><tr><th>Committee</th><th>Assigned Trait Requirement</th><th>Status</th><th>Signed By</th></tr></thead>
+              <tbody>
+                ${(details.signatories || []).map(s => `
+                  <tr><td>${s.committee_name}</td><td>${s.trait || s.task}</td><td>${s.completed ? 'Completed' : 'Pending'}</td><td>${s.signed_by || '-'}</td></tr>
+                `).join('')}
+              </tbody>
+            </table>
+            <script>window.onload = function() { window.print(); }<\/script>
+          </body>
+        </html>
+      `);
+      win.document.close();
+    });
+
+    document.getElementById('onboardingForm')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('onboardFullName')?.value.trim();
+      const nick = document.getElementById('onboardNickname')?.value.trim();
+      if (await createApplicantProfile(currentUser.id, name, nick)) {
+        showToast('Profile initialized.', 'success');
+        await handleAuth();
+      }
+    });
+
+    document.getElementById('loginGoogleBtn')?.addEventListener('click', signInWithGoogle);
+    document.getElementById('logoutBtn')?.addEventListener('click', signOutUser);
   });
-
-  document.getElementById('adminExportPdfBtn')?.addEventListener('click', async () => {
-    // 1. Open the tab IMMEDIATELY before awaiting anything to bypass popup blockers
-    const win = window.open('', '_blank');
-    if (!win) {
-      showToast('Popup blocked! Please allow popups for this site.', 'error');
-      return;
-    }
-    
-    win.document.write('<h3 style="font-family: sans-serif; color: #1b382b;">Loading report...</h3>');
-
-    // 2. Fetch the data
-    const details = await getApplicantFullDetails(inspectedApplicantId);
-    if (!details) {
-      win.close();
-      return;
-    }
-    
-    const p = details.profile;
-    
-    // 3. Overwrite the loading text with the real data
-    win.document.open();
-    win.document.write(`
-      <html>
-        <head>
-          <title>Applicant Report - ${p.full_name}</title>
-          <style>
-            body { font-family: sans-serif; padding: 24px; color: #2a2016; }
-            h2 { color: #C1272D; border-bottom: 2px solid #FBB03B; padding-bottom: 6px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 0.85rem; }
-            th, td { border: 1px solid #DCD4C5; padding: 8px; text-align: left; }
-            th { background: #EBE5DA; }
-          </style>
-        </head>
-        <body>
-          <h2>UP GEOP Applicant Summary</h2>
-          <p><strong>Full Name:</strong> ${p.full_name} (${p.nickname})</p>
-          <p><strong>Buddy Family:</strong> ${p.buddy_group_name}</p>
-          <p><strong>Evaluation Grades:</strong> Interview: ${p.grade_interview || 0}/15 | OGT: ${p.grade_ogt || 0}/20 | Consti: ${p.grade_consti_quiz || 0}/10 | Buddy: ${p.grade_buddy_tasks || 0}/10</p>
-          <h3>Signatories</h3>
-          <table>
-            <thead><tr><th>Committee</th><th>Assigned Trait Requirement</th><th>Status</th><th>Signed By</th></tr></thead>
-            <tbody>
-              ${(details.signatories || []).map(s => `
-                <tr><td>${s.committee_name}</td><td>${s.trait || s.task}</td><td>${s.completed ? 'Completed' : 'Pending'}</td><td>${s.signed_by || '-'}</td></tr>
-              `).join('')}
-            </tbody>
-          </table>
-          <script>window.onload = function() { window.print(); }<\/script>
-        </body>
-      </html>
-    `);
-    win.document.close();
-  });
-
-  document.getElementById('onboardingForm')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const name = document.getElementById('onboardFullName')?.value.trim();
-    const nick = document.getElementById('onboardNickname')?.value.trim();
-    if (await createApplicantProfile(currentUser.id, name, nick)) {
-      showToast('Profile initialized.', 'success');
-      await handleAuth();
-    }
-  });
-
-  document.getElementById('loginGoogleBtn')?.addEventListener('click', signInWithGoogle);
-  document.getElementById('logoutBtn')?.addEventListener('click', signOutUser);
-});
+}
