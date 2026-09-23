@@ -106,7 +106,7 @@
             </div>
             <div style="display: flex; gap: 8px;">
               <input type="text" id="searchApplicantInput" placeholder="Filter by name..." style="min-height: 36px; padding: 4px 10px; font-size: 0.82rem;" />
-              <button id="adminExportCsvBtn" class="btn btn-checkin" style="min-height: 36px; padding: 4px 10px; font-size: 0.82rem;">CSV</button>
+              <button id="adminExportCsvBtn" class="btn btn-checkin" style="min-height: 36px; padding: 4px 10px; font-size: 0.82rem;">⬇️ CSV</button>
             </div>
           </div>
           <div class="table-responsive">
@@ -274,18 +274,6 @@
           </div>
         </section>
 
-        <!-- NEW: Top Tambayers Widget -->
-        <section class="card">
-          <div class="card-header">
-            <div>
-              <h2>Top Tambay Spotlight</h2>
-              <p class="subtext">The batch's top 5 most active tambayers.</p>
-            </div>
-            <span class="badge" style="background: var(--brand-forest); color: white;">Live</span>
-          </div>
-          <ul class="task-list" id="topTambayersList"></ul>
-        </section>
-
         <!-- Active Buddy Tasks Widget on Applicant Overview -->
         <section class="card" style="border: 2px solid var(--brand-forest);">
           <div class="card-header">
@@ -445,6 +433,19 @@
 
     <!-- Leaderboard Tab -->
     <div id="tab-leaderboard" class="tab-content" style="display: none;">
+      <!-- Top Tambayers Widget -->
+      <section class="card">
+        <div class="card-header">
+          <div>
+            <h2>Top Tambay Spotlight</h2>
+            <p class="subtext">The batch's top 5 most active tambayers.</p>
+          </div>
+          <span class="badge" style="background: var(--brand-forest); color: white;">Live</span>
+        </div>
+        <ul class="task-list" id="topTambayersList"></ul>
+      </section>
+
+      <!-- Buddy Group Rankings Widget -->
       <section class="card">
         <div class="card-header">
           <div>
