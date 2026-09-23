@@ -166,7 +166,7 @@ export async function getAllMembersList() {
   return data || [];
 }
 
-// NEW: Notification Helpers
+// Notification Helpers
 export async function createNotification(userId, message) {
   if (!supabase || !userId) return;
   await supabase.from('notifications').insert([{ user_id: userId, message }]);
@@ -179,6 +179,16 @@ export async function fetchAndClearNotifications(userId) {
     await supabase.from('notifications').update({ is_read: true }).eq('user_id', userId).in('id', data.map(n => n.id));
   }
   return data || [];
+}
+
+export async function getUnreadNotificationCount(userId) {
+  if (!supabase || !userId) return 0;
+  const { count, error } = await supabase
+    .from('notifications')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('is_read', false);
+  return count || 0;
 }
 
 export async function getSignatories(userId = null) {
@@ -1038,7 +1048,6 @@ export async function toggleUserAvailabilitySlot(userId, userName, timeSlot, isS
       .eq('time_slot', timeSlot);
     return !error;
   } else {
-    // Upsert prevents 409 Conflict errors if triggered multiple times
     const { error } = await supabase
       .from('availability_slots')
       .upsert([{
@@ -1052,6 +1061,5 @@ export async function toggleUserAvailabilitySlot(userId, userName, timeSlot, isS
 
 export async function updateOfficialEventDate(eventId, dateIso) {
   if (!supabase || !eventId) return false;
-  // Hijacks the global_settings table so we don't have to overhaul the database!
   return await updateGlobalSettings(`event_date_${eventId}`, dateIso);
 }
