@@ -105,7 +105,7 @@
             </div>
             <div style="display: flex; gap: 8px;">
               <input type="text" id="searchApplicantInput" placeholder="Filter by name..." style="min-height: 36px; padding: 4px 10px; font-size: 0.82rem;" />
-              <button id="adminExportCsvBtn" class="btn btn-checkin" style="min-height: 36px; padding: 4px 10px; font-size: 0.82rem;">⬇️ CSV</button>
+              <button id="adminExportCsvBtn" class="btn btn-checkin" style="min-height: 36px; padding: 4px 10px; font-size: 0.82rem;">CSV</button>
             </div>
           </div>
           <div class="table-responsive">
@@ -391,8 +391,12 @@
       </div>
     </div>
 
-    <!-- Universal Shared Tabs -->
-    <div id="tab-schedule" class="tab-content">
+    <!-- ==============================================
+         UNIVERSAL SHARED TABS
+         ============================================== -->
+
+    <!-- Schedule & Announcements Tab -->
+    <div id="tab-schedule" class="tab-content" style="display: none;">
       <section class="card">
         <div class="card-header">
           <h2>Announcements</h2>
@@ -426,7 +430,8 @@
       </section>
     </div>
 
-    <div id="tab-leaderboard" class="tab-content">
+    <!-- Leaderboard Tab -->
+    <div id="tab-leaderboard" class="tab-content" style="display: none;">
       <section class="card">
         <div class="card-header">
           <div>
