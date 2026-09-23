@@ -142,7 +142,6 @@ export async function checkIfRAComm(email) {
   return !!data.racomm;
 }
 
-// NEW: Added so regular members can fetch their Buddy Group assignments
 export async function getMemberProfile(email) {
   if (!supabase || !email) return null;
   const { data } = await supabase
@@ -163,6 +162,21 @@ export async function getAllMembersList() {
   if (error) {
     console.error('Error fetching members list:', error);
     return [];
+  }
+  return data || [];
+}
+
+// NEW: Notification Helpers
+export async function createNotification(userId, message) {
+  if (!supabase || !userId) return;
+  await supabase.from('notifications').insert([{ user_id: userId, message }]);
+}
+
+export async function fetchAndClearNotifications(userId) {
+  if (!supabase || !userId) return [];
+  const { data } = await supabase.from('notifications').select('*').eq('user_id', userId).eq('is_read', false);
+  if (data && data.length > 0) {
+    await supabase.from('notifications').update({ is_read: true }).eq('user_id', userId).in('id', data.map(n => n.id));
   }
   return data || [];
 }
@@ -380,6 +394,10 @@ export async function verifyUniversalCode(code, verifierEmail) {
     }
 
     await supabase.from('verification_codes').delete().eq('code', cleanCode);
+    
+    // Notify the applicant
+    await createNotification(codeRecord.user_id, `${member.full_name} verified your ${sig.trait || sig.task} signatory!`);
+    
     return { success: true, message: `Successfully endorsed by ${member.full_name}!` };
   }
 
@@ -402,6 +420,10 @@ export async function verifyUniversalCode(code, verifierEmail) {
       }
 
       await supabase.from('verification_codes').delete().eq('code', cleanCode);
+      
+      // Notify the applicant
+      await createNotification(codeRecord.user_id, `${member.full_name} scanned your Time-In!`);
+
       return { success: true, message: `Applicant timed in by ${member.full_name}.` };
     } else {
       const now = new Date();
@@ -445,6 +467,10 @@ export async function verifyUniversalCode(code, verifierEmail) {
       }
 
       await supabase.from('verification_codes').delete().eq('code', cleanCode);
+      
+      // Notify the applicant
+      await createNotification(codeRecord.user_id, `${member.full_name} timed you out (+${creditedHours} hrs)!`);
+
       return { 
         success: true, 
         message: `Applicant timed out. +${creditedHours} hrs credited by ${member.full_name}${hasBoost ? ' with 1.5x boost!' : '!'}` 
@@ -871,7 +897,11 @@ export async function getAllApplicantsProgress() {
       totalSigs,
       tambayHours,
       overallPercent,
-      isTimedIn: activeSet.has(p.id)
+      isTimedIn: activeSet.has(p.id),
+      gradeInterview: p.grade_interview || 0,
+      gradeOgt: p.grade_ogt || 0,
+      gradeConsti: p.grade_consti_quiz || 0,
+      gradeBuddy: p.grade_buddy_tasks || 0
     };
   });
 }
