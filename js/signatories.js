@@ -14,7 +14,7 @@ let activeCategory = 'ALL';
 function cleanTraitText(text) {
   if (!text) return '';
   let cleaned = text
-    .replace(/\u00a0/g, ' ')
+    .replace(/ /g, ' ')
     .trim()
     .replace(/^find\s+(an?|the|another|other)?\s*(member|person|someone)?\s*(who|na|that)?\s*/i, '')
     .replace(/^(another|other)?\s*member\s*(who|na|that)?\s*/i, '')
@@ -107,7 +107,7 @@ export async function renderSignatoriesTab(container) {
             const task = pesTasks.find(s => 
               (s.member_name || '').toLowerCase() === pes.fullName.toLowerCase() ||
               (s.task || '').toLowerCase() === pes.title.toLowerCase()
-            ) || { id: null, completed: false, nickname: '', favorite_spot: '', least_liked_sub: '', signed_by: null };
+            ) || { id: null, completed: false, nickname: '', favorite_tradition: '', top_field_role: '', unique_fact: '', signed_by: null };
 
             return `
               <div class="card" style="margin: 0; background: #ffffff; border-color: ${task.completed ? 'var(--brand-mint)' : 'var(--border-subtle)'};">
@@ -132,8 +132,9 @@ export async function renderSignatoriesTab(container) {
                 ${!task.completed ? `
                   <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 10px;">
                     <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="nickname" placeholder="Nickname" value="${task.nickname || ''}" ${!allCommitteesCompleted || !task.id ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
-                    <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="favorite_spot" placeholder="Favorite Spot" value="${task.favorite_spot || ''}" ${!allCommitteesCompleted || !task.id ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
-                    <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="least_liked_sub" placeholder="Least Liked Sub" value="${task.least_liked_sub || ''}" ${!allCommitteesCompleted || !task.id ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
+                    <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="favorite_tradition" placeholder="Favorite UP Geop Tradition" value="${task.favorite_tradition || ''}" ${!allCommitteesCompleted || !task.id ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
+                    <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="top_field_role" placeholder="Top Field Role" value="${task.top_field_role || ''}" ${!allCommitteesCompleted || !task.id ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
+                    <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="unique_fact" placeholder="Unique Fact About You" value="${task.unique_fact || ''}" ${!allCommitteesCompleted || !task.id ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
                   </div>
                   <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${task.id}" ${!allCommitteesCompleted || !task.id ? 'disabled style="opacity: 0.55; cursor: not-allowed;"' : ''} style="width: 100%;">
                     ${allCommitteesCompleted ? 'Generate PES Verification Code' : 'Unlock After All Committee Signatories'}
@@ -204,8 +205,9 @@ export async function renderSignatoriesTab(container) {
                   ${!vpTask.completed ? `
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 12px;">
                       <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="nickname" placeholder="Nickname" value="${vpTask.nickname || ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
-                      <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="favorite_spot" placeholder="Favorite Spot" value="${vpTask.favorite_spot || ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
-                      <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="least_liked_sub" placeholder="Least Liked Sub" value="${vpTask.least_liked_sub || ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
+                      <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="favorite_tradition" placeholder="Favorite UP Geop Tradition" value="${vpTask.favorite_tradition || ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
+                      <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="top_field_role" placeholder="Top Field Role" value="${vpTask.top_field_role || ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
+                      <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="unique_fact" placeholder="Unique Fact About You" value="${vpTask.unique_fact || ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
                     </div>
                     <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${vpTask.id}" ${!membersDone ? 'disabled style="opacity: 0.6; cursor: not-allowed;"' : ''} style="width: 100%;">
                       ${membersDone ? 'Generate Signatory Code' : 'Complete Member Tasks to Unlock'}
@@ -282,8 +284,9 @@ export async function renderSignatoriesTab(container) {
                           </select>
 
                           <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="nickname" placeholder="Nickname" value="${task.nickname || ''}" style="font-size: 0.8rem; padding: 6px;" />
-                          <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="favorite_spot" placeholder="Favorite Spot" value="${task.favorite_spot || ''}" style="font-size: 0.8rem; padding: 6px;" />
-                          <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="least_liked_sub" placeholder="Least Liked Sub" value="${task.least_liked_sub || ''}" style="font-size: 0.8rem; padding: 6px;" />
+                          <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="favorite_tradition" placeholder="Favorite UP Geop Tradition" value="${task.favorite_tradition || ''}" style="font-size: 0.8rem; padding: 6px;" />
+                          <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="top_field_role" placeholder="Top Field Role" value="${task.top_field_role || ''}" style="font-size: 0.8rem; padding: 6px;" />
+                          <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="unique_fact" placeholder="Unique Fact About You" value="${task.unique_fact || ''}" style="font-size: 0.8rem; padding: 6px;" />
                         </div>
                         <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${task.id}" style="width: 100%;">
                           Generate Signatory Code
