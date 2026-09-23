@@ -41,7 +41,9 @@ import {
   deleteBuddyTask,
   getApplicantBuddyTaskCompletions,
   toggleBuddyTaskCompletion,
-  updateOfficialEventDate
+  updateOfficialEventDate,
+  createNotification,
+  fetchAndClearNotifications
 } from './storage.js';
 
 import { renderSignatoriesTab } from './signatories.js';
@@ -536,6 +538,35 @@ async function renderOfficerEventSchedules() {
   }).join('');
 }
 
+async function renderLeaderboard() {
+  const container = document.getElementById('leaderboardContainer');
+  if (!container) return;
+
+  const [applicants, groups] = await Promise.all([
+    getAllApplicantsProgress(),
+    getManagedBuddyGroups()
+  ]);
+
+  const groupStats = groups.map(g => {
+    const members = applicants.filter(a => a.buddyGroup === g.name);
+    const avg = members.length ? members.reduce((sum, a) => sum + a.overallPercent, 0) / members.length : 0;
+    return { name: g.name, avg: Math.round(avg), count: members.length };
+  }).sort((a, b) => b.avg - a.avg);
+
+  container.innerHTML = groupStats.map((g, i) => `
+    <div class="card" style="margin: 0; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid ${i === 0 ? '#FBB03B' : 'var(--brand-clay)'};">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <h2 style="color: ${i === 0 ? '#FBB03B' : 'var(--text-muted)'}; margin: 0;">#${i + 1}</h2>
+        <div>
+          <h3 style="margin-bottom: 2px;">${g.name}</h3>
+          <small class="subtext">${g.count} Applicants</small>
+        </div>
+      </div>
+      <h2 style="color: var(--brand-forest); margin: 0;">${g.avg}%</h2>
+    </div>
+  `).join('') || '<p class="subtext">No groups established yet.</p>';
+}
+
 async function renderDashboard() {
   const [signatories, tambayHours, events, profile] = await Promise.all([
     getSignatories(),
@@ -924,6 +955,7 @@ async function handleAuth() {
       // Render the filtered Roster and Task lists for EVERYONE
       await renderRoster();
       await renderOfficerBuddyTasksManager();
+      await renderLeaderboard();
 
     } else {
       if (badge) badge.textContent = 'Applicant';
@@ -982,6 +1014,7 @@ async function handleAuth() {
         await renderDashboard();
         await renderApplicantBuddyTasks(profile.buddy_group_name);
         await renderShopView();
+        await renderLeaderboard();
       }
     }
   } else {
@@ -1018,6 +1051,7 @@ if (!window.__appInitialized) {
           await renderRoster();
           await renderBuddyGroupBoard();
           await renderDashboard();
+          await renderLeaderboard();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, async () => {
           await renderBuddyGroupBoard();
@@ -1025,11 +1059,13 @@ if (!window.__appInitialized) {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'signatories' }, async () => {
           showToast('Signatory matrix updated.', 'info');
           await renderDashboard();
+          await renderLeaderboard();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'event_attendees' }, async () => {
           showToast('Event attendance updated.', 'info');
           await renderDashboard();
           await renderRoster();
+          await renderLeaderboard();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'buddy_tasks' }, async () => {
           const profile = await getUserProfileData(currentUser?.id);
@@ -1054,6 +1090,16 @@ if (!window.__appInitialized) {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'tambay_sessions' }, async () => {
           await renderDashboard();
           await renderRoster();
+        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, async (payload) => {
+          if (payload.new.user_id === currentUser?.id) {
+            showToast(payload.new.message, 'info');
+            const badge = document.getElementById('notifBadge');
+            if (badge) {
+                badge.style.display = 'block';
+                badge.textContent = parseInt(badge.textContent || 0) + 1;
+            }
+          }
         })
         .subscribe();
     }
@@ -1123,6 +1169,8 @@ if (!window.__appInitialized) {
             await renderRoster();
           } else if (tabId === 'tab-perks') {
             await renderShopView();
+          } else if (tabId === 'tab-leaderboard') {
+            await renderLeaderboard();
           }
         }
       });
@@ -1185,6 +1233,44 @@ if (!window.__appInitialized) {
     document.getElementById('closeQrBtn')?.addEventListener('click', () => {
       const container = document.getElementById('qrDisplayContainer');
       if (container) container.style.display = 'none';
+    });
+
+    /* Notification Bell Handler */
+    document.getElementById('notificationBellBtn')?.addEventListener('click', async () => {
+      if (!currentUser) return;
+      const notifs = await fetchAndClearNotifications(currentUser.id);
+      const badge = document.getElementById('notifBadge');
+      if (badge) {
+          badge.style.display = 'none';
+          badge.textContent = '0';
+      }
+      if (notifs.length > 0) {
+          showToast('Notifications marked as read.', 'success');
+      } else {
+          showToast('No new notifications.', 'info');
+      }
+    });
+
+    /* CSV Export Handler */
+    document.getElementById('adminExportCsvBtn')?.addEventListener('click', async () => {
+      const applicants = await getAllApplicantsProgress();
+      let csv = "Name,Nickname,Buddy Group,Signatories,Tambay Hrs,Interview,OGT,Consti,Buddy Tasks,Total %\n";
+      
+      applicants.forEach(a => {
+        csv += `"${a.fullName}","${a.nickname}","${a.buddyGroup}","='${a.completedSigs}/${a.totalSigs}'",${a.tambayHours},${a.gradeInterview},${a.gradeOgt},${a.gradeConsti},${a.gradeBuddy},${a.overallPercent}%\n`;
+      });
+
+      const link = document.createElement("a");
+      link.href = encodeURI("data:text/csv;charset=utf-8," + csv);
+      link.download = `GEOP_Roster_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    });
+
+    document.getElementById('refreshLeaderboardBtn')?.addEventListener('click', async () => {
+      await renderLeaderboard();
+      showToast('Leaderboard refreshed', 'info');
     });
 
     /* Shop Handlers */
