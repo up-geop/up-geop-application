@@ -110,7 +110,7 @@ export async function renderSignatoriesTab(container) {
             ) || { id: null, completed: false, nickname: '', favorite_tradition: '', top_field_role: '', unique_fact: '', signed_by: null };
 
             return `
-              <div class="card" style="margin: 0; background: #ffffff; border-color: ${task.completed ? 'var(--brand-mint)' : 'var(--border-subtle)'};">
+              <div class="card" style="margin: 0; background: ${task.completed ? 'var(--brand-mint-subtle)' : 'var(--surface)'}; border-color: ${task.completed ? 'var(--brand-mint)' : 'var(--border-subtle)'};">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                   <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">${pes.title}</span>
                   <span class="badge" style="background: ${task.completed ? 'var(--brand-mint)' : 'var(--surface-subtle)'}; color: ${task.completed ? '#fff' : 'inherit'};">
