@@ -1,8 +1,10 @@
 import { CONFIG } from './config.js';
 
-export const supabase = window.supabase
-  ? window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY)
-  : null;
+// Strict Singleton: Prevents Multiple GoTrueClient instances
+if (!window.geopSupabaseInstance && window.supabase) {
+  window.geopSupabaseInstance = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+}
+export const supabase = window.geopSupabaseInstance || null;
 
 let cachedTraitsPool = null;
 let cachedTasksPool = null;
@@ -138,6 +140,17 @@ export async function checkIfRAComm(email) {
 
   if (error || !data) return false;
   return !!data.racomm;
+}
+
+// NEW: Added so regular members can fetch their Buddy Group assignments
+export async function getMemberProfile(email) {
+  if (!supabase || !email) return null;
+  const { data } = await supabase
+    .from('members')
+    .select('*')
+    .ilike('email', email.trim())
+    .maybeSingle();
+  return data;
 }
 
 export async function getAllMembersList() {
@@ -322,16 +335,20 @@ export async function verifyUniversalCode(code, verifierEmail) {
     }
 
     if (!isPESTask && !isVPTask) {
-      const { count, error: countErr } = await supabase
-        .from('signatories')
-        .select('id', { count: 'exact', head: true })
-        .eq('signed_by', member.full_name);
+      const settings = await getGlobalSettings();
+      
+      if (settings.memberSigLimitEnabled) {
+        const { count, error: countErr } = await supabase
+          .from('signatories')
+          .select('id', { count: 'exact', head: true })
+          .eq('signed_by', member.full_name);
 
-      if (!countErr && (count || 0) >= 4) {
-        return {
-          success: false,
-          message: `${member.full_name} has already signed the maximum limit of 4 slots for this applicant.`
-        };
+        if (!countErr && (count || 0) >= 4) {
+          return {
+            success: false,
+            message: `${member.full_name} has reached their global limit of endorsing 4 signatory tasks across all applicants.`
+          };
+        }
       }
     }
 
@@ -465,7 +482,7 @@ export async function getActiveTambaySession(userId) {
 }
 
 export async function getGlobalSettings() {
-  if (!supabase) return { multiplier: 1.0, dailyCapEnabled: true };
+  if (!supabase) return { multiplier: 1.0, dailyCapEnabled: true, memberSigLimitEnabled: true };
 
   const { data } = await supabase
     .from('global_settings')
@@ -473,15 +490,18 @@ export async function getGlobalSettings() {
 
   let multiplier = 1.0;
   let dailyCapEnabled = true;
+  let memberSigLimitEnabled = true;
 
   if (data) {
     const multObj = data.find(item => item.key === 'hourly_multiplier');
     const capObj = data.find(item => item.key === 'daily_cap_enabled');
+    const sigLimObj = data.find(item => item.key === 'member_sig_limit_enabled');
     if (multObj) multiplier = parseFloat(multObj.value) || 1.0;
     if (capObj) dailyCapEnabled = capObj.value === 'true';
+    if (sigLimObj) memberSigLimitEnabled = sigLimObj.value === 'true';
   }
 
-  return { multiplier, dailyCapEnabled };
+  return { multiplier, dailyCapEnabled, memberSigLimitEnabled };
 }
 
 export async function updateGlobalSettings(key, value) {
@@ -882,7 +902,11 @@ export async function adminAdjustTambayHours(applicantId, hours) {
       verified_by: 'RAComm Officer (Admin Adjust)'
     }]);
 
-  return !error;
+  if (error) {
+    console.error('Tambay Adjust Error:', error.message);
+    return false;
+  }
+  return true;
 }
 
 export async function adminAdjustTokens(applicantId, newBalance) {
@@ -984,13 +1008,14 @@ export async function toggleUserAvailabilitySlot(userId, userName, timeSlot, isS
       .eq('time_slot', timeSlot);
     return !error;
   } else {
+    // Upsert prevents 409 Conflict errors if triggered multiple times
     const { error } = await supabase
       .from('availability_slots')
-      .insert([{
+      .upsert([{
         user_id: userId,
         user_name: userName,
         time_slot: timeSlot
-      }]);
+      }], { onConflict: 'user_id,time_slot' });
     return !error;
   }
 }
