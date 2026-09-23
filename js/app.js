@@ -43,7 +43,8 @@ import {
   toggleBuddyTaskCompletion,
   updateOfficialEventDate,
   createNotification,
-  fetchAndClearNotifications
+  fetchAndClearNotifications,
+  getUnreadNotificationCount
 } from './storage.js';
 
 import { renderSignatoriesTab } from './signatories.js';
@@ -898,6 +899,18 @@ async function handleAuth() {
     if (bar) bar.style.display = 'flex';
     if (emailText) emailText.textContent = currentUser.email;
 
+    const unreadCount = await getUnreadNotificationCount(currentUser.id);
+    const notifBadge = document.getElementById('notifBadge');
+    if (notifBadge) {
+      if (unreadCount > 0) {
+        notifBadge.style.display = 'block';
+        notifBadge.textContent = unreadCount;
+      } else {
+        notifBadge.style.display = 'none';
+        notifBadge.textContent = '0';
+      }
+    }
+
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('verifyCode') || urlParams.get('validateApplicant');
     if (code) {
@@ -941,7 +954,8 @@ async function handleAuth() {
         document.querySelectorAll('#racommTabNav .tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelector('[data-tab="member-hub-view"]')?.classList.add('active');
 
-        document.querySelectorAll('#memberDashboardContent .tab-content').forEach(c => {
+        // Universally reset all tabs so shared tabs don't show
+        document.querySelectorAll('.tab-content').forEach(c => {
           c.style.display = 'none';
           c.classList.remove('active');
         });
@@ -952,7 +966,6 @@ async function handleAuth() {
         }
       }
       
-      // Render the filtered Roster and Task lists for EVERYONE
       await renderRoster();
       await renderOfficerBuddyTasksManager();
       await renderLeaderboard();
@@ -1147,8 +1160,9 @@ if (!window.__appInitialized) {
         }
         btn.classList.add('active');
 
-        const containerContext = btn.closest('#memberDashboardContent') || btn.closest('#applicantDashboardContent') || document;
-        containerContext.querySelectorAll('.tab-content').forEach(c => {
+        // UNIVERSAL HIDE FIX: This specifically targets all `.tab-content` divs on the page, 
+        // including those placed entirely outside the dashboard div structures.
+        document.querySelectorAll('.tab-content').forEach(c => {
           c.style.display = 'none';
           c.classList.remove('active');
         });
