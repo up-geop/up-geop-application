@@ -567,6 +567,37 @@ async function renderLeaderboard() {
   `).join('') || '<p class="subtext">No groups established yet.</p>';
 }
 
+async function renderTopTambayers() {
+  const list = document.getElementById('topTambayersList');
+  if (!list) return;
+
+  const applicants = await getAllApplicantsProgress();
+  const top5 = applicants
+    .filter(a => a.tambayHours > 0)
+    .sort((a, b) => b.tambayHours - a.tambayHours)
+    .slice(0, 5);
+
+  if (top5.length === 0) {
+    list.innerHTML = '<li class="subtext" style="padding: 10px 14px;">No tambay hours logged yet.</li>';
+    return;
+  }
+
+  list.innerHTML = top5.map((a, i) => `
+    <li class="task-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <strong style="font-size: 1.1rem; color: ${i === 0 ? '#FBB03B' : (i === 1 ? '#A8A9AD' : (i === 2 ? '#CD7F32' : 'var(--text-muted)'))};">#${i + 1}</strong>
+        <div>
+          <strong style="color: var(--text-heading); display: block;">${a.nickname ? `${a.nickname} (${a.fullName})` : a.fullName}</strong>
+          <small style="color: var(--text-muted);">${a.buddyGroup}</small>
+        </div>
+      </div>
+      <span class="badge" style="background: var(--brand-mint-subtle); color: var(--brand-forest); font-family: var(--font-mono); font-weight: 700; font-size: 0.85rem;">
+        ${a.tambayHours.toFixed(1)} hrs
+      </span>
+    </li>
+  `).join('');
+}
+
 async function renderDashboard() {
   const [signatories, tambayHours, events, profile] = await Promise.all([
     getSignatories(),
@@ -644,6 +675,8 @@ async function renderDashboard() {
       </li>
     `).join('');
   }
+  
+  await renderTopTambayers();
 }
 
 async function renderRoster() {
@@ -1043,6 +1076,23 @@ if (!window.__appInitialized) {
   window.__appInitialized = true;
 
   document.addEventListener('DOMContentLoaded', async () => {
+    
+    // --- Dark Mode Initialization ---
+    const savedTheme = localStorage.getItem('geop_theme');
+    if (savedTheme === 'dark') {
+      document.body.classList.add('dark-mode');
+      const darkToggle = document.getElementById('darkModeToggleBtn');
+      if (darkToggle) darkToggle.textContent = '☀️';
+    }
+
+    document.getElementById('darkModeToggleBtn')?.addEventListener('click', (e) => {
+      document.body.classList.toggle('dark-mode');
+      const isDark = document.body.classList.contains('dark-mode');
+      localStorage.setItem('geop_theme', isDark ? 'dark' : 'light');
+      e.target.textContent = isDark ? '☀️' : '🌙';
+    });
+    // --------------------------------
+
     await handleAuth();
 
     // Hunt down and destroy any lingering Service Workers
