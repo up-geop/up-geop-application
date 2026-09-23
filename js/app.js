@@ -540,62 +540,60 @@ async function renderOfficerEventSchedules() {
 
 async function renderLeaderboard() {
   const container = document.getElementById('leaderboardContainer');
-  if (!container) return;
+  const tambayList = document.getElementById('topTambayersList');
+  if (!container && !tambayList) return;
 
   const [applicants, groups] = await Promise.all([
     getAllApplicantsProgress(),
     getManagedBuddyGroups()
   ]);
 
-  const groupStats = groups.map(g => {
-    const members = applicants.filter(a => a.buddyGroup === g.name);
-    const avg = members.length ? members.reduce((sum, a) => sum + a.overallPercent, 0) / members.length : 0;
-    return { name: g.name, avg: Math.round(avg), count: members.length };
-  }).sort((a, b) => b.avg - a.avg);
+  if (container) {
+      const groupStats = groups.map(g => {
+        const members = applicants.filter(a => a.buddyGroup === g.name);
+        const avg = members.length ? members.reduce((sum, a) => sum + a.overallPercent, 0) / members.length : 0;
+        return { name: g.name, avg: Math.round(avg), count: members.length };
+      }).sort((a, b) => b.avg - a.avg);
 
-  container.innerHTML = groupStats.map((g, i) => `
-    <div class="card" style="margin: 0; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid ${i === 0 ? '#FBB03B' : 'var(--brand-clay)'};">
-      <div style="display: flex; align-items: center; gap: 12px;">
-        <h2 style="color: ${i === 0 ? '#FBB03B' : 'var(--text-muted)'}; margin: 0;">#${i + 1}</h2>
-        <div>
-          <h3 style="margin-bottom: 2px;">${g.name}</h3>
-          <small class="subtext">${g.count} Applicants</small>
+      container.innerHTML = groupStats.map((g, i) => `
+        <div class="card" style="margin: 0; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid ${i === 0 ? '#FBB03B' : 'var(--brand-clay)'};">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <h2 style="color: ${i === 0 ? '#FBB03B' : 'var(--text-muted)'}; margin: 0;">#${i + 1}</h2>
+            <div>
+              <h3 style="margin-bottom: 2px;">${g.name}</h3>
+              <small class="subtext">${g.count} Applicants</small>
+            </div>
+          </div>
+          <h2 style="color: var(--brand-forest); margin: 0;">${g.avg}%</h2>
         </div>
-      </div>
-      <h2 style="color: var(--brand-forest); margin: 0;">${g.avg}%</h2>
-    </div>
-  `).join('') || '<p class="subtext">No groups established yet.</p>';
-}
-
-async function renderTopTambayers() {
-  const list = document.getElementById('topTambayersList');
-  if (!list) return;
-
-  const applicants = await getAllApplicantsProgress();
-  const top5 = applicants
-    .filter(a => a.tambayHours > 0)
-    .sort((a, b) => b.tambayHours - a.tambayHours)
-    .slice(0, 5);
-
-  if (top5.length === 0) {
-    list.innerHTML = '<li class="subtext" style="padding: 10px 14px;">No tambay hours logged yet.</li>';
-    return;
+      `).join('') || '<p class="subtext">No groups established yet.</p>';
   }
 
-  list.innerHTML = top5.map((a, i) => `
-    <li class="task-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px;">
-      <div style="display: flex; align-items: center; gap: 12px;">
-        <strong style="font-size: 1.1rem; color: ${i === 0 ? '#FBB03B' : (i === 1 ? '#A8A9AD' : (i === 2 ? '#CD7F32' : 'var(--text-muted)'))};">#${i + 1}</strong>
-        <div>
-          <strong style="color: var(--text-heading); display: block;">${a.nickname ? `${a.nickname} (${a.fullName})` : a.fullName}</strong>
-          <small style="color: var(--text-muted);">${a.buddyGroup}</small>
-        </div>
-      </div>
-      <span class="badge" style="background: var(--brand-mint-subtle); color: var(--brand-forest); font-family: var(--font-mono); font-weight: 700; font-size: 0.85rem;">
-        ${a.tambayHours.toFixed(1)} hrs
-      </span>
-    </li>
-  `).join('');
+  if (tambayList) {
+      const top5 = applicants
+        .filter(a => a.tambayHours > 0)
+        .sort((a, b) => b.tambayHours - a.tambayHours)
+        .slice(0, 5);
+
+      if (top5.length === 0) {
+        tambayList.innerHTML = '<li class="subtext" style="padding: 10px 14px;">No tambay hours logged yet.</li>';
+      } else {
+        tambayList.innerHTML = top5.map((a, i) => `
+          <li class="task-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <strong style="font-size: 1.1rem; color: ${i === 0 ? '#FBB03B' : (i === 1 ? '#A8A9AD' : (i === 2 ? '#CD7F32' : 'var(--text-muted)'))};">#${i + 1}</strong>
+              <div>
+                <strong style="color: var(--text-heading); display: block;">${a.nickname ? `${a.nickname} (${a.fullName})` : a.fullName}</strong>
+                <small style="color: var(--text-muted);">${a.buddyGroup}</small>
+              </div>
+            </div>
+            <span class="badge" style="background: var(--brand-mint-subtle); color: var(--brand-forest); font-family: var(--font-mono); font-weight: 700; font-size: 0.85rem;">
+              ${a.tambayHours.toFixed(1)} hrs
+            </span>
+          </li>
+        `).join('');
+      }
+  }
 }
 
 async function renderDashboard() {
@@ -675,8 +673,6 @@ async function renderDashboard() {
       </li>
     `).join('');
   }
-  
-  await renderTopTambayers();
 }
 
 async function renderRoster() {
