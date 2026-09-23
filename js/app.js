@@ -276,7 +276,6 @@ async function renderOfficerBuddyTasksManager() {
     `;
   }
 
-  // If RAComm, show all. If Member, show ALL + their specific group.
   let relevantTasks = tasks;
   if (!isRAComm) {
     relevantTasks = tasks.filter(t => 
@@ -1252,14 +1251,25 @@ if (!window.__appInitialized) {
     /* Notification Bell Handler */
     document.getElementById('notificationBellBtn')?.addEventListener('click', async () => {
       if (!currentUser) return;
+      
+      // Fetch and clear the notifications from the database
       const notifs = await fetchAndClearNotifications(currentUser.id);
+      
+      // Reset the red badge to 0 and hide it
       const badge = document.getElementById('notifBadge');
       if (badge) {
           badge.style.display = 'none';
           badge.textContent = '0';
       }
-      if (notifs.length > 0) {
-          showToast('Notifications marked as read.', 'success');
+      
+      // Actually show the user what the notifications were!
+      if (notifs && notifs.length > 0) {
+          notifs.forEach((notif, index) => {
+              // Add a slight stagger if there are multiple notifications so they stack nicely
+              setTimeout(() => {
+                  showToast(notif.message, 'info');
+              }, index * 300); 
+          });
       } else {
           showToast('No new notifications.', 'info');
       }
