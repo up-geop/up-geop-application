@@ -119,26 +119,29 @@ function initCircuitMap(progressPercent) {
     doubleClickZoom: false
   }).setView([14.6560, 121.0680], 15);
 
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; OpenStreetMap &copy; CARTO'
+  // Esri Dark Gray Base - Clean, stable, and requires no API Key
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+    attribution: '&copy; Esri',
+    maxZoom: 16
   }).addTo(circuitMap);
 
+  // Match the polygon mask fill exactly to Esri's #242424 ocean color
   const worldBounds = [[90, -180], [90, 180], [-90, 180], [-90, -180]];
   L.polygon([worldBounds, upBoundaryGeoJSON], {
-    color: '#121212',
-    fillColor: '#121212',
+    color: '#242424',
+    fillColor: '#242424',
     fillOpacity: 1,
     stroke: false
   }).addTo(circuitMap);
 
   L.polyline(controlPoints, {
-    color: 'var(--brand-clay)',
-    weight: 4,
-    dashArray: '5, 10',
-    opacity: 0.6
+    color: '#FBB03B',
+    weight: 3,
+    dashArray: '5, 8',
+    opacity: 0.9
   }).addTo(circuitMap);
 
-  L.circleMarker(controlPoints[0], { radius: 6, color: '#FBB03B', fillColor: '#121212', fillOpacity: 1 }).addTo(circuitMap);
+  L.circleMarker(controlPoints[0], { radius: 6, color: '#FBB03B', fillColor: '#242424', fillOpacity: 1 }).addTo(circuitMap);
   L.circleMarker(controlPoints[controlPoints.length - 1], { radius: 8, color: 'var(--brand-mint)', fillColor: 'var(--brand-forest)', fillOpacity: 1 }).addTo(circuitMap);
 
   const currentPos = getCoordinateAlongPath(controlPoints, progressPercent);
