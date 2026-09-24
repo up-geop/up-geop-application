@@ -57,6 +57,103 @@ let inspectedApplicantId = null;
 let currentMonday = getMonday(new Date());
 let activeSwapMode = 'random';
 
+let circuitMap = null;
+let applicantMarker = null;
+
+const upBoundaryGeoJSON = [
+  [14.6599, 121.0620], [14.6644, 121.0683], [14.6625, 121.0740], 
+  [14.6542, 121.0782], [14.6465, 121.0742], [14.6461, 121.0610]
+];
+
+const controlPoints = [
+  [14.6540, 121.0690], // Point 1: Sunken Garden (Start)
+  [14.6548, 121.0660], // Point 2: Quezon Hall
+  [14.6582, 121.0652], // Point 3: Math/Science Complex
+  [14.6575, 121.0688]  // Point 4: Melchor Hall (End)
+];
+
+function getCoordinateAlongPath(path, percent) {
+  if (percent <= 0) return path[0];
+  if (percent >= 100) return path[path.length - 1];
+
+  const targetRatio = percent / 100;
+  let totalLength = 0;
+  const segmentLengths = [];
+
+  for (let i = 0; i < path.length - 1; i++) {
+    const p1 = path[i];
+    const p2 = path[i + 1];
+    const dist = Math.sqrt(Math.pow(p2[0] - p1[0], 2) + Math.pow(p2[1] - p1[1], 2));
+    segmentLengths.push(dist);
+    totalLength += dist;
+  }
+
+  let traveled = 0;
+  for (let i = 0; i < path.length - 1; i++) {
+    const segmentRatio = segmentLengths[i] / totalLength;
+    if (targetRatio <= traveled + segmentRatio) {
+      const remainingRatio = (targetRatio - traveled) / segmentRatio;
+      const p1 = path[i];
+      const p2 = path[i + 1];
+      const lat = p1[0] + (p2[0] - p1[0]) * remainingRatio;
+      const lng = p1[1] + (p2[1] - p1[1]) * remainingRatio;
+      return [lat, lng];
+    }
+    traveled += segmentRatio;
+  }
+  return path[path.length - 1];
+}
+
+function initCircuitMap(progressPercent) {
+  const mapContainer = document.getElementById('circuitMap');
+  if (!mapContainer) return;
+
+  if (circuitMap) {
+    circuitMap.remove();
+  }
+
+  circuitMap = L.map('circuitMap', {
+    zoomControl: false,
+    dragging: false,
+    scrollWheelZoom: false,
+    doubleClickZoom: false
+  }).setView([14.6560, 121.0680], 15);
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; OpenStreetMap &copy; CARTO'
+  }).addTo(circuitMap);
+
+  const worldBounds = [[90, -180], [90, 180], [-90, 180], [-90, -180]];
+  L.polygon([worldBounds, upBoundaryGeoJSON], {
+    color: '#121212',
+    fillColor: '#121212',
+    fillOpacity: 1,
+    stroke: false
+  }).addTo(circuitMap);
+
+  L.polyline(controlPoints, {
+    color: 'var(--brand-clay)',
+    weight: 4,
+    dashArray: '5, 10',
+    opacity: 0.6
+  }).addTo(circuitMap);
+
+  L.circleMarker(controlPoints[0], { radius: 6, color: '#FBB03B', fillColor: '#121212', fillOpacity: 1 }).addTo(circuitMap);
+  L.circleMarker(controlPoints[controlPoints.length - 1], { radius: 8, color: 'var(--brand-mint)', fillColor: 'var(--brand-forest)', fillOpacity: 1 }).addTo(circuitMap);
+
+  const currentPos = getCoordinateAlongPath(controlPoints, progressPercent);
+
+  applicantMarker = L.circleMarker(currentPos, {
+    radius: 7,
+    color: '#fff',
+    weight: 2,
+    fillColor: 'var(--brand-forest)',
+    fillOpacity: 1
+  }).addTo(circuitMap);
+
+  applicantMarker.bindPopup(`<strong>Circuit Progress: ${progressPercent}%</strong><br>Keep pushing to Melchor Hall!`).openPopup();
+}
+
 function getMonday(d) {
   const date = new Date(d);
   const day = date.getDay();
@@ -624,10 +721,11 @@ async function renderDashboard() {
     Math.round(eventPoints + sigPoints + tambayPoints + interviewPoints + ogtPoints + constiPoints + buddyTaskPoints)
   );
 
-  const bar = document.getElementById('progressBar');
   const barLabel = document.getElementById('progressBarLabel');
-  if (bar) bar.style.width = `${totalPercent}%`;
   if (barLabel) barLabel.textContent = `${totalPercent}%`;
+
+  // Initialize the WebGIS Circuit Map with the dynamic percentage
+  initCircuitMap(totalPercent);
 
   const sigText = document.getElementById('overviewSigText');
   if (sigText) sigText.textContent = `${completedSigs}/${totalSigs}`;
@@ -1230,6 +1328,14 @@ if (!window.__appInitialized) {
             await renderShopView();
           } else if (tabId === 'tab-leaderboard') {
             await renderLeaderboard();
+          } else if (tabId === 'tab-overview') {
+            // Leaflet has a known bug where it doesn't render properly if initialized inside a hidden div
+            // We force it to recalculate its size when the Overview tab is clicked
+            setTimeout(() => {
+              if (circuitMap) {
+                circuitMap.invalidateSize();
+              }
+            }, 100);
           }
         }
       });
