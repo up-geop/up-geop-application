@@ -12,10 +12,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
-  <!-- Leaflet WebGIS Requirements -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
   <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -268,16 +264,15 @@
           </div>
         </div>
 
-        <section class="card" style="padding: 0; overflow: hidden; border: 2px solid var(--brand-forest);">
-          <div class="card-header" style="padding: 16px 16px 8px 16px;">
-            <div>
-              <h2>Application Circuit</h2>
-              <p class="subtext">Your traverse progress across UP Diliman.</p>
-            </div>
-            <span id="progressBarLabel" class="badge" style="background: var(--brand-forest); color: white; font-weight: 700;">0%</span>
+        <!-- Restored Linear Progress Bar -->
+        <section class="card">
+          <div class="card-header">
+            <h2>Your Grade</h2>
+            <span id="progressBarLabel" class="badge">0%</span>
           </div>
-          <!-- Leaflet Map Container -->
-          <div id="circuitMap" style="height: 280px; width: 100%; background: #242424; z-index: 1;"></div>
+          <div style="background: var(--surface-subtle); height: 16px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border-medium);">
+            <div id="progressBar" style="background: var(--brand-forest); height: 100%; width: 0%; transition: width 0.3s ease;"></div>
+          </div>
         </section>
 
         <!-- Active Buddy Tasks Widget on Applicant Overview -->
