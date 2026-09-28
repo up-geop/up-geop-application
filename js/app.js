@@ -750,8 +750,8 @@ async function openInspection(appId) {
         <h4 style="margin: 0 0 8px 0; color: var(--brand-forest); font-size: 0.88rem;">Official Events Attendance (5% each)</h4>
         <div style="display: flex; flex-direction: column; gap: 6px; font-size: 0.82rem;">
           ${events.map(evt => `
-            <label style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #fff; border-radius: 4px; border: 1px solid var(--border-subtle); cursor: ${isRAComm ? 'pointer' : 'not-allowed'};">
-              <span style="font-size: 0.8rem;">${evt.name}</span>
+            <label style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: var(--surface); border-radius: 4px; border: 1px solid var(--border-subtle); cursor: ${isRAComm ? 'pointer' : 'not-allowed'};">
+              <span style="font-size: 0.8rem; color: var(--text-heading);">${evt.name}</span>
               <input type="checkbox" class="admin-event-check" data-event-id="${evt.id}" ${evt.attended ? 'checked' : ''} ${!isRAComm ? 'disabled' : ''} />
             </label>
           `).join('')}
