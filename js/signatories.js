@@ -81,9 +81,6 @@ export async function renderSignatoriesTab(container) {
     { label: 'O.A', value: 'O.A' }
   ];
 
-  // ==========================================
-  // HTML BUILDERS (To prevent syntax parsing errors)
-  // ==========================================
 
   let pesHtml = '';
   PES_LIST.forEach(pes => {
@@ -274,7 +271,6 @@ export async function renderSignatoriesTab(container) {
     `;
   });
 
-  // O.A Custom Card Builder
   let oaCardsHtml = '';
   if (oaTasks.length === 0) {
     oaCardsHtml = '<p class="subtext">No O.A signature tasks have been assigned in the database yet.</p>';
