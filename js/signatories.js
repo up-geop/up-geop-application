@@ -81,6 +81,251 @@ export async function renderSignatoriesTab(container) {
     { label: 'O.A', value: 'O.A' }
   ];
 
+  // ==========================================
+  // HTML BUILDERS (To prevent syntax parsing errors)
+  // ==========================================
+
+  let pesHtml = '';
+  PES_LIST.forEach(pes => {
+    const task = pesTasks.find(s => 
+      (s.member_name || '').toLowerCase() === pes.fullName.toLowerCase() ||
+      (s.task || '').toLowerCase() === pes.title.toLowerCase()
+    ) || { id: null, completed: false, nickname: '', favorite_tradition: '', top_field_role: '', unique_fact: '', signed_by: null };
+
+    const borderColor = task.completed ? 'var(--brand-mint)' : 'var(--border-subtle)';
+    const bgColor = task.completed ? 'var(--brand-mint-subtle)' : 'var(--surface)';
+    const badgeColor = task.completed ? 'var(--brand-mint)' : 'var(--surface-subtle)';
+    const textStatus = task.completed ? 'Completed' : (allCommitteesCompleted ? 'Unlocked' : 'Locked');
+    const disabledAttr = (!allCommitteesCompleted || !task.id) ? 'disabled' : '';
+    const btnDisabledAttr = (!allCommitteesCompleted || !task.id) ? 'disabled style="opacity: 0.55; cursor: not-allowed;"' : '';
+
+    let contentHtml = '';
+    if (!task.completed) {
+      contentHtml = `
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 10px;">
+          <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="nickname" placeholder="Nickname" value="${task.nickname || ''}" ${disabledAttr} style="font-size: 0.8rem; padding: 6px;" />
+          <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="favorite_tradition" placeholder="Favorite UP Geop Tradition" value="${task.favorite_tradition || ''}" ${disabledAttr} style="font-size: 0.8rem; padding: 6px;" />
+          <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="top_field_role" placeholder="Top Field Role" value="${task.top_field_role || ''}" ${disabledAttr} style="font-size: 0.8rem; padding: 6px;" />
+          <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="unique_fact" placeholder="Unique Fact About You" value="${task.unique_fact || ''}" ${disabledAttr} style="font-size: 0.8rem; padding: 6px;" />
+        </div>
+        <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${task.id}" ${btnDisabledAttr} style="width: 100%;">
+          ${allCommitteesCompleted ? 'Generate PES Verification Code' : 'Unlock After All Committee Signatories'}
+        </button>
+      `;
+    } else {
+      contentHtml = `<small style="color: var(--brand-forest); font-weight: 600;">Officially endorsed by ${task.signed_by || pes.fullName}</small>`;
+    }
+
+    pesHtml += `
+      <div class="card" style="margin: 0; background: ${bgColor}; border-color: ${borderColor};">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">${pes.title}</span>
+          <span class="badge" style="background: ${badgeColor}; color: ${task.completed ? '#fff' : 'inherit'};">${textStatus}</span>
+        </div>
+        <div style="display: flex; gap: 14px; align-items: center; margin-bottom: 12px;">
+          <img src="${pes.photo}" alt="${pes.fullName}" onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(pes.fullName)}&background=1b382b&color=fff';" style="width: 54px; height: 54px; border-radius: 50%; object-fit: cover; border: 2px solid var(--brand-clay); flex-shrink: 0;" />
+          <div>
+            <strong style="font-size: 0.95rem; color: var(--text-heading); display: block;">${pes.fullName}</strong>
+            <small style="color: var(--brand-clay-deep);">${pes.email}</small>
+          </div>
+        </div>
+        ${contentHtml}
+      </div>
+    `;
+  });
+
+  let committeesHtml = '';
+  COMMITTEES_LIST.forEach(comm => {
+    const commSigs = committeeTasks.filter(s => (s.committee_name || '').toLowerCase() === comm.name.toLowerCase());
+    const vpTask = commSigs.find(s => s.role === 'VP' || s.type === 'VP');
+    const memberTasks = commSigs.filter(s => s !== vpTask);
+    const membersDone = memberTasks.length > 0 && memberTasks.every(s => s.completed);
+
+    let vpTaskHtml = '';
+    if (vpTask) {
+      const borderColor = vpTask.completed ? 'var(--brand-mint)' : 'var(--border-medium)';
+      const bgColor = vpTask.completed ? 'var(--brand-mint-subtle)' : 'var(--surface)';
+      const badgeColor = vpTask.completed ? 'var(--brand-mint)' : 'var(--surface-subtle)';
+      const textStatus = vpTask.completed ? 'Completed' : (membersDone ? 'Unlocked' : 'Locked');
+      const disabledAttr = !membersDone ? 'disabled' : '';
+      const btnDisabledAttr = !membersDone ? 'disabled style="opacity: 0.6; cursor: not-allowed;"' : '';
+
+      let vpContentHtml = '';
+      if (!vpTask.completed) {
+        vpContentHtml = `
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 12px;">
+            <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="nickname" placeholder="Nickname" value="${vpTask.nickname || ''}" ${disabledAttr} style="font-size: 0.8rem; padding: 6px;" />
+            <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="favorite_tradition" placeholder="Favorite UP Geop Tradition" value="${vpTask.favorite_tradition || ''}" ${disabledAttr} style="font-size: 0.8rem; padding: 6px;" />
+            <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="top_field_role" placeholder="Top Field Role" value="${vpTask.top_field_role || ''}" ${disabledAttr} style="font-size: 0.8rem; padding: 6px;" />
+            <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="unique_fact" placeholder="Unique Fact About You" value="${vpTask.unique_fact || ''}" ${disabledAttr} style="font-size: 0.8rem; padding: 6px;" />
+          </div>
+          <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${vpTask.id}" ${btnDisabledAttr} style="width: 100%;">
+            ${membersDone ? 'Generate Signatory Code' : 'Complete Member Tasks to Unlock'}
+          </button>
+        `;
+      } else {
+        vpContentHtml = `<small style="color: var(--brand-forest); font-weight: 600;">Officially endorsed by ${vpTask.signed_by || comm.vp}</small>`;
+      }
+
+      vpTaskHtml = `
+        <div class="card" style="margin-bottom: 16px; border-color: ${borderColor}; background: ${bgColor};">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">VP Endorsement</span>
+            <span class="badge" style="background: ${badgeColor}; color: ${vpTask.completed ? '#fff' : 'inherit'};">${textStatus}</span>
+          </div>
+          <div style="display: flex; gap: 14px; align-items: center; margin-bottom: 14px;">
+            <img src="${comm.photo}" alt="${comm.vp}" onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(comm.vp)}&background=1b382b&color=fff';" style="width: 54px; height: 54px; border-radius: 50%; object-fit: cover; border: 2px solid var(--brand-forest); flex-shrink: 0;" />
+            <div>
+              <strong style="font-size: 0.95rem; color: var(--brand-forest); display: block;">${comm.vp}</strong>
+              <small style="color: var(--text-muted);">${comm.vpTitle}</small>
+              <div><small style="font-size: 0.75rem; color: var(--brand-clay-deep);">${comm.vpEmail}</small></div>
+            </div>
+          </div>
+          ${vpContentHtml}
+        </div>
+      `;
+    }
+
+    let membersHtml = '';
+    memberTasks.forEach((task, idx) => {
+      const rawTrait = task.trait || task.trait_description || task.task || 'Committee Member';
+      const cleanedTrait = cleanTraitText(rawTrait);
+      const rawPool = (task.task_pool && task.task_pool.length > 0) ? task.task_pool : fallbackTasksPool;
+      const pool = rawPool.filter(t => {
+        if (task.selected_task && t === task.selected_task) return true;
+        return !completedTasksSet.has(t.trim());
+      });
+
+      const borderColor = task.completed ? 'var(--brand-mint)' : 'var(--border-subtle)';
+      const bgColor = task.completed ? 'var(--brand-mint-subtle)' : 'var(--surface)';
+      const badgeColor = task.completed ? 'var(--brand-mint)' : 'var(--surface-subtle)';
+
+      let poolDropdownHtml = '';
+      if (!task.completed && pool.length > 0) {
+        let options = pool.map(t => `<option value="${t}" ${task.selected_task === t ? 'selected' : ''}>${t}</option>`).join('');
+        let resetBtn = task.selected_task ? `<button type="button" class="clear-task-btn" data-sig-id="${task.id}" style="background: none; border: none; color: var(--brand-clay-deep); font-size: 0.75rem; cursor: pointer; text-decoration: underline;">Reset</button>` : '';
+        poolDropdownHtml = `
+          <div style="margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted);">${task.selected_task ? 'Selected Task (Click to reassign):' : 'Assign a Task:'}</label>
+              ${resetBtn}
+            </div>
+            <select class="sig-task-select" data-sig-id="${task.id}" style="width: 100%; font-size: 0.82rem; padding: 6px;">
+              <option value="">-- Choose a task from pool --</option>
+              ${options}
+            </select>
+          </div>
+        `;
+      } else if (task.completed) {
+        poolDropdownHtml = `
+          <div style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 10px;">
+            <strong>Completed Task:</strong> ${task.selected_task || task.task}
+          </div>
+        `;
+      }
+
+      let taskContentHtml = '';
+      if (!task.completed) {
+        let membersOptions = membersList.map(m => `<option value="${m.full_name}" ${task.member_name === m.full_name ? 'selected' : ''}>${m.full_name}</option>`).join('');
+        taskContentHtml = `
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 10px;">
+            <select class="sig-input" data-sig-id="${task.id}" data-field="member_name" style="font-size: 0.8rem; padding: 6px;">
+              <option value="">-- Select Member --</option>
+              ${membersOptions}
+            </select>
+            <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="nickname" placeholder="Nickname" value="${task.nickname || ''}" style="font-size: 0.8rem; padding: 6px;" />
+            <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="favorite_tradition" placeholder="Favorite UP Geop Tradition" value="${task.favorite_tradition || ''}" style="font-size: 0.8rem; padding: 6px;" />
+            <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="top_field_role" placeholder="Top Field Role" value="${task.top_field_role || ''}" style="font-size: 0.8rem; padding: 6px;" />
+            <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="unique_fact" placeholder="Unique Fact About You" value="${task.unique_fact || ''}" style="font-size: 0.8rem; padding: 6px;" />
+          </div>
+          <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${task.id}" style="width: 100%;">
+            Generate Signatory Code
+          </button>
+        `;
+      } else {
+        taskContentHtml = `<small style="color: var(--brand-forest); font-weight: 600;">Signed by ${task.signed_by || 'Verified Member'}</small>`;
+      }
+
+      membersHtml += `
+        <div class="card" style="margin: 0; border-color: ${borderColor}; background: ${bgColor};">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">Member Task #${idx + 1}</span>
+            <span class="badge" style="background: ${badgeColor}; color: ${task.completed ? '#fff' : 'inherit'};">${task.completed ? 'Completed' : 'Pending'}</span>
+          </div>
+          <div style="margin-bottom: 10px;">
+            <strong style="display: block; font-size: 0.92rem; color: var(--brand-forest); margin-bottom: 4px;">${cleanedTrait}</strong>
+          </div>
+          ${poolDropdownHtml}
+          ${taskContentHtml}
+        </div>
+      `;
+    });
+
+    committeesHtml += `
+      <div class="card committee-card" data-committee="${comm.name}" style="margin: 0; padding: 20px;">
+        <h2 style="font-family: var(--font-display); color: var(--brand-forest); margin-bottom: 16px;">
+          ${comm.name} Committee
+        </h2>
+        ${vpTaskHtml}
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          ${membersHtml}
+        </div>
+      </div>
+    `;
+  });
+
+  // O.A Custom Card Builder
+  let oaCardsHtml = '';
+  if (oaTasks.length === 0) {
+    oaCardsHtml = '<p class="subtext">No O.A signature tasks have been assigned in the database yet.</p>';
+  } else {
+    oaTasks.forEach((task, idx) => {
+      const rawTrait = task.trait || task.trait_description || task.task || 'O.A Signature';
+      const cleanedTrait = cleanTraitText(rawTrait);
+      const borderColor = task.completed ? 'var(--brand-mint)' : 'var(--border-subtle)';
+      const bgColor = task.completed ? 'var(--brand-mint-subtle)' : 'var(--surface)';
+      const badgeColor = task.completed ? 'var(--brand-mint)' : 'var(--surface-subtle)';
+      const topBadgeText = task.task === 'GEOP Alum' || task.task === 'Other Member' ? task.task : 'O.A Task';
+
+      let taskContentHtml = '';
+      if (!task.completed) {
+        taskContentHtml = `
+          <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px;">
+            <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="member_name" placeholder="Name" value="${task.member_name || ''}" style="font-size: 0.8rem; padding: 6px;" />
+            <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="geop_batch" placeholder="GEOP Batch" value="${task.geop_batch || ''}" style="font-size: 0.8rem; padding: 6px;" />
+            <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="favorite_flagship_event" placeholder="Favorite Flagship Event of UP GEOP" value="${task.favorite_flagship_event || ''}" style="font-size: 0.8rem; padding: 6px;" />
+            <textarea class="sig-input" data-sig-id="${task.id}" data-field="favorite_geop_memory" placeholder="Kwento your most favorite GEOP memory:" rows="3" style="font-size: 0.8rem; padding: 6px; resize: vertical;">${task.favorite_geop_memory || ''}</textarea>
+          </div>
+          <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${task.id}" style="width: 100%;">
+            Generate Signatory Code
+          </button>
+        `;
+      } else {
+        taskContentHtml = `<small style="color: var(--brand-forest); font-weight: 600;">Signed by ${task.signed_by || task.member_name}</small>`;
+      }
+
+      oaCardsHtml += `
+        <div class="card" style="margin: 0; border-color: ${borderColor}; background: ${bgColor};">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">${topBadgeText}</span>
+            <span class="badge" style="background: ${badgeColor}; color: ${task.completed ? '#fff' : 'inherit'};">${task.completed ? 'Completed' : 'Pending'}</span>
+          </div>
+          <div style="margin-bottom: 10px;">
+            <strong style="display: block; font-size: 0.92rem; color: var(--brand-forest); margin-bottom: 4px;">${cleanedTrait}</strong>
+          </div>
+          ${taskContentHtml}
+        </div>
+      `;
+    });
+  }
+
+  const isOaVisible = oaTasks.length > 0 || activeCategory === 'O.A' ? 'block' : 'none';
+  let filterPillsHtml = categories.map(cat => `
+    <button type="button" class="btn committee-filter-btn ${activeCategory === cat.value ? 'btn-checkin' : 'btn-secondary'}" data-category="${cat.value}" style="min-height: 38px; padding: 6px 14px; font-size: 0.82rem; white-space: nowrap;">
+      ${cat.label}
+    </button>
+  `).join('');
+
   container.innerHTML = `
     <section class="card">
       <div class="card-header">
@@ -106,50 +351,8 @@ export async function renderSignatoriesTab(container) {
             ${allCommitteesCompleted ? 'Unlocked' : 'Locked (Finish All Committee Tasks)'}
           </span>
         </div>
-
         <div style="display: flex; flex-direction: column; gap: 14px;">
-          ${PES_LIST.map(pes => {
-            const task = pesTasks.find(s => 
-              (s.member_name || '').toLowerCase() === pes.fullName.toLowerCase() ||
-              (s.task || '').toLowerCase() === pes.title.toLowerCase()
-            ) || { id: null, completed: false, nickname: '', favorite_tradition: '', top_field_role: '', unique_fact: '', signed_by: null };
-
-            return `
-              <div class="card" style="margin: 0; background: ${task.completed ? 'var(--brand-mint-subtle)' : 'var(--surface)'}; border-color: ${task.completed ? 'var(--brand-mint)' : 'var(--border-subtle)'};">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                  <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">${pes.title}</span>
-                  <span class="badge" style="background: ${task.completed ? 'var(--brand-mint)' : 'var(--surface-subtle)'}; color: ${task.completed ? '#fff' : 'inherit'};">
-                    ${task.completed ? 'Completed' : (allCommitteesCompleted ? 'Unlocked' : 'Locked')}
-                  </span>
-                </div>
-
-                <div style="display: flex; gap: 14px; align-items: center; margin-bottom: 12px;">
-                  <img src="${pes.photo}" 
-                       alt="${pes.fullName}" 
-                       onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(pes.fullName)}&background=1b382b&color=fff';"
-                       style="width: 54px; height: 54px; border-radius: 50%; object-fit: cover; border: 2px solid var(--brand-clay); flex-shrink: 0;" />
-                  <div>
-                    <strong style="font-size: 0.95rem; color: var(--text-heading); display: block;">${pes.fullName}</strong>
-                    <small style="color: var(--brand-clay-deep);">${pes.email}</small>
-                  </div>
-                </div>
-
-                ${!task.completed ? `
-                  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 10px;">
-                    <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="nickname" placeholder="Nickname" value="${task.nickname || ''}" ${!allCommitteesCompleted || !task.id ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
-                    <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="favorite_tradition" placeholder="Favorite UP Geop Tradition" value="${task.favorite_tradition || ''}" ${!allCommitteesCompleted || !task.id ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
-                    <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="top_field_role" placeholder="Top Field Role" value="${task.top_field_role || ''}" ${!allCommitteesCompleted || !task.id ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
-                    <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="unique_fact" placeholder="Unique Fact About You" value="${task.unique_fact || ''}" ${!allCommitteesCompleted || !task.id ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
-                  </div>
-                  <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${task.id}" ${!allCommitteesCompleted || !task.id ? 'disabled style="opacity: 0.55; cursor: not-allowed;"' : ''} style="width: 100%;">
-                    ${allCommitteesCompleted ? 'Generate PES Verification Code' : 'Unlock After All Committee Signatories'}
-                  </button>
-                ` : `
-                  <small style="color: var(--brand-forest); font-weight: 600;">Officially endorsed by ${task.signed_by || pes.fullName}</small>
-                `}
-              </div>
-            `;
-          }).join('')}
+          ${pesHtml}
         </div>
       </div>
 
@@ -161,194 +364,20 @@ export async function renderSignatoriesTab(container) {
 
       <!-- COMMITTEE FILTER PILLS -->
       <div id="committeeFilterBar" style="display: flex; gap: 8px; overflow-x: auto; padding-bottom: 12px; margin-bottom: 20px;">
-        ${categories.map(cat => `
-          <button type="button" 
-                  class="btn committee-filter-btn ${activeCategory === cat.value ? 'btn-checkin' : 'btn-secondary'}" 
-                  data-category="${cat.value}" 
-                  style="min-height: 38px; padding: 6px 14px; font-size: 0.82rem; white-space: nowrap;">
-            ${cat.label}
-          </button>
-        `).join('')}
+        ${filterPillsHtml}
       </div>
 
       <!-- COMMITTEE CARDS MATRIX -->
       <div id="committeesDisplayContainer" style="display: flex; flex-direction: column; gap: 20px;">
-        ${COMMITTEES_LIST.map(comm => {
-          const commSigs = committeeTasks.filter(s => (s.committee_name || '').toLowerCase() === comm.name.toLowerCase());
-          const vpTask = commSigs.find(s => s.role === 'VP' || s.type === 'VP');
-          const memberTasks = commSigs.filter(s => s !== vpTask);
-          const membersDone = memberTasks.length > 0 && memberTasks.every(s => s.completed);
-
-          return `
-            <div class="card committee-card" data-committee="${comm.name}" style="margin: 0; padding: 20px;">
-              <h2 style="font-family: var(--font-display); color: var(--brand-forest); margin-bottom: 16px;">
-                ${comm.name} Committee
-              </h2>
-
-              <!-- VP Endorsement Task -->
-              ${vpTask ? `
-                <div class="card" style="margin-bottom: 16px; border-color: ${vpTask.completed ? 'var(--brand-mint)' : 'var(--border-medium)'}; background: ${vpTask.completed ? 'var(--brand-mint-subtle)' : 'var(--surface)'};">
-                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                    <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">VP Endorsement</span>
-                    <span class="badge" style="background: ${vpTask.completed ? 'var(--brand-mint)' : 'var(--surface-subtle)'}; color: ${vpTask.completed ? '#fff' : 'inherit'};">
-                      ${vpTask.completed ? 'Completed' : (membersDone ? 'Unlocked' : 'Locked')}
-                    </span>
-                  </div>
-
-                  <div style="display: flex; gap: 14px; align-items: center; margin-bottom: 14px;">
-                    <img src="${comm.photo}" 
-                         alt="${comm.vp}" 
-                         onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(comm.vp)}&background=1b382b&color=fff';"
-                         style="width: 54px; height: 54px; border-radius: 50%; object-fit: cover; border: 2px solid var(--brand-forest); flex-shrink: 0;" />
-                    <div>
-                      <strong style="font-size: 0.95rem; color: var(--brand-forest); display: block;">${comm.vp}</strong>
-                      <small style="color: var(--text-muted);">${comm.vpTitle}</small>
-                      <div><small style="font-size: 0.75rem; color: var(--brand-clay-deep);">${comm.vpEmail}</small></div>
-                    </div>
-                  </div>
-
-                  ${!vpTask.completed ? `
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 12px;">
-                      <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="nickname" placeholder="Nickname" value="${vpTask.nickname \vert{}\vert{} ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
-                      <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="favorite_tradition" placeholder="Favorite UP Geop Tradition" value="${vpTask.favorite_tradition \vert{}\vert{} ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
-                      <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="top_field_role" placeholder="Top Field Role" value="${vpTask.top_field_role \vert{}\vert{} ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
-                      <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="unique_fact" placeholder="Unique Fact About You" value="${vpTask.unique_fact \vert{}\vert{} ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
-                    </div>
-                    <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${vpTask.id}" ${!membersDone ? 'disabled style="opacity: 0.6; cursor: not-allowed;"' : ''} style="width: 100%;">
-                      ${membersDone ? 'Generate Signatory Code' : 'Complete Member Tasks to Unlock'}
-                    </button>
-                  ` : `
-                    <small style="color: var(--brand-forest); font-weight: 600;">Officially endorsed by ${vpTask.signed_by || comm.vp}</small>
-                  `}
-                </div>
-              ` : ''}
-
-              <!-- Member Tasks -->
-              <div style="display: flex; flex-direction: column; gap: 12px;">
-                ${memberTasks.map((task, idx) => {
-                  const rawTrait = task.trait || task.trait_description || task.task || 'Committee Member';
-                  const cleanedTrait = cleanTraitText(rawTrait);
-
-                  const rawPool = (task.task_pool && task.task_pool.length > 0) ? task.task_pool : fallbackTasksPool;
-                  const pool = rawPool.filter(t => {
-                    if (task.selected_task && t === task.selected_task) return true;
-                    return !completedTasksSet.has(t.trim());
-                  });
-
-                  return `
-                    <div class="card" style="margin: 0; border-color: ${task.completed ? 'var(--brand-mint)' : 'var(--border-subtle)'}; background: ${task.completed ? 'var(--brand-mint-subtle)' : 'var(--surface)'};">
-                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                        <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">Member Task #${idx + 1}</span>
-                        <span class="badge" style="background: ${task.completed ? 'var(--brand-mint)' : 'var(--surface-subtle)'}; color: ${task.completed ? '#fff' : 'inherit'};">
-                          ${task.completed ? 'Completed' : 'Pending'}
-                        </span>
-                      </div>
-
-                      <div style="margin-bottom: 10px;">
-                        <strong style="display: block; font-size: 0.92rem; color: var(--brand-forest); margin-bottom: 4px;">
-                          ${cleanedTrait}
-                        </strong>
-                      </div>
-
-                      <!-- Non-locking Task Pool Dropdown -->
-                      ${!task.completed && pool.length > 0 ? `
-                        <div style="margin-bottom: 10px;">
-                          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                            <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted);">
-                              ${task.selected_task ? 'Selected Task (Click to reassign):' : 'Assign a Task:'}
-                            </label>
-                            ${task.selected_task ? `
-                              <button type="button" class="clear-task-btn" data-sig-id="${task.id}" style="background: none; border: none; color: var(--brand-clay-deep); font-size: 0.75rem; cursor: pointer; text-decoration: underline;">
-                                Reset
-                              </button>
-                            ` : ''}
-                          </div>
-                          <select class="sig-task-select" data-sig-id="${task.id}" style="width: 100%; font-size: 0.82rem; padding: 6px;">
-                            <option value="">-- Choose a task from pool --</option>
-                            ${pool.map(t => `
-                              <option value="${t}" ${task.selected_task === t ? 'selected' : ''}>${t}</option>
-                            `).join('')}
-                          </select>
-                        </div>
-                      ` : (task.completed ? `
-                        <div style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 10px;">
-                          <strong>Completed Task:</strong> ${task.selected_task || task.task}
-                        </div>
-                      ` : '')}
-
-                      ${!task.completed ? `
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 10px;">
-                          <!-- Member Selection Dropdown -->
-                          <select class="sig-input" data-sig-id="${task.id}" data-field="member_name" style="font-size: 0.8rem; padding: 6px;">
-                            <option value="">-- Select Member --</option>
-                            ${membersList.map(m => `
-                              <option value="${m.full_name}" ${task.member_name === m.full_name ? 'selected' : ''}>
-                                ${m.full_name}
-                              </option>
-                            `).join('')}
-                          </select>
-
-                          <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="nickname" placeholder="Nickname" value="${task.nickname || ''}" style="font-size: 0.8rem; padding: 6px;" />
-                          <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="favorite_tradition" placeholder="Favorite UP Geop Tradition" value="${task.favorite_tradition || ''}" style="font-size: 0.8rem; padding: 6px;" />
-                          <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="top_field_role" placeholder="Top Field Role" value="${task.top_field_role || ''}" style="font-size: 0.8rem; padding: 6px;" />
-                          <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="unique_fact" placeholder="Unique Fact About You" value="${task.unique_fact || ''}" style="font-size: 0.8rem; padding: 6px;" />
-                        </div>
-                        <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${task.id}" style="width: 100%;">
-                          Generate Signatory Code
-                        </button>
-                      ` : `
-                        <small style="color: var(--brand-forest); font-weight: 600;">Signed by ${task.signed_by || 'Verified Member'}</small>
-                      `}
-                    </div>
-                  `;
-                }).join('')}
-              </div>
-            </div>
-          `;
-        }).join('')}
-
+        ${committeesHtml}
+        
         <!-- O.A CUSTOM CARD -->
-        <div class="card committee-card" data-committee="O.A" style="margin: 0; padding: 20px; display: ${oaTasks.length > 0 || activeCategory === 'O.A' ? 'block' : 'none'};">
+        <div class="card committee-card" data-committee="O.A" style="margin: 0; padding: 20px; display: ${isOaVisible};">
           <h2 style="font-family: var(--font-display); color: var(--brand-forest); margin-bottom: 16px;">
             O.A Signatures
           </h2>
           <div style="display: flex; flex-direction: column; gap: 12px;">
-            ${oaTasks.length === 0 ? '<p class="subtext">No O.A signature tasks have been assigned in the database yet.</p>' : ''}
-            ${oaTasks.map((task, idx) => {
-                const rawTrait = task.trait || task.trait_description || task.task || 'O.A Signature';
-                const cleanedTrait = cleanTraitText(rawTrait);
-
-                return `
-                  <div class="card" style="margin: 0; border-color: ${task.completed ? 'var(--brand-mint)' : 'var(--border-subtle)'}; background: ${task.completed ? 'var(--brand-mint-subtle)' : 'var(--surface)'};">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                      <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">${task.task === 'GEOP Alum' || task.task === 'Other Member' ? task.task : 'O.A Task'}</span>
-                      <span class="badge" style="background: ${task.completed ? 'var(--brand-mint)' : 'var(--surface-subtle)'}; color: ${task.completed ? '#fff' : 'inherit'};">
-                        ${task.completed ? 'Completed' : 'Pending'}
-                      </span>
-                    </div>
-
-                    <div style="margin-bottom: 10px;">
-                      <strong style="display: block; font-size: 0.92rem; color: var(--brand-forest); margin-bottom: 4px;">
-                        ${cleanedTrait}
-                      </strong>
-                    </div>
-
-                    ${!task.completed ? `
-                      <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px;">
-                        <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="member_name" placeholder="Name" value="${task.member_name || ''}" style="font-size: 0.8rem; padding: 6px;" />
-                        <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="geop_batch" placeholder="GEOP Batch" value="${task.geop_batch || ''}" style="font-size: 0.8rem; padding: 6px;" />
-                        <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="favorite_flagship_event" placeholder="Favorite Flagship Event of UP GEOP" value="${task.favorite_flagship_event || ''}" style="font-size: 0.8rem; padding: 6px;" />
-                        <textarea class="sig-input" data-sig-id="${task.id}" data-field="favorite_geop_memory" placeholder="Kwento your most favorite GEOP memory:" rows="3" style="font-size: 0.8rem; padding: 6px; resize: vertical;">${task.favorite_geop_memory || ''}</textarea>
-                      </div>
-                      <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${task.id}" style="width: 100%;">
-                        Generate Signatory Code
-                      </button>
-                    ` : `
-                      <small style="color: var(--brand-forest); font-weight: 600;">Signed by ${task.signed_by || task.member_name}</small>
-                    `}
-                  </div>
-                `;
-              }).join('')}
+            ${oaCardsHtml}
           </div>
         </div>
       </div>
