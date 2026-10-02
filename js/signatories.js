@@ -60,7 +60,8 @@ export async function renderSignatoriesTab(container) {
 
   const allCommitteesCompleted = committeeTasks.length > 0 && committeeTasks.every(s => s.completed);
 
-  const alumniTasks = committeeTasks.filter(s => (s.committee_name || '').toUpperCase() === 'ALUMNI' || (s.role || '').toUpperCase() === 'ALUMNI');
+  // 1. Isolate the O.A Tasks
+  const oaTasks = committeeTasks.filter(s => ['O.A', 'ALUMNI', 'OTHER MEMBER'].includes((s.committee_name || '').toUpperCase()) || ['O.A', 'ALUMNI', 'OTHER MEMBER'].includes((s.role || '').toUpperCase()));
 
   const completedTasksSet = new Set(
     signatories
@@ -68,6 +69,7 @@ export async function renderSignatoriesTab(container) {
       .map(s => s.selected_task.trim())
   );
 
+  // 2. Add O.A to the filter pills
   const categories = [
     { label: `All (${committeeTasks.length})`, value: 'ALL' },
     { label: 'Academics', value: 'Academics' },
@@ -76,7 +78,7 @@ export async function renderSignatoriesTab(container) {
     { label: 'Internal', value: 'Internal' },
     { label: 'External', value: 'External' },
     { label: 'Finance', value: 'Finance' },
-    { label: 'Alumni', value: 'Alumni' }
+    { label: 'O.A', value: 'O.A' }
   ];
 
   container.innerHTML = `
@@ -207,10 +209,10 @@ export async function renderSignatoriesTab(container) {
 
                   ${!vpTask.completed ? `
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 12px;">
-                      <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="nickname" placeholder="Nickname" value="${vpTask.nickname || ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
-                      <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="favorite_tradition" placeholder="Favorite UP Geop Tradition" value="${vpTask.favorite_tradition || ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
-                      <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="top_field_role" placeholder="Top Field Role" value="${vpTask.top_field_role || ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
-                      <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="unique_fact" placeholder="Unique Fact About You" value="${vpTask.unique_fact || ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
+                      <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="nickname" placeholder="Nickname" value="${vpTask.nickname \vert{}\vert{} ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
+                      <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="favorite_tradition" placeholder="Favorite UP Geop Tradition" value="${vpTask.favorite_tradition \vert{}\vert{} ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
+                      <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="top_field_role" placeholder="Top Field Role" value="${vpTask.top_field_role \vert{}\vert{} ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
+                      <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="unique_fact" placeholder="Unique Fact About You" value="${vpTask.unique_fact \vert{}\vert{} ''}" ${!membersDone ? 'disabled' : ''} style="font-size: 0.8rem; padding: 6px;" />
                     </div>
                     <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${vpTask.id}" ${!membersDone ? 'disabled style="opacity: 0.6; cursor: not-allowed;"' : ''} style="width: 100%;">
                       ${membersDone ? 'Generate Signatory Code' : 'Complete Member Tasks to Unlock'}
@@ -305,20 +307,21 @@ export async function renderSignatoriesTab(container) {
           `;
         }).join('')}
 
-        ${alumniTasks.length > 0 ? `
-          <div class="card committee-card" data-committee="Alumni" style="margin: 0; padding: 20px;">
-            <h2 style="font-family: var(--font-display); color: var(--brand-forest); margin-bottom: 16px;">
-              Alumni Signatures
-            </h2>
-            <div style="display: flex; flex-direction: column; gap: 12px;">
-              ${alumniTasks.map((task, idx) => {
-                const rawTrait = task.trait || task.trait_description || task.task || 'Alumni Signature';
+        <!-- O.A CUSTOM CARD -->
+        <div class="card committee-card" data-committee="O.A" style="margin: 0; padding: 20px; display: ${oaTasks.length > 0 || activeCategory === 'O.A' ? 'block' : 'none'};">
+          <h2 style="font-family: var(--font-display); color: var(--brand-forest); margin-bottom: 16px;">
+            O.A Signatures
+          </h2>
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            ${oaTasks.length === 0 ? '<p class="subtext">No O.A signature tasks have been assigned in the database yet.</p>' : ''}
+            ${oaTasks.map((task, idx) => {
+                const rawTrait = task.trait || task.trait_description || task.task || 'O.A Signature';
                 const cleanedTrait = cleanTraitText(rawTrait);
 
                 return `
                   <div class="card" style="margin: 0; border-color: ${task.completed ? 'var(--brand-mint)' : 'var(--border-subtle)'}; background: ${task.completed ? 'var(--brand-mint-subtle)' : 'var(--surface)'};">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                      <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">Alumni Task #${idx + 1}</span>
+                      <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">${task.task === 'GEOP Alum' || task.task === 'Other Member' ? task.task : 'O.A Task'}</span>
                       <span class="badge" style="background: ${task.completed ? 'var(--brand-mint)' : 'var(--surface-subtle)'}; color: ${task.completed ? '#fff' : 'inherit'};">
                         ${task.completed ? 'Completed' : 'Pending'}
                       </span>
@@ -331,11 +334,11 @@ export async function renderSignatoriesTab(container) {
                     </div>
 
                     ${!task.completed ? `
-                      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 10px;">
-                        <!-- Notice: member_name is now a text input, NOT a select dropdown -->
-                        <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="member_name" placeholder="Alumni Name" value="${task.member_name || ''}" style="font-size: 0.8rem; padding: 6px;" />
-                        <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="nickname" placeholder="Nickname" value="${task.nickname || ''}" style="font-size: 0.8rem; padding: 6px;" />
-                        <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="batch_number" placeholder="Batch Number / Year" value="${task.batch_number || ''}" style="font-size: 0.8rem; padding: 6px;" />
+                      <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px;">
+                        <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="member_name" placeholder="Name" value="${task.member_name || ''}" style="font-size: 0.8rem; padding: 6px;" />
+                        <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="geop_batch" placeholder="GEOP Batch" value="${task.geop_batch || ''}" style="font-size: 0.8rem; padding: 6px;" />
+                        <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="favorite_flagship_event" placeholder="Favorite Flagship Event of UP GEOP" value="${task.favorite_flagship_event || ''}" style="font-size: 0.8rem; padding: 6px;" />
+                        <textarea class="sig-input" data-sig-id="${task.id}" data-field="favorite_geop_memory" placeholder="Kwento your most favorite GEOP memory:" rows="3" style="font-size: 0.8rem; padding: 6px; resize: vertical;">${task.favorite_geop_memory || ''}</textarea>
                       </div>
                       <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${task.id}" style="width: 100%;">
                         Generate Signatory Code
@@ -346,9 +349,8 @@ export async function renderSignatoriesTab(container) {
                   </div>
                 `;
               }).join('')}
-            </div>
           </div>
-        ` : ''}
+        </div>
       </div>
     </section>
   `;
