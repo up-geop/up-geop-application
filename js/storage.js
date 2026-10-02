@@ -449,11 +449,45 @@ export async function verifyUniversalCode(code, verifierEmail) {
       const hasBoost = !!userProfile?.tambay_boost_active;
       const effectiveMultiplier = baseMultiplier * (hasBoost ? 1.5 : 1.0);
 
+      // --- NEW PER-DAY CAP LOGIC ---
       let creditedHours = durationHours * effectiveMultiplier;
-      if (settings.dailyCapEnabled && creditedHours > 3.0) {
-        creditedHours = 3.0;
+      
+      if (settings.dailyCapEnabled) {
+        // 1. Get midnight of the current day in the local timezone
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+
+        // 2. Fetch all tambay logs for this user created AFTER midnight today
+        const { data: todaysLogs } = await supabase
+          .from('tambay_logs')
+          .select('hours')
+          .eq('user_id', codeRecord.user_id)
+          .gte('created_at', startOfDay.toISOString());
+
+        // 3. Sum up the hours already awarded today
+        let hoursAlreadyToday = 0;
+        if (todaysLogs) {
+          hoursAlreadyToday = todaysLogs.reduce((sum, log) => sum + (parseFloat(log.hours) || 0), 0);
+        }
+
+        // 4. Calculate how much room is left under the 3.0 hour cap
+        const hoursRemainingToday = Math.max(0, 3.0 - hoursAlreadyToday);
+
+        // 5. Cap the new credited hours to whatever is remaining
+        if (creditedHours > hoursRemainingToday) {
+          creditedHours = hoursRemainingToday;
+        }
       }
-      creditedHours = Math.max(0.1, Number(creditedHours.toFixed(2)));
+      
+      // If they hit the cap exactly and have 0 remaining, still record a tiny amount to show they logged out, or just use 0.
+      if (creditedHours <= 0) {
+          await supabase.from('tambay_sessions').delete().eq('id', active.id);
+          await supabase.from('verification_codes').delete().eq('code', cleanCode);
+          return { success: false, message: 'Daily limit of 3 hours reached. Timed out with 0 additional hours credited.' };
+      }
+      
+      creditedHours = Number(creditedHours.toFixed(2));
+      // -------------------------------
 
       await supabase.from('tambay_sessions').delete().eq('id', active.id);
       
