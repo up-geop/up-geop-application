@@ -14,7 +14,7 @@ let activeCategory = 'ALL';
 function cleanTraitText(text) {
   if (!text) return '';
   let cleaned = text
-    .replace(/ /g, ' ')
+    .replace(/ /g, ' ')
     .trim()
     .replace(/^find\s+(an?|the|another|other)?\s*(member|person|someone)?\s*(who|na|that)?\s*/i, '')
     .replace(/^(another|other)?\s*member\s*(who|na|that)?\s*/i, '')
@@ -60,12 +60,16 @@ export async function renderSignatoriesTab(container) {
 
   const allCommitteesCompleted = committeeTasks.length > 0 && committeeTasks.every(s => s.completed);
 
+  // 1. Isolate the Alumni Tasks
+  const alumniTasks = committeeTasks.filter(s => (s.committee_name || '').toUpperCase() === 'ALUMNI' || (s.role || '').toUpperCase() === 'ALUMNI');
+
   const completedTasksSet = new Set(
     signatories
       .filter(s => s.completed && s.selected_task)
       .map(s => s.selected_task.trim())
   );
 
+  // 2. Add Alumni to the filter pills
   const categories = [
     { label: `All (${committeeTasks.length})`, value: 'ALL' },
     { label: 'Academics', value: 'Academics' },
@@ -73,7 +77,8 @@ export async function renderSignatoriesTab(container) {
     { label: 'RAComm', value: 'RAComm' },
     { label: 'Internal', value: 'Internal' },
     { label: 'External', value: 'External' },
-    { label: 'Finance', value: 'Finance' }
+    { label: 'Finance', value: 'Finance' },
+    { label: 'Alumni', value: 'Alumni' }
   ];
 
   container.innerHTML = `
@@ -301,6 +306,52 @@ export async function renderSignatoriesTab(container) {
             </div>
           `;
         }).join('')}
+
+        <!-- ALUMNI CUSTOM CARD -->
+        ${alumniTasks.length > 0 ? `
+          <div class="card committee-card" data-committee="Alumni" style="margin: 0; padding: 20px;">
+            <h2 style="font-family: var(--font-display); color: var(--brand-forest); margin-bottom: 16px;">
+              Alumni Signatures
+            </h2>
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+              ${alumniTasks.map((task, idx) => {
+                const rawTrait = task.trait || task.trait_description || task.task || 'Alumni Signature';
+                const cleanedTrait = cleanTraitText(rawTrait);
+
+                return `
+                  <div class="card" style="margin: 0; border-color: ${task.completed ? 'var(--brand-mint)' : 'var(--border-subtle)'}; background: ${task.completed ? 'var(--brand-mint-subtle)' : 'var(--surface)'};">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                      <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">Alumni Task #${idx + 1}</span>
+                      <span class="badge" style="background: ${task.completed ? 'var(--brand-mint)' : 'var(--surface-subtle)'}; color: ${task.completed ? '#fff' : 'inherit'};">
+                        ${task.completed ? 'Completed' : 'Pending'}
+                      </span>
+                    </div>
+
+                    <div style="margin-bottom: 10px;">
+                      <strong style="display: block; font-size: 0.92rem; color: var(--brand-forest); margin-bottom: 4px;">
+                        ${cleanedTrait}
+                      </strong>
+                    </div>
+
+                    ${!task.completed ? `
+                      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 10px;">
+                        <!-- Notice: member_name is now a text input, NOT a select dropdown -->
+                        <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="member_name" placeholder="Alumni Name" value="${task.member_name || ''}" style="font-size: 0.8rem; padding: 6px;" />
+                        <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="nickname" placeholder="Nickname" value="${task.nickname || ''}" style="font-size: 0.8rem; padding: 6px;" />
+                        <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="batch_number" placeholder="Batch Number / Year" value="${task.batch_number || ''}" style="font-size: 0.8rem; padding: 6px;" />
+                      </div>
+                      <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${task.id}" style="width: 100%;">
+                        Generate Signatory Code
+                      </button>
+                    ` : `
+                      <small style="color: var(--brand-forest); font-weight: 600;">Signed by ${task.signed_by || task.member_name}</small>
+                    `}
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        ` : ''}
       </div>
     </section>
   `;
