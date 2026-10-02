@@ -60,7 +60,6 @@ export async function renderSignatoriesTab(container) {
 
   const allCommitteesCompleted = committeeTasks.length > 0 && committeeTasks.every(s => s.completed);
 
-  // 1. Isolate the Alumni Tasks
   const alumniTasks = committeeTasks.filter(s => (s.committee_name || '').toUpperCase() === 'ALUMNI' || (s.role || '').toUpperCase() === 'ALUMNI');
 
   const completedTasksSet = new Set(
@@ -69,7 +68,6 @@ export async function renderSignatoriesTab(container) {
       .map(s => s.selected_task.trim())
   );
 
-  // 2. Add Alumni to the filter pills
   const categories = [
     { label: `All (${committeeTasks.length})`, value: 'ALL' },
     { label: 'Academics', value: 'Academics' },
@@ -307,7 +305,6 @@ export async function renderSignatoriesTab(container) {
           `;
         }).join('')}
 
-        <!-- ALUMNI CUSTOM CARD -->
         ${alumniTasks.length > 0 ? `
           <div class="card committee-card" data-committee="Alumni" style="margin: 0; padding: 20px;">
             <h2 style="font-family: var(--font-display); color: var(--brand-forest); margin-bottom: 16px;">
