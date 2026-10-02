@@ -1,7 +1,7 @@
 export const CONFIG = {
   SUPABASE_URL: 'https://cwbrzxqmlzgedaisaour.supabase.co',
   SUPABASE_ANON_KEY: 'sb_publishable_pTXuKxWXe6BF2BMnXNBEsw_44Afuj00',
-  TARGET_TAMBAY_HOURS: 10,
+  TARGET_TAMBAY_HOURS: 24,
   WEIGHTS: {
     EVENTS: 0.25,        // 25% (5 events x 5%)
     SIGNATORIES: 0.15,   // 15%
