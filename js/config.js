@@ -1,6 +1,5 @@
 export const CONFIG = {
   SUPABASE_URL: 'https://cwbrzxqmlzgedaisaour.supabase.co',
-  // Note: Once you roll your keys in Supabase, update this string!
   SUPABASE_ANON_KEY: 'sb_publishable_pTXuKxWXe6BF2BMnXNBEsw_44Afuj00',
   TARGET_TAMBAY_HOURS: 10,
   WEIGHTS: {
@@ -13,9 +12,7 @@ export const CONFIG = {
     BUDDY_TASKS: 0.10    // 10%
   },
   SHEETS: {
-    // Explicitly select Column B from Traits_Pool to extract trait descriptions
     TRAITS_CSV_URL: 'https://docs.google.com/spreadsheets/d/1FOLXlBFMwV9gv2GcTmMZqfOrjU8GJNFwgwgV4a7ZBnc/gviz/tq?tqx=out:csv&sheet=Traits_Pool&tq=select%20B',
-    // Tasks_Pool endpoint
     TASKS_CSV_URL: 'https://docs.google.com/spreadsheets/d/1FOLXlBFMwV9gv2GcTmMZqfOrjU8GJNFwgwgV4a7ZBnc/gviz/tq?tqx=out:csv&sheet=Tasks_Pool'
   }
 };
