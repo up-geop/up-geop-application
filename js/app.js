@@ -129,6 +129,153 @@ function computeEffectiveDeadline(rawIso, isPotUnlocked) {
   return baseDate;
 }
 
+let surveyNetwork = null;
+
+function formatName(name) {
+  if (!name) return '';
+  const parts = name.split(' ');
+  if (parts.length > 1) {
+    return parts[0] + '\n' + parts.slice(1).join(' ');
+  }
+  return name;
+}
+
+function initSurveyNetwork(signatories) {
+  const container = document.getElementById('surveyNetworkMap');
+  if (!container) return;
+
+  const nodes = [];
+  const edges = [];
+  let completedCount = 0;
+
+  nodes.push({
+    id: 0,
+    label: 'YOU',
+    shape: 'circle',
+    color: { background: '#FBB03B', border: '#C1272D' },
+    font: { color: '#121212', face: 'monospace', size: 16, bold: true },
+    borderWidth: 3,
+    size: 25
+  });
+
+  signatories.forEach((sig, index) => {
+    sig.nodeId = index + 1;
+    if (sig.completed) completedCount++;
+
+    let rawLabel = '';
+    let nShape = 'dot';
+    let nSize = 10;
+
+    if (sig.role === 'PES' || sig.type === 'PES') {
+        rawLabel = sig.task || 'PES';
+        nShape = 'star';
+        nSize = sig.completed ? 22 : 16;
+    } else if (sig.role === 'VP' || sig.type === 'VP') {
+        rawLabel = 'VP ' + (sig.committee_name || '');
+        nShape = 'diamond';
+        nSize = sig.completed ? 16 : 12;
+    } else if ((sig.committee_name || '').toUpperCase() === 'O.A') {
+        rawLabel = sig.task === 'GEOP Alum' ? 'Alum' : 'Other';
+        nShape = 'triangle';
+        nSize = sig.completed ? 14 : 10;
+    } else {
+        rawLabel = (sig.committee_name || '') + ' Mem';
+        nShape = 'dot';
+        nSize = sig.completed ? 12 : 8;
+    }
+
+    if (sig.completed && sig.signed_by) {
+        rawLabel = formatName(sig.signed_by);
+    }
+
+    nodes.push({
+      id: sig.nodeId,
+      label: rawLabel,
+      shape: nShape,
+      color: {
+        background: sig.completed ? '#2e7d5a' : '#333333', 
+        border: sig.completed ? '#4caf50' : '#555555'      
+      },
+      font: { color: sig.completed ? '#e0e0e0' : '#888888', size: 11, face: 'monospace', align: 'center' },
+      size: nSize,
+      borderWidth: 2
+    });
+  });
+
+  const pesTasks = signatories.filter(s => s.role === 'PES' || s.type === 'PES' || (s.committee_name || '').toUpperCase() === 'PES');
+  const vps = signatories.filter(s => s.role === 'VP' || s.type === 'VP');
+  const members = signatories.filter(s => s.role === 'Member' || (!vps.includes(s) && !pesTasks.includes(s) && (s.committee_name || '').toUpperCase() !== 'O.A'));
+  const oaTasks = signatories.filter(s => (s.committee_name || '').toUpperCase() === 'O.A');
+
+  oaTasks.forEach(oa => {
+    edges.push({
+      from: 0, to: oa.nodeId,
+      color: { color: oa.completed ? '#2e7d5a' : '#444444', opacity: oa.completed ? 0.9 : 0.3 },
+      dashes: !oa.completed,
+      width: oa.completed ? 3 : 1,
+      length: 100
+    });
+  });
+
+  members.forEach(m => {
+    edges.push({
+      from: 0, to: m.nodeId,
+      color: { color: m.completed ? '#2e7d5a' : '#444444', opacity: m.completed ? 0.9 : 0.3 },
+      dashes: !m.completed,
+      width: m.completed ? 3 : 1,
+      length: 90
+    });
+  });
+
+  vps.forEach(vp => {
+    const commMembers = members.filter(m => (m.committee_name || '').toLowerCase() === (vp.committee_name || '').toLowerCase());
+    commMembers.forEach(m => {
+      const edgeDone = m.completed && vp.completed;
+      edges.push({
+        from: m.nodeId, to: vp.nodeId,
+        color: { color: edgeDone ? '#2e7d5a' : '#444444', opacity: edgeDone ? 0.9 : 0.3 },
+        dashes: !edgeDone,
+        width: edgeDone ? 3 : 1,
+        length: 60
+      });
+    });
+  });
+
+  pesTasks.forEach(pes => {
+    vps.forEach(vp => {
+      const edgeDone = vp.completed && pes.completed;
+      edges.push({
+        from: vp.nodeId, to: pes.nodeId,
+        color: { color: edgeDone ? '#2e7d5a' : '#444444', opacity: edgeDone ? 0.8 : 0.15 },
+        dashes: !edgeDone,
+        width: edgeDone ? 3 : 1,
+        length: 200
+      });
+    });
+  });
+
+  const badge = document.getElementById('networkStatusBadge');
+  if (badge) badge.textContent = `${completedCount} / ${signatories.length} Nodes`;
+
+  const data = { nodes: nodes, edges: edges };
+  const options = {
+    physics: {
+      forceAtlas2Based: { gravitationalConstant: -35, centralGravity: 0.005, springLength: 100, springConstant: 0.1 },
+      maxVelocity: 50,
+      solver: 'forceAtlas2Based',
+      timestep: 0.35,
+      stabilization: { iterations: 150 }
+    },
+    interaction: { dragNodes: true, zoomView: true, dragView: true, hover: true }
+  };
+
+  if (surveyNetwork) {
+    surveyNetwork.setData(data);
+  } else {
+    surveyNetwork = new vis.Network(container, data, options);
+  }
+}
+
 async function renderShopView() {
   const container = document.getElementById('dynamicPotsContainer');
   if (!container || !currentUser) return;
@@ -653,6 +800,10 @@ async function renderDashboard() {
 
   const sigContainer = document.getElementById('signatoryList');
   if (sigContainer) await renderSignatoriesTab(sigContainer);
+
+  // Trigger Survey Network Generation on the Applicant Dashboard
+  initSurveyNetwork(signatories);
+
 
   const eventList = document.getElementById('eventList');
   if (eventList) {
