@@ -312,7 +312,7 @@ async function renderLiveTambayanPresence() {
       return `
         <div class="card-header" style="margin-bottom: 4px;">
           <div>
-            <h3 style="font-size: 1.05rem; color: var(--brand-forest); margin: 0;">📍 Who's at the Tambayan Right Now?</h3>
+            <h3 style="font-size: 1.05rem; color: var(--brand-forest); margin: 0;"> Who's at the Tambayan Right Now?</h3>
             <p class="subtext">No applicants are currently timed in at the tambayan.</p>
           </div>
           <span class="badge">0 Active</span>
@@ -355,8 +355,8 @@ async function renderLiveTambayanPresence() {
     return `
       <div class="card-header" style="margin-bottom: 10px;">
         <div>
-          <h3 style="font-size: 1.05rem; color: var(--brand-forest); margin: 0;">📍 Who's at the Tambayan Right Now?</h3>
-          <p class="subtext">Live roster of applicants currently timed in.</p>
+          <h3 style="font-size: 1.05rem; color: var(--brand-forest); margin: 0;"> Who's at the Tambayan Right Now?</h3>
+          <p class="subtext">Applicants currently timed in.</p>
         </div>
         <span class="badge" style="background: var(--brand-mint); color: #fff;">${activeSessions.length} Active</span>
       </div>
