@@ -4,7 +4,10 @@ import {
   getSignatories,
   getTambayHours,
   getActiveTambaySession,
+  getAllActiveTambaySessions,
+  adminForceCloseTambaySession,
   generateApplicantShortCode,
+  getVerificationCodePreview,
   verifyUniversalCode,
   checkIfResidentMember,
   checkIfRAComm,
@@ -60,6 +63,7 @@ let surveyNetwork = null;
 let currentSignatoriesNodeMap = new Map();
 let html5QrScanner = null;
 let isQrScannerRunning = false;
+let pendingVerificationCode = null;
 
 // Keyed Debounce Utility to prevent Realtime re-render storms
 const debounceTimers = new Map();
@@ -150,6 +154,248 @@ function formatName(name) {
     return parts[0] + '\n' + parts.slice(1).join(' ');
   }
   return name;
+}
+
+/* =========================================================
+   VERIFICATION PREVIEW MODAL FOR RESIDENT MEMBERS
+   ========================================================= */
+function ensureVerificationPreviewModal() {
+  let modal = document.getElementById('verificationPreviewModal');
+  if (modal) return modal;
+
+  modal = document.createElement('div');
+  modal.id = 'verificationPreviewModal';
+  modal.className = 'modal-backdrop';
+  modal.style.display = 'none';
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width: 440px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <h3 id="previewModalTitle" style="color: var(--brand-forest); margin: 0;">Verify Applicant Request</h3>
+        <span id="previewModalTypeBadge" class="badge">Code</span>
+      </div>
+      <div id="previewModalBody" style="margin-bottom: 16px; font-size: 0.85rem; display: flex; flex-direction: column; gap: 10px;"></div>
+      <div style="display: flex; gap: 8px;">
+        <button id="confirmVerifyPreviewBtn" class="btn btn-checkin" style="flex: 1;">Approve & Verify</button>
+        <button id="cancelVerifyPreviewBtn" class="btn btn-secondary" style="flex: 1;">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  document.getElementById('cancelVerifyPreviewBtn').addEventListener('click', () => {
+    modal.style.display = 'none';
+    pendingVerificationCode = null;
+  });
+
+  document.getElementById('confirmVerifyPreviewBtn').addEventListener('click', async () => {
+    if (!pendingVerificationCode || !currentUser) return;
+    const btn = document.getElementById('confirmVerifyPreviewBtn');
+    const origText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Verifying...';
+
+    const res = await verifyUniversalCode(pendingVerificationCode, currentUser.email);
+    btn.disabled = false;
+    btn.textContent = origText;
+    modal.style.display = 'none';
+    pendingVerificationCode = null;
+
+    showToast(res.message, res.success ? 'success' : 'error');
+    await handleAuth();
+  });
+
+  return modal;
+}
+
+async function openVerificationPreviewModal(code) {
+  if (!currentUser) return;
+  const preview = await getVerificationCodePreview(code, currentUser.email);
+  if (!preview.valid) {
+    showToast(preview.message, 'error');
+    return;
+  }
+
+  pendingVerificationCode = preview.code;
+  const modal = ensureVerificationPreviewModal();
+  const titleEl = document.getElementById('previewModalTitle');
+  const badgeEl = document.getElementById('previewModalTypeBadge');
+  const bodyEl = document.getElementById('previewModalBody');
+  const confirmBtn = document.getElementById('confirmVerifyPreviewBtn');
+
+  const appName = preview.applicant
+    ? (preview.applicant.nickname ? `${preview.applicant.full_name} ("${preview.applicant.nickname}")` : preview.applicant.full_name)
+    : 'Unknown Applicant';
+  const appGroup = preview.applicant?.buddy_group_name || 'Unassigned';
+
+  if (preview.type === 'SIGNATORY') {
+    const s = preview.signatory;
+    const isOA = (s.committee_name || '').toUpperCase() === 'O.A' || (s.role || '').toUpperCase() === 'O.A';
+    titleEl.textContent = 'Signatory Verification Preview';
+    badgeEl.textContent = `${s.committee_name || s.role || 'Member'} Signatory`;
+    badgeEl.style.background = 'var(--brand-forest)';
+    badgeEl.style.color = '#fff';
+    confirmBtn.textContent = 'Approve & Sign';
+
+    const detailsRows = isOA ? `
+      <div><strong>Entered Member/Alum Name:</strong> ${s.member_name || '<em>Not filled</em>'}</div>
+      <div><strong>GEOP Batch:</strong> ${s.geop_batch || '<em>Not filled</em>'}</div>
+      <div><strong>Favorite Flagship Event:</strong> ${s.favorite_flagship_event || '<em>Not filled</em>'}</div>
+      <div><strong>Favorite GEOP Memory:</strong> ${s.favorite_geop_memory || '<em>Not filled</em>'}</div>
+    ` : `
+      ${s.selected_task ? `<div><strong>Selected Task from Pool:</strong> ${s.selected_task}</div>` : ''}
+      <div><strong>Nickname:</strong> ${s.nickname || '<em>Not filled</em>'}</div>
+      <div><strong>Favorite UP GEOP Tradition:</strong> ${s.favorite_tradition || '<em>Not filled</em>'}</div>
+      <div><strong>Top Field Role:</strong> ${s.top_field_role || '<em>Not filled</em>'}</div>
+      <div><strong>Unique Fact:</strong> ${s.unique_fact || '<em>Not filled</em>'}</div>
+    `;
+
+    bodyEl.innerHTML = `
+      <div style="padding: 10px 12px; background: var(--surface-subtle); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+        <div><strong>Applicant:</strong> ${appName}</div>
+        <div><strong>Buddy Group:</strong> ${appGroup}</div>
+      </div>
+      <div style="padding: 10px 12px; background: var(--surface-subtle); border-radius: var(--radius-sm); border-left: 4px solid var(--brand-forest);">
+        <div style="margin-bottom: 6px;"><strong style="color: var(--brand-forest);">Requirement / Trait:</strong><br/>${s.trait || s.task}</div>
+        <div style="display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; border-top: 1px dashed var(--border-medium); padding-top: 6px;">
+          ${detailsRows}
+        </div>
+      </div>
+    `;
+  } else if (preview.type === 'TAMBAY') {
+    const active = preview.activeSession;
+    const isTimingOut = !!active;
+    titleEl.textContent = isTimingOut ? 'Confirm Tambay Time-Out' : 'Confirm Tambay Time-In';
+    badgeEl.textContent = isTimingOut ? 'TIME-OUT' : 'TIME-IN';
+    badgeEl.style.background = isTimingOut ? '#b33a2b' : 'var(--brand-mint)';
+    badgeEl.style.color = '#fff';
+    confirmBtn.textContent = isTimingOut ? 'Confirm Time-Out' : 'Confirm Time-In';
+
+    let sessionInfoHtml = '';
+    if (isTimingOut) {
+      const elapsedHrs = ((Date.now() - new Date(active.time_in).getTime()) / (1000 * 60 * 60)).toFixed(2);
+      sessionInfoHtml = `
+        <div><strong>Action:</strong> Clocking Out of Tambay Session</div>
+        <div><strong>Timed In At:</strong> ${new Date(active.time_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (by ${active.verified_by})</div>
+        <div><strong>Raw Elapsed Duration:</strong> ${elapsedHrs} hrs</div>
+        ${preview.applicant?.tambay_boost_active ? `<div style="color: var(--brand-forest); font-weight: 700;">⚡ 1.5× Tambay Boost Active!</div>` : ''}
+      `;
+    } else {
+      sessionInfoHtml = `<div><strong>Action:</strong> Starting a new live Tambay Session</div>`;
+    }
+
+    bodyEl.innerHTML = `
+      <div style="padding: 10px 12px; background: var(--surface-subtle); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+        <div><strong>Applicant:</strong> ${appName}</div>
+        <div><strong>Buddy Group:</strong> ${appGroup}</div>
+      </div>
+      <div style="padding: 10px 12px; background: var(--surface-subtle); border-radius: var(--radius-sm); border-left: 4px solid ${isTimingOut ? '#b33a2b' : 'var(--brand-mint)'}; display: flex; flex-direction: column; gap: 4px;">
+        ${sessionInfoHtml}
+      </div>
+    `;
+  }
+
+  modal.style.display = 'flex';
+}
+
+/* =========================================================
+   "WHO'S AT THE TAMBAYAN RIGHT NOW?" LIVE WIDGET & AUTO-GUARD
+   ========================================================= */
+async function renderLiveTambayanPresence() {
+  if (!currentUser) return;
+  const [activeSessions, isRAComm] = await Promise.all([
+    getAllActiveTambaySessions(),
+    checkIfRAComm(currentUser.email)
+  ]);
+
+  const buildWidgetHtml = (showOfficerControls) => {
+    if (activeSessions.length === 0) {
+      return `
+        <div class="card-header" style="margin-bottom: 4px;">
+          <div>
+            <h3 style="font-size: 1.05rem; color: var(--brand-forest); margin: 0;">📍 Who's at the Tambayan Right Now?</h3>
+            <p class="subtext">No applicants are currently timed in at the tambayan.</p>
+          </div>
+          <span class="badge">0 Active</span>
+        </div>
+      `;
+    }
+
+    const itemsHtml = activeSessions.map(s => {
+      const hrs = Math.floor(s.elapsedHours);
+      const mins = Math.floor((s.elapsedHours - hrs) * 60);
+      const durText = `${hrs}h ${mins}m`;
+      const displayName = s.nickname ? `${s.nickname} (${s.fullName})` : s.fullName;
+
+      return `
+        <li class="task-item" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; border-left: 4px solid ${s.isStale ? '#b33a2b' : 'var(--brand-mint)'};">
+          <div>
+            <strong style="color: var(--text-heading); font-size: 0.88rem;">${displayName}</strong>
+            <span class="badge" style="margin-left: 6px; font-size: 0.7rem;">${s.buddyGroup}</span>
+            ${s.isStale ? `<span class="badge" style="background: #b33a2b; color: #fff; margin-left: 4px; font-size: 0.7rem;">⚠️ 8h+ Forgotten Time-Out?</span>` : ''}
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
+              In since ${new Date(s.time_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (${durText} elapsed) • Verified by ${s.verified_by}
+            </div>
+          </div>
+          ${showOfficerControls ? `
+            <div style="display: flex; gap: 6px;">
+              <button type="button" class="btn btn-secondary force-close-tambay-btn" data-user-id="${s.user_id}" data-mode="zero" style="min-height: 28px; padding: 2px 8px; font-size: 0.72rem; color: #b33a2b; border-color: #b33a2b;">
+                Force Close (0h)
+              </button>
+              <button type="button" class="btn btn-secondary force-close-tambay-btn" data-user-id="${s.user_id}" data-mode="custom" style="min-height: 28px; padding: 2px 8px; font-size: 0.72rem;">
+                Close & Credit
+              </button>
+            </div>
+          ` : `
+            <span class="badge" style="background: var(--brand-mint-subtle); color: var(--brand-forest); font-family: var(--font-mono);">${durText}</span>
+          `}
+        </li>
+      `;
+    }).join('');
+
+    return `
+      <div class="card-header" style="margin-bottom: 10px;">
+        <div>
+          <h3 style="font-size: 1.05rem; color: var(--brand-forest); margin: 0;">📍 Who's at the Tambayan Right Now?</h3>
+          <p class="subtext">Live roster of applicants currently timed in.</p>
+        </div>
+        <span class="badge" style="background: var(--brand-mint); color: #fff;">${activeSessions.length} Active</span>
+      </div>
+      <ul class="task-list" style="display: flex; flex-direction: column; gap: 6px;">
+        ${itemsHtml}
+      </ul>
+    `;
+  };
+
+  // Mount inside Applicant Tambay Tab
+  const appTambayTab = document.getElementById('tab-tambay');
+  if (appTambayTab) {
+    let appWidget = document.getElementById('applicantLiveTambayanWidget');
+    if (!appWidget) {
+      appWidget = document.createElement('section');
+      appWidget.id = 'applicantLiveTambayanWidget';
+      appWidget.className = 'card';
+      const eventSection = document.getElementById('eventList')?.closest('section.card');
+      if (eventSection) {
+        appTambayTab.insertBefore(appWidget, eventSection);
+      } else {
+        appTambayTab.appendChild(appWidget);
+      }
+    }
+    appWidget.innerHTML = buildWidgetHtml(false);
+  }
+
+  // Mount inside Member Verification Hub
+  const memHubTab = document.getElementById('member-hub-view');
+  if (memHubTab) {
+    let memWidget = document.getElementById('memberLiveTambayanWidget');
+    if (!memWidget) {
+      memWidget = document.createElement('section');
+      memWidget.id = 'memberLiveTambayanWidget';
+      memWidget.className = 'card';
+      memHubTab.appendChild(memWidget);
+    }
+    memWidget.innerHTML = buildWidgetHtml(isRAComm);
+  }
 }
 
 /* =========================================================
@@ -297,7 +543,6 @@ function initSurveyNetwork(signatories) {
   } else {
     surveyNetwork = new vis.Network(container, data, options);
 
-    // Interactive Node Click Handler (Suggestion 1)
     surveyNetwork.on('click', (params) => {
       if (!params.nodes || params.nodes.length === 0) return;
       const clickedNodeId = params.nodes[0];
@@ -315,7 +560,6 @@ function initSurveyNetwork(signatories) {
           : (sig.favorite_geop_memory ? ` • Memory: "${sig.favorite_geop_memory}"` : '');
         showToast(`✅ Signed by ${sig.signed_by || sig.member_name} (${sig.trait || sig.task})${extra}`, 'success');
       } else {
-        // Jump to Signatories Tab, Filter Committee, and Highlight Card
         const sigTabBtn = document.querySelector('#applicantTabNav [data-tab="tab-signatories"]');
         if (sigTabBtn) sigTabBtn.click();
 
@@ -375,7 +619,6 @@ function injectMemberQrScannerUI() {
   const manualBtn = document.getElementById('manualValidateBtn');
   if (!hubSection || !manualBtn || document.getElementById('openCameraQrBtn')) return;
 
-  // Wrap buttons neatly side-by-side
   const btnWrapper = document.createElement('div');
   btnWrapper.style.cssText = 'display: flex; gap: 10px; flex-wrap: wrap;';
   manualBtn.parentNode.insertBefore(btnWrapper, manualBtn);
@@ -436,12 +679,10 @@ function injectMemberQrScannerUI() {
             return;
           }
 
-          showToast(`Verifying code ${extractedCode.toUpperCase()}...`, 'info');
-          const res = await verifyUniversalCode(extractedCode, currentUser.email);
-          showToast(res.message, res.success ? 'success' : 'error');
-          await handleAuth();
+          // Open Verification Preview Card for the Member
+          await openVerificationPreviewModal(extractedCode);
         },
-        () => {} // Ignore frame scan misses
+        () => {}
       );
     } catch (err) {
       isQrScannerRunning = false;
@@ -996,7 +1237,6 @@ async function renderDashboard() {
   if (bar) bar.style.width = `${totalPercent}%`;
   if (barLabel) barLabel.textContent = `${totalPercent}%`;
 
-  // Render Grade Breakdown Drawer (Suggestion 5)
   renderGradeBreakdownUI({
     eventPoints,
     sigPoints,
@@ -1031,8 +1271,8 @@ async function renderDashboard() {
   const sigContainer = document.getElementById('signatoryList');
   if (sigContainer) await renderSignatoriesTab(sigContainer);
 
-  // Trigger Survey Network Generation on the Applicant Dashboard
   initSurveyNetwork(signatories);
+  await renderLiveTambayanPresence();
 
   const eventList = document.getElementById('eventList');
   if (eventList) {
@@ -1093,7 +1333,18 @@ async function renderRoster() {
       <td style="font-family:var(--font-mono);">${app.completedSigs} / ${app.totalSigs}</td>
       <td style="font-family:var(--font-mono);">${app.tambayHours} hrs</td>
       <td style="font-family:var(--font-mono); font-weight:700; color:var(--brand-forest);">${app.overallPercent}%</td>
-      <td><span class="badge" style="background:${app.isTimedIn ? 'var(--brand-mint-subtle)' : 'var(--surface-subtle)'}; color:${app.isTimedIn ? 'var(--brand-mint)' : 'inherit'};">${app.isTimedIn ? 'Timed In' : 'Offline'}</span></td>
+      <td>
+        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+          <span class="badge" style="background:${app.isTimedIn ? (app.isStaleSession ? '#b33a2b' : 'var(--brand-mint-subtle)') : 'var(--surface-subtle)'}; color:${app.isTimedIn ? (app.isStaleSession ? '#fff' : 'var(--brand-mint)') : 'inherit'};">
+            ${app.isTimedIn ? (app.isStaleSession ? '⚠️ 8h+ Timed In' : 'Timed In') : 'Offline'}
+          </span>
+          ${isRAComm && app.isTimedIn ? `
+            <button type="button" class="btn btn-secondary force-close-tambay-btn" data-user-id="${app.id}" data-mode="zero" style="min-height: 24px; padding: 2px 6px; font-size: 0.7rem; color: #b33a2b;">
+              Force Out
+            </button>
+          ` : ''}
+        </div>
+      </td>
       <td><button class="btn btn-secondary inspect-btn" data-id="${app.id}" style="min-height:32px; padding:2px 8px; font-size:0.75rem;">${isRAComm ? 'Inspect & Grade' : 'View Details'}</button></td>
     </tr>
   `).join('');
@@ -1132,7 +1383,6 @@ async function openInspection(appId) {
   }
   if (saveGrpBtn) saveGrpBtn.style.display = isRAComm ? 'block' : 'none';
 
-  // Filter Buddy Tasks applicable to this applicant
   const appGroup = p.buddy_group_name || 'Unassigned';
   const relevantBuddyTasks = allBuddyTasks.filter(t =>
     t.target_group === 'ALL' || t.target_group.toLowerCase() === appGroup.toLowerCase()
@@ -1212,7 +1462,6 @@ async function openInspection(appId) {
         });
       });
 
-      // Buddy Task Completion Checkboxes Handler
       panelsWrapper.querySelectorAll('.admin-buddy-task-check').forEach(chk => {
         chk.addEventListener('change', async (e) => {
           const taskId = e.target.dataset.taskId;
@@ -1227,7 +1476,6 @@ async function openInspection(appId) {
         });
       });
 
-      // Auto-Compute 10% Buddy Task Grade from Checked Boxes
       document.getElementById('autoCalcBuddyScoreBtn')?.addEventListener('click', () => {
         const allChecks = Array.from(panelsWrapper.querySelectorAll('.admin-buddy-task-check'));
         if (allChecks.length === 0) return;
@@ -1385,8 +1633,8 @@ async function handleAuth() {
     const code = urlParams.get('verifyCode') || urlParams.get('validateApplicant');
     if (code) {
       window.history.replaceState({}, document.title, window.location.pathname);
-      const res = await verifyUniversalCode(code, currentUser.email);
-      showToast(res.message, res.success ? 'success' : 'error');
+      // Open Verification Preview Modal instead of blind immediate execution
+      await openVerificationPreviewModal(code);
     }
 
     const [isMember, isRAComm] = await Promise.all([
@@ -1400,7 +1648,6 @@ async function handleAuth() {
       if (appDash) appDash.style.display = 'none';
       if (memDash) memDash.style.display = 'block';
 
-      // Mount In-App QR Camera Scanner Button for Resident Members (Suggestion 4)
       injectMemberQrScannerUI();
 
       const racommTabs = document.querySelectorAll('.racomm-only-tab');
@@ -1445,7 +1692,8 @@ async function handleAuth() {
       await Promise.all([
         renderRoster(),
         renderOfficerBuddyTasksManager(),
-        renderLeaderboard()
+        renderLeaderboard(),
+        renderLiveTambayanPresence()
       ]);
 
     } else {
@@ -1609,7 +1857,7 @@ if (!window.__appInitialized) {
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'tambay_sessions' }, () => {
           debounceTask('tambay_sessions', async () => {
-            await Promise.all([renderDashboard(), renderRoster()]);
+            await Promise.all([renderDashboard(), renderRoster(), renderLiveTambayanPresence()]);
           });
         })
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, async (payload) => {
@@ -1625,7 +1873,32 @@ if (!window.__appInitialized) {
         .subscribe();
     }
 
+    // Global Delegated Handler for Copy Buttons & RAComm Force-Close Tambay Buttons
     document.addEventListener('click', async (e) => {
+      const forceBtn = e.target.closest('.force-close-tambay-btn');
+      if (forceBtn && currentUser) {
+        const targetUid = forceBtn.dataset.userId;
+        const mode = forceBtn.dataset.mode;
+        let creditHrs = 0;
+
+        if (mode === 'custom') {
+          const val = prompt('Enter tambay hours to credit for this session (e.g. 1.5, or 0 for forgotten time-out):', '1.0');
+          if (val === null) return;
+          creditHrs = Math.max(0, parseFloat(val) || 0);
+        } else {
+          if (!confirm('Force-close this active tambay session with 0 hours credited?')) return;
+        }
+
+        const ok = await adminForceCloseTambaySession(targetUid, creditHrs, currentUser.email);
+        if (ok) {
+          showToast(`Session closed (${creditHrs} hrs credited).`, 'success');
+          await Promise.all([renderLiveTambayanPresence(), renderRoster(), renderDashboard()]);
+        } else {
+          showToast('Failed to force-close session.', 'error');
+        }
+        return;
+      }
+
       const btn = e.target.closest('.copy-btn');
       if (!btn) return;
       const target = document.getElementById(btn.dataset.copyTarget);
@@ -1693,6 +1966,8 @@ if (!window.__appInitialized) {
             await renderShopView();
           } else if (tabId === 'tab-leaderboard') {
             await renderLeaderboard();
+          } else if (tabId === 'tab-tambay' || tabId === 'member-hub-view') {
+            await renderLiveTambayanPresence();
           }
         }
       });
@@ -1718,10 +1993,9 @@ if (!window.__appInitialized) {
         showToast('Enter a valid 6-character code.', 'error');
         return;
       }
-      const res = await verifyUniversalCode(code, currentUser.email);
-      showToast(res.message, res.success ? 'success' : 'error');
       if (valModal) valModal.style.display = 'none';
-      await handleAuth();
+      // Open Verification Preview Card for the Member
+      await openVerificationPreviewModal(code);
     });
 
     document.getElementById('showQrBtn')?.addEventListener('click', async () => {
