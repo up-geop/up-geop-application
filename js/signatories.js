@@ -10,11 +10,12 @@ import {
 import { showToast } from './app.js';
 
 let activeCategory = 'ALL';
+let delegatedBoundContainer = null;
 
 function cleanTraitText(text) {
   if (!text) return '';
-  let cleaned = text
-    .replace(/ /g, ' ')
+  const cleaned = text
+    .replace(/\s+/g, ' ')
     .trim()
     .replace(/^find\s+(an?|the|another|other)?\s*(member|person|someone)?\s*(who|na|that)?\s*/i, '')
     .replace(/^(another|other)?\s*member\s*(who|na|that)?\s*/i, '')
@@ -25,8 +26,119 @@ function cleanTraitText(text) {
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
+function filterCommitteeCards(container, cat) {
+  const cards = container.querySelectorAll('.committee-card');
+  cards.forEach(card => {
+    if (cat === 'ALL' || card.dataset.committee.toLowerCase() === cat.toLowerCase()) {
+      card.style.display = 'block';
+    } else {
+      card.style.display = 'none';
+    }
+  });
+}
+
+function attachSignatoryDelegation(container) {
+  if (delegatedBoundContainer === container) return;
+  delegatedBoundContainer = container;
+
+  // Single delegated click listener for filters, resets, and QR code generation
+  container.addEventListener('click', async (e) => {
+    const filterBtn = e.target.closest('.committee-filter-btn');
+    if (filterBtn) {
+      activeCategory = filterBtn.dataset.category;
+      container.querySelectorAll('.committee-filter-btn').forEach(b => {
+        b.classList.remove('btn-checkin');
+        b.classList.add('btn-secondary');
+      });
+      filterBtn.classList.remove('btn-secondary');
+      filterBtn.classList.add('btn-checkin');
+      filterCommitteeCards(container, activeCategory);
+      return;
+    }
+
+    const clearBtn = e.target.closest('.clear-task-btn');
+    if (clearBtn) {
+      const sigId = clearBtn.dataset.sigId;
+      if (sigId) {
+        await selectTaskForSignatory(sigId, null);
+        showToast('Task selection cleared.', 'info');
+        await renderSignatoriesTab(container);
+      }
+      return;
+    }
+
+    const codeBtn = e.target.closest('.trigger-sig-code-btn');
+    if (codeBtn) {
+      const sigId = codeBtn.dataset.sigId;
+      if (!sigId || sigId === 'null') {
+        showToast('Signatory record not initialized.', 'error');
+        return;
+      }
+
+      const code = await generateApplicantShortCode(sigId, 'SIGNATORY');
+      if (!code) {
+        showToast('Failed to generate verification code.', 'error');
+        return;
+      }
+
+      const qrModal = document.getElementById('qrDisplayContainer');
+      const textElem = document.getElementById('applicantShortCodeText');
+      const canvasElem = document.getElementById('qrcodeCanvas');
+
+      if (textElem) textElem.textContent = code;
+      const verifyUrl = `${window.location.origin}${window.location.pathname}?verifyCode=${code}`;
+
+      if (canvasElem) {
+        canvasElem.innerHTML = `
+          <div style="margin-bottom: 8px;">
+            <span class="badge" style="background: var(--brand-forest); color: #ffffff;">Signatory Code</span>
+          </div>
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(verifyUrl)}" 
+               alt="Signatory QR" width="160" height="160" style="border-radius: 6px;" />
+        `;
+      }
+
+      if (qrModal) {
+        qrModal.style.display = 'block';
+        const tambayTabBtn = document.querySelector('#applicantTabNav [data-tab="tab-tambay"]');
+        if (tambayTabBtn) tambayTabBtn.click();
+        qrModal.scrollIntoView({ behavior: 'smooth' });
+      }
+
+      showToast(`Verification code generated: ${code}`, 'success');
+    }
+  });
+
+  // Single delegated change listener for task pool selects & text inputs
+  container.addEventListener('change', async (e) => {
+    const taskSelect = e.target.closest('.sig-task-select');
+    if (taskSelect) {
+      const val = taskSelect.value;
+      const sigId = taskSelect.dataset.sigId;
+      if (sigId) {
+        await selectTaskForSignatory(sigId, val || null);
+        showToast(val ? 'Task selected!' : 'Task reset.', 'info');
+        await renderSignatoriesTab(container);
+      }
+      return;
+    }
+
+    const sigInput = e.target.closest('.sig-input');
+    if (sigInput) {
+      const sigId = sigInput.dataset.sigId;
+      const field = sigInput.dataset.field;
+      const val = sigInput.value.trim();
+      if (sigId && field) {
+        await updateSignatoryAnswer(sigId, field, val);
+      }
+    }
+  });
+}
+
 export async function renderSignatoriesTab(container) {
   if (!container) return;
+  attachSignatoryDelegation(container);
+
   const [signatories, membersList, fallbackTasksPool, directory] = await Promise.all([
     getSignatories(),
     getAllMembersList(),
@@ -60,8 +172,10 @@ export async function renderSignatoriesTab(container) {
 
   const allCommitteesCompleted = committeeTasks.length > 0 && committeeTasks.every(s => s.completed);
 
-  // 1. Isolate the O.A Tasks
-  const oaTasks = committeeTasks.filter(s => ['O.A', 'ALUMNI', 'OTHER MEMBER'].includes((s.committee_name || '').toUpperCase()) || ['O.A', 'ALUMNI', 'OTHER MEMBER'].includes((s.role || '').toUpperCase()));
+  const oaTasks = committeeTasks.filter(s =>
+    ['O.A', 'ALUMNI', 'OTHER MEMBER'].includes((s.committee_name || '').toUpperCase()) ||
+    ['O.A', 'ALUMNI', 'OTHER MEMBER'].includes((s.role || '').toUpperCase())
+  );
 
   const completedTasksSet = new Set(
     signatories
@@ -69,7 +183,6 @@ export async function renderSignatoriesTab(container) {
       .map(s => s.selected_task.trim())
   );
 
-  // 2. Add O.A to the filter pills
   const categories = [
     { label: `All (${committeeTasks.length})`, value: 'ALL' },
     { label: 'Academics', value: 'Academics' },
@@ -81,9 +194,7 @@ export async function renderSignatoriesTab(container) {
     { label: 'O.A', value: 'O.A' }
   ];
 
-
-  let pesHtml = '';
-  PES_LIST.forEach(pes => {
+  const pesHtml = PES_LIST.map(pes => {
     const task = pesTasks.find(s => 
       (s.member_name || '').toLowerCase() === pes.fullName.toLowerCase() ||
       (s.task || '').toLowerCase() === pes.title.toLowerCase()
@@ -96,31 +207,26 @@ export async function renderSignatoriesTab(container) {
     const disabledAttr = (!allCommitteesCompleted || !task.id) ? 'disabled' : '';
     const btnDisabledAttr = (!allCommitteesCompleted || !task.id) ? 'disabled style="opacity: 0.55; cursor: not-allowed;"' : '';
 
-    let contentHtml = '';
-    if (!task.completed) {
-      contentHtml = `
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 10px;">
-          <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="nickname" placeholder="Nickname" value="${task.nickname || ''}" ${disabledAttr} style="font-size: 0.8rem; padding: 6px;" />
-          <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="favorite_tradition" placeholder="Favorite UP Geop Tradition" value="${task.favorite_tradition || ''}" ${disabledAttr} style="font-size: 0.8rem; padding: 6px;" />
-          <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="top_field_role" placeholder="Top Field Role" value="${task.top_field_role || ''}" ${disabledAttr} style="font-size: 0.8rem; padding: 6px;" />
-          <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="unique_fact" placeholder="Unique Fact About You" value="${task.unique_fact || ''}" ${disabledAttr} style="font-size: 0.8rem; padding: 6px;" />
-        </div>
-        <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${task.id}" ${btnDisabledAttr} style="width: 100%;">
-          ${allCommitteesCompleted ? 'Generate PES Verification Code' : 'Unlock After All Committee Signatories'}
-        </button>
-      `;
-    } else {
-      contentHtml = `<small style="color: var(--brand-forest); font-weight: 600;">Officially endorsed by ${task.signed_by || pes.fullName}</small>`;
-    }
+    const contentHtml = !task.completed ? `
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 10px;">
+        <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="nickname" placeholder="Nickname" value="${task.nickname || ''}" ${disabledAttr} style="font-size: 0.8rem; padding: 6px;" />
+        <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="favorite_tradition" placeholder="Favorite UP Geop Tradition" value="${task.favorite_tradition || ''}" ${disabledAttr} style="font-size: 0.8rem; padding: 6px;" />
+        <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="top_field_role" placeholder="Top Field Role" value="${task.top_field_role || ''}" ${disabledAttr} style="font-size: 0.8rem; padding: 6px;" />
+        <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="unique_fact" placeholder="Unique Fact About You" value="${task.unique_fact || ''}" ${disabledAttr} style="font-size: 0.8rem; padding: 6px;" />
+      </div>
+      <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${task.id}" ${btnDisabledAttr} style="width: 100%;">
+        ${allCommitteesCompleted ? 'Generate PES Verification Code' : 'Unlock After All Committee Signatories'}
+      </button>
+    ` : `<small style="color: var(--brand-forest); font-weight: 600;">Officially endorsed by ${task.signed_by || pes.fullName}</small>`;
 
-    pesHtml += `
+    return `
       <div class="card" style="margin: 0; background: ${bgColor}; border-color: ${borderColor};">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
           <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">${pes.title}</span>
           <span class="badge" style="background: ${badgeColor}; color: ${task.completed ? '#fff' : 'inherit'};">${textStatus}</span>
         </div>
         <div style="display: flex; gap: 14px; align-items: center; margin-bottom: 12px;">
-          <img src="${pes.photo}" alt="${pes.fullName}" onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(pes.fullName)}&background=1b382b&color=fff';" style="width: 54px; height: 54px; border-radius: 50%; object-fit: cover; border: 2px solid var(--brand-clay); flex-shrink: 0;" />
+          <img src="${pes.photo}" alt="${pes.fullName}" loading="lazy" onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(pes.fullName)}&background=1b382b&color=fff';" style="width: 54px; height: 54px; border-radius: 50%; object-fit: cover; border: 2px solid var(--brand-clay); flex-shrink: 0;" />
           <div>
             <strong style="font-size: 0.95rem; color: var(--text-heading); display: block;">${pes.fullName}</strong>
             <small style="color: var(--brand-clay-deep);">${pes.email}</small>
@@ -129,10 +235,9 @@ export async function renderSignatoriesTab(container) {
         ${contentHtml}
       </div>
     `;
-  });
+  }).join('');
 
-  let committeesHtml = '';
-  COMMITTEES_LIST.forEach(comm => {
+  const committeesHtml = COMMITTEES_LIST.map(comm => {
     const commSigs = committeeTasks.filter(s => (s.committee_name || '').toLowerCase() === comm.name.toLowerCase());
     const vpTask = commSigs.find(s => s.role === 'VP' || s.type === 'VP');
     const memberTasks = commSigs.filter(s => s !== vpTask);
@@ -147,22 +252,17 @@ export async function renderSignatoriesTab(container) {
       const disabledAttr = !membersDone ? 'disabled' : '';
       const btnDisabledAttr = !membersDone ? 'disabled style="opacity: 0.6; cursor: not-allowed;"' : '';
 
-      let vpContentHtml = '';
-      if (!vpTask.completed) {
-        vpContentHtml = `
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 12px;">
-            <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="nickname" placeholder="Nickname" value="${vpTask.nickname || ''}" ${disabledAttr} style="font-size: 0.8rem; padding: 6px;" />
-            <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="favorite_tradition" placeholder="Favorite UP Geop Tradition" value="${vpTask.favorite_tradition || ''}" ${disabledAttr} style="font-size: 0.8rem; padding: 6px;" />
-            <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="top_field_role" placeholder="Top Field Role" value="${vpTask.top_field_role || ''}" ${disabledAttr} style="font-size: 0.8rem; padding: 6px;" />
-            <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="unique_fact" placeholder="Unique Fact About You" value="${vpTask.unique_fact || ''}" ${disabledAttr} style="font-size: 0.8rem; padding: 6px;" />
-          </div>
-          <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${vpTask.id}" ${btnDisabledAttr} style="width: 100%;">
-            ${membersDone ? 'Generate Signatory Code' : 'Complete Member Tasks to Unlock'}
-          </button>
-        `;
-      } else {
-        vpContentHtml = `<small style="color: var(--brand-forest); font-weight: 600;">Officially endorsed by ${vpTask.signed_by || comm.vp}</small>`;
-      }
+      const vpContentHtml = !vpTask.completed ? `
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 12px;">
+          <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="nickname" placeholder="Nickname" value="${vpTask.nickname || ''}" ${disabledAttr} style="font-size: 0.8rem; padding: 6px;" />
+          <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="favorite_tradition" placeholder="Favorite UP Geop Tradition" value="${vpTask.favorite_tradition || ''}" ${disabledAttr} style="font-size: 0.8rem; padding: 6px;" />
+          <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="top_field_role" placeholder="Top Field Role" value="${vpTask.top_field_role || ''}" ${disabledAttr} style="font-size: 0.8rem; padding: 6px;" />
+          <input type="text" class="sig-input" data-sig-id="${vpTask.id}" data-field="unique_fact" placeholder="Unique Fact About You" value="${vpTask.unique_fact || ''}" ${disabledAttr} style="font-size: 0.8rem; padding: 6px;" />
+        </div>
+        <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${vpTask.id}" ${btnDisabledAttr} style="width: 100%;">
+          ${membersDone ? 'Generate Signatory Code' : 'Complete Member Tasks to Unlock'}
+        </button>
+      ` : `<small style="color: var(--brand-forest); font-weight: 600;">Officially endorsed by ${vpTask.signed_by || comm.vp}</small>`;
 
       vpTaskHtml = `
         <div class="card" style="margin-bottom: 16px; border-color: ${borderColor}; background: ${bgColor};">
@@ -171,7 +271,7 @@ export async function renderSignatoriesTab(container) {
             <span class="badge" style="background: ${badgeColor}; color: ${vpTask.completed ? '#fff' : 'inherit'};">${textStatus}</span>
           </div>
           <div style="display: flex; gap: 14px; align-items: center; margin-bottom: 14px;">
-            <img src="${comm.photo}" alt="${comm.vp}" onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(comm.vp)}&background=1b382b&color=fff';" style="width: 54px; height: 54px; border-radius: 50%; object-fit: cover; border: 2px solid var(--brand-forest); flex-shrink: 0;" />
+            <img src="${comm.photo}" alt="${comm.vp}" loading="lazy" onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(comm.vp)}&background=1b382b&color=fff';" style="width: 54px; height: 54px; border-radius: 50%; object-fit: cover; border: 2px solid var(--brand-forest); flex-shrink: 0;" />
             <div>
               <strong style="font-size: 0.95rem; color: var(--brand-forest); display: block;">${comm.vp}</strong>
               <small style="color: var(--text-muted);">${comm.vpTitle}</small>
@@ -183,8 +283,7 @@ export async function renderSignatoriesTab(container) {
       `;
     }
 
-    let membersHtml = '';
-    memberTasks.forEach((task, idx) => {
+    const membersHtml = memberTasks.map((task, idx) => {
       const rawTrait = task.trait || task.trait_description || task.task || 'Committee Member';
       const cleanedTrait = cleanTraitText(rawTrait);
       const rawPool = (task.task_pool && task.task_pool.length > 0) ? task.task_pool : fallbackTasksPool;
@@ -199,8 +298,8 @@ export async function renderSignatoriesTab(container) {
 
       let poolDropdownHtml = '';
       if (!task.completed && pool.length > 0) {
-        let options = pool.map(t => `<option value="${t}" ${task.selected_task === t ? 'selected' : ''}>${t}</option>`).join('');
-        let resetBtn = task.selected_task ? `<button type="button" class="clear-task-btn" data-sig-id="${task.id}" style="background: none; border: none; color: var(--brand-clay-deep); font-size: 0.75rem; cursor: pointer; text-decoration: underline;">Reset</button>` : '';
+        const options = pool.map(t => `<option value="${t}" ${task.selected_task === t ? 'selected' : ''}>${t}</option>`).join('');
+        const resetBtn = task.selected_task ? `<button type="button" class="clear-task-btn" data-sig-id="${task.id}" style="background: none; border: none; color: var(--brand-clay-deep); font-size: 0.75rem; cursor: pointer; text-decoration: underline;">Reset</button>` : '';
         poolDropdownHtml = `
           <div style="margin-bottom: 10px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
@@ -223,7 +322,7 @@ export async function renderSignatoriesTab(container) {
 
       let taskContentHtml = '';
       if (!task.completed) {
-        let membersOptions = membersList.map(m => `<option value="${m.full_name}" ${task.member_name === m.full_name ? 'selected' : ''}>${m.full_name}</option>`).join('');
+        const membersOptions = membersList.map(m => `<option value="${m.full_name}" ${task.member_name === m.full_name ? 'selected' : ''}>${m.full_name}</option>`).join('');
         taskContentHtml = `
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 10px;">
             <select class="sig-input" data-sig-id="${task.id}" data-field="member_name" style="font-size: 0.8rem; padding: 6px;">
@@ -243,7 +342,7 @@ export async function renderSignatoriesTab(container) {
         taskContentHtml = `<small style="color: var(--brand-forest); font-weight: 600;">Signed by ${task.signed_by || 'Verified Member'}</small>`;
       }
 
-      membersHtml += `
+      return `
         <div class="card" style="margin: 0; border-color: ${borderColor}; background: ${bgColor};">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
             <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">Member Task #${idx + 1}</span>
@@ -256,9 +355,9 @@ export async function renderSignatoriesTab(container) {
           ${taskContentHtml}
         </div>
       `;
-    });
+    }).join('');
 
-    committeesHtml += `
+    return `
       <div class="card committee-card" data-committee="${comm.name}" style="margin: 0; padding: 20px;">
         <h2 style="font-family: var(--font-display); color: var(--brand-forest); margin-bottom: 16px;">
           ${comm.name} Committee
@@ -269,23 +368,19 @@ export async function renderSignatoriesTab(container) {
         </div>
       </div>
     `;
-  });
+  }).join('');
 
-  let oaCardsHtml = '';
-  if (oaTasks.length === 0) {
-    oaCardsHtml = '<p class="subtext">No O.A signature tasks have been assigned in the database yet.</p>';
-  } else {
-    oaTasks.forEach((task, idx) => {
-      const rawTrait = task.trait || task.trait_description || task.task || 'O.A Signature';
-      const cleanedTrait = cleanTraitText(rawTrait);
-      const borderColor = task.completed ? 'var(--brand-mint)' : 'var(--border-subtle)';
-      const bgColor = task.completed ? 'var(--brand-mint-subtle)' : 'var(--surface)';
-      const badgeColor = task.completed ? 'var(--brand-mint)' : 'var(--surface-subtle)';
-      const topBadgeText = task.task === 'GEOP Alum' || task.task === 'Other Member' ? task.task : 'O.A Task';
+  const oaCardsHtml = oaTasks.length === 0
+    ? '<p class="subtext">No O.A signature tasks have been assigned in the database yet.</p>'
+    : oaTasks.map(task => {
+        const rawTrait = task.trait || task.trait_description || task.task || 'O.A Signature';
+        const cleanedTrait = cleanTraitText(rawTrait);
+        const borderColor = task.completed ? 'var(--brand-mint)' : 'var(--border-subtle)';
+        const bgColor = task.completed ? 'var(--brand-mint-subtle)' : 'var(--surface)';
+        const badgeColor = task.completed ? 'var(--brand-mint)' : 'var(--surface-subtle)';
+        const topBadgeText = task.task === 'GEOP Alum' || task.task === 'Other Member' ? task.task : 'O.A Task';
 
-      let taskContentHtml = '';
-      if (!task.completed) {
-        taskContentHtml = `
+        const taskContentHtml = !task.completed ? `
           <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px;">
             <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="member_name" placeholder="Name" value="${task.member_name || ''}" style="font-size: 0.8rem; padding: 6px;" />
             <input type="text" class="sig-input" data-sig-id="${task.id}" data-field="geop_batch" placeholder="GEOP Batch" value="${task.geop_batch || ''}" style="font-size: 0.8rem; padding: 6px;" />
@@ -295,28 +390,24 @@ export async function renderSignatoriesTab(container) {
           <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${task.id}" style="width: 100%;">
             Generate Signatory Code
           </button>
-        `;
-      } else {
-        taskContentHtml = `<small style="color: var(--brand-forest); font-weight: 600;">Signed by ${task.signed_by || task.member_name}</small>`;
-      }
+        ` : `<small style="color: var(--brand-forest); font-weight: 600;">Signed by ${task.signed_by || task.member_name}</small>`;
 
-      oaCardsHtml += `
-        <div class="card" style="margin: 0; border-color: ${borderColor}; background: ${bgColor};">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">${topBadgeText}</span>
-            <span class="badge" style="background: ${badgeColor}; color: ${task.completed ? '#fff' : 'inherit'};">${task.completed ? 'Completed' : 'Pending'}</span>
+        return `
+          <div class="card" style="margin: 0; border-color: ${borderColor}; background: ${bgColor};">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">${topBadgeText}</span>
+              <span class="badge" style="background: ${badgeColor}; color: ${task.completed ? '#fff' : 'inherit'};">${task.completed ? 'Completed' : 'Pending'}</span>
+            </div>
+            <div style="margin-bottom: 10px;">
+              <strong style="display: block; font-size: 0.92rem; color: var(--brand-forest); margin-bottom: 4px;">${cleanedTrait}</strong>
+            </div>
+            ${taskContentHtml}
           </div>
-          <div style="margin-bottom: 10px;">
-            <strong style="display: block; font-size: 0.92rem; color: var(--brand-forest); margin-bottom: 4px;">${cleanedTrait}</strong>
-          </div>
-          ${taskContentHtml}
-        </div>
-      `;
-    });
-  }
+        `;
+      }).join('');
 
   const isOaVisible = oaTasks.length > 0 || activeCategory === 'O.A' ? 'block' : 'none';
-  let filterPillsHtml = categories.map(cat => `
+  const filterPillsHtml = categories.map(cat => `
     <button type="button" class="btn committee-filter-btn ${activeCategory === cat.value ? 'btn-checkin' : 'btn-secondary'}" data-category="${cat.value}" style="min-height: 38px; padding: 6px 14px; font-size: 0.82rem; white-space: nowrap;">
       ${cat.label}
     </button>
@@ -380,112 +471,5 @@ export async function renderSignatoriesTab(container) {
     </section>
   `;
 
-  filterCommitteeCards(activeCategory);
-
-  const filterBar = container.querySelector('#committeeFilterBar');
-  if (filterBar) {
-    filterBar.addEventListener('click', (e) => {
-      const btn = e.target.closest('.committee-filter-btn');
-      if (!btn) return;
-
-      activeCategory = btn.dataset.category;
-
-      filterBar.querySelectorAll('.committee-filter-btn').forEach(b => {
-        b.classList.remove('btn-checkin');
-        b.classList.add('btn-secondary');
-      });
-      btn.classList.remove('btn-secondary');
-      btn.classList.add('btn-checkin');
-
-      filterCommitteeCards(activeCategory);
-    });
-  }
-
-  function filterCommitteeCards(cat) {
-    const cards = container.querySelectorAll('.committee-card');
-    cards.forEach(card => {
-      if (cat === 'ALL' || card.dataset.committee.toLowerCase() === cat.toLowerCase()) {
-        card.style.display = 'block';
-      } else {
-        card.style.display = 'none';
-      }
-    });
-  }
-
-  container.querySelectorAll('.sig-task-select').forEach(select => {
-    select.addEventListener('change', async (e) => {
-      const val = e.target.value;
-      const sigId = e.target.dataset.sigId;
-      if (sigId) {
-        await selectTaskForSignatory(sigId, val || null);
-        showToast(val ? 'Task selected!' : 'Task reset.', 'info');
-        await renderSignatoriesTab(container);
-      }
-    });
-  });
-
-  container.querySelectorAll('.clear-task-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      const sigId = e.target.dataset.sigId;
-      if (sigId) {
-        await selectTaskForSignatory(sigId, null);
-        showToast('Task selection cleared.', 'info');
-        await renderSignatoriesTab(container);
-      }
-    });
-  });
-
-  container.querySelectorAll('.sig-input').forEach(inp => {
-    inp.addEventListener('change', async (e) => {
-      const sigId = e.target.dataset.sigId;
-      const field = e.target.dataset.field;
-      const val = e.target.value.trim();
-      if (sigId && field) {
-        await updateSignatoryAnswer(sigId, field, val);
-      }
-    });
-  });
-
-  container.querySelectorAll('.trigger-sig-code-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      const sigId = e.target.dataset.sigId;
-      if (!sigId || sigId === 'null') {
-        showToast('Signatory record not initialized.', 'error');
-        return;
-      }
-
-      const code = await generateApplicantShortCode(sigId, 'SIGNATORY');
-      if (!code) {
-        showToast('Failed to generate verification code.', 'error');
-        return;
-      }
-
-      const qrModal = document.getElementById('qrDisplayContainer');
-      const textElem = document.getElementById('applicantShortCodeText');
-      const canvasElem = document.getElementById('qrcodeCanvas');
-
-      if (textElem) textElem.textContent = code;
-
-      const verifyUrl = `${window.location.origin}${window.location.pathname}?verifyCode=${code}`;
-
-      if (canvasElem) {
-        canvasElem.innerHTML = `
-          <div style="margin-bottom: 8px;">
-            <span class="badge" style="background: var(--brand-forest); color: #ffffff;">Signatory Code</span>
-          </div>
-          <img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(verifyUrl)}" 
-               alt="Signatory QR" width="160" height="160" style="border-radius: 6px;" />
-        `;
-      }
-
-      if (qrModal) {
-        qrModal.style.display = 'block';
-        const tambayTabBtn = document.querySelector('#applicantTabNav [data-tab="tab-tambay"]');
-        if (tambayTabBtn) tambayTabBtn.click();
-        qrModal.scrollIntoView({ behavior: 'smooth' });
-      }
-
-      showToast(`Verification code generated: ${code}`, 'success');
-    });
-  });
+  filterCommitteeCards(container, activeCategory);
 }
