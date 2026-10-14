@@ -680,7 +680,7 @@ export async function renderSignatoriesTab(container) {
         </div>
         <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
           <button type="button" id="exportSlambookPdfBtn" class="btn btn-secondary" style="min-height: 32px; padding: 4px 10px; font-size: 0.78rem;">
-            📖 Export Slambook (PDF)
+            Export Slambook (PDF)
           </button>
           <span class="badge" style="background: var(--brand-forest); color: white; font-weight: 700;">
             ${completed} / ${total} Signed
