@@ -56,6 +56,20 @@ let timerInterval = null;
 let inspectedApplicantId = null;
 let currentMonday = getMonday(new Date());
 let activeSwapMode = 'random';
+let surveyNetwork = null;
+let currentSignatoriesNodeMap = new Map();
+let html5QrScanner = null;
+let isQrScannerRunning = false;
+
+// Keyed Debounce Utility to prevent Realtime re-render storms
+const debounceTimers = new Map();
+function debounceTask(key, fn, delay = 300) {
+  if (debounceTimers.has(key)) clearTimeout(debounceTimers.get(key));
+  debounceTimers.set(key, setTimeout(() => {
+    debounceTimers.delete(key);
+    fn();
+  }, delay));
+}
 
 function getMonday(d) {
   const date = new Date(d);
@@ -129,8 +143,6 @@ function computeEffectiveDeadline(rawIso, isPotUnlocked) {
   return baseDate;
 }
 
-let surveyNetwork = null;
-
 function formatName(name) {
   if (!name) return '';
   const parts = name.split(' ');
@@ -140,6 +152,9 @@ function formatName(name) {
   return name;
 }
 
+/* =========================================================
+   SUGGESTION 1: INTERACTIVE SURVEY CONTROL NETWORK
+   ========================================================= */
 function initSurveyNetwork(signatories) {
   const container = document.getElementById('surveyNetworkMap');
   if (!container) return;
@@ -147,10 +162,12 @@ function initSurveyNetwork(signatories) {
   const nodes = [];
   const edges = [];
   let completedCount = 0;
+  currentSignatoriesNodeMap.clear();
 
   nodes.push({
     id: 0,
     label: 'YOU',
+    title: 'Your Control Station (Click any node to inspect or jump to task)',
     shape: 'circle',
     color: { background: '#FBB03B', border: '#C1272D' },
     font: { color: '#121212', face: 'monospace', size: 16, bold: true },
@@ -160,6 +177,7 @@ function initSurveyNetwork(signatories) {
 
   signatories.forEach((sig, index) => {
     sig.nodeId = index + 1;
+    currentSignatoriesNodeMap.set(sig.nodeId, sig);
     if (sig.completed) completedCount++;
 
     let rawLabel = '';
@@ -167,30 +185,35 @@ function initSurveyNetwork(signatories) {
     let nSize = 10;
 
     if (sig.role === 'PES' || sig.type === 'PES') {
-        rawLabel = sig.task || 'PES';
-        nShape = 'star';
-        nSize = sig.completed ? 22 : 16;
+      rawLabel = sig.task || 'PES';
+      nShape = 'star';
+      nSize = sig.completed ? 22 : 16;
     } else if (sig.role === 'VP' || sig.type === 'VP') {
-        rawLabel = 'VP ' + (sig.committee_name || '');
-        nShape = 'diamond';
-        nSize = sig.completed ? 16 : 12;
+      rawLabel = 'VP ' + (sig.committee_name || '');
+      nShape = 'diamond';
+      nSize = sig.completed ? 16 : 12;
     } else if ((sig.committee_name || '').toUpperCase() === 'O.A') {
-        rawLabel = sig.task === 'GEOP Alum' ? 'Alum' : 'Other';
-        nShape = 'triangle';
-        nSize = sig.completed ? 14 : 10;
+      rawLabel = sig.task === 'GEOP Alum' ? 'Alum' : 'Other';
+      nShape = 'triangle';
+      nSize = sig.completed ? 14 : 10;
     } else {
-        rawLabel = (sig.committee_name || '') + ' Mem';
-        nShape = 'dot';
-        nSize = sig.completed ? 12 : 8;
+      rawLabel = (sig.committee_name || '') + ' Mem';
+      nShape = 'dot';
+      nSize = sig.completed ? 12 : 8;
     }
 
     if (sig.completed && sig.signed_by) {
-        rawLabel = formatName(sig.signed_by);
+      rawLabel = formatName(sig.signed_by);
     }
+
+    const tooltipStatus = sig.completed
+      ? `✅ Signed by ${sig.signed_by || 'Verified'}\nRequirement: ${sig.trait || sig.task}`
+      : `⏳ Pending (${sig.committee_name || sig.role || 'Member'})\nRequirement: ${sig.trait || sig.task}\nClick to jump to this task!`;
 
     nodes.push({
       id: sig.nodeId,
       label: rawLabel,
+      title: tooltipStatus,
       shape: nShape,
       color: {
         background: sig.completed ? '#2e7d5a' : '#333333', 
@@ -266,14 +289,207 @@ function initSurveyNetwork(signatories) {
       timestep: 0.35,
       stabilization: { iterations: 150 }
     },
-    interaction: { dragNodes: true, zoomView: true, dragView: true, hover: true }
+    interaction: { dragNodes: true, zoomView: true, dragView: true, hover: true, tooltipDelay: 120 }
   };
 
   if (surveyNetwork) {
     surveyNetwork.setData(data);
   } else {
     surveyNetwork = new vis.Network(container, data, options);
+
+    // Interactive Node Click Handler (Suggestion 1)
+    surveyNetwork.on('click', (params) => {
+      if (!params.nodes || params.nodes.length === 0) return;
+      const clickedNodeId = params.nodes[0];
+      if (clickedNodeId === 0) {
+        showToast(`Control Station: ${completedCount} of ${signatories.length} nodes tied in!`, 'info');
+        return;
+      }
+
+      const sig = currentSignatoriesNodeMap.get(clickedNodeId);
+      if (!sig) return;
+
+      if (sig.completed) {
+        const extra = sig.favorite_tradition
+          ? ` • Tradition: "${sig.favorite_tradition}"`
+          : (sig.favorite_geop_memory ? ` • Memory: "${sig.favorite_geop_memory}"` : '');
+        showToast(`✅ Signed by ${sig.signed_by || sig.member_name} (${sig.trait || sig.task})${extra}`, 'success');
+      } else {
+        // Jump to Signatories Tab, Filter Committee, and Highlight Card
+        const sigTabBtn = document.querySelector('#applicantTabNav [data-tab="tab-signatories"]');
+        if (sigTabBtn) sigTabBtn.click();
+
+        setTimeout(() => {
+          const isPES = sig.role === 'PES' || sig.type === 'PES' || (sig.committee_name || '').toUpperCase() === 'PES';
+          if (!isPES && sig.committee_name) {
+            const filterBtn = document.querySelector(`#committeeFilterBar .committee-filter-btn[data-category="${sig.committee_name}"]`) ||
+                              document.querySelector(`#committeeFilterBar .committee-filter-btn[data-category="ALL"]`);
+            if (filterBtn) filterBtn.click();
+          }
+
+          const targetEl = document.querySelector(`[data-sig-id="${sig.id}"]`);
+          const targetCard = targetEl?.closest('.card');
+          if (targetCard) {
+            targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            const origOutline = targetCard.style.outline;
+            targetCard.style.outline = '3px solid var(--brand-mint)';
+            setTimeout(() => { targetCard.style.outline = origOutline; }, 2200);
+          }
+          showToast(`Jumped to pending task: ${sig.trait || sig.task}`, 'info');
+        }, 120);
+      }
+    });
   }
+}
+
+/* =========================================================
+   SUGGESTION 4: IN-APP CAMERA QR SCANNER FOR MEMBERS
+   ========================================================= */
+async function ensureQrLibraryLoaded() {
+  if (window.Html5Qrcode) return true;
+  return new Promise((resolve) => {
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.head.appendChild(script);
+  });
+}
+
+async function stopInAppQrScanner() {
+  const scannerWrap = document.getElementById('inAppQrScannerWrapper');
+  if (html5QrScanner && isQrScannerRunning) {
+    try {
+      await html5QrScanner.stop();
+      html5QrScanner.clear();
+    } catch (e) {
+      console.warn('Error stopping QR scanner:', e);
+    }
+    isQrScannerRunning = false;
+  }
+  if (scannerWrap) scannerWrap.style.display = 'none';
+}
+
+function injectMemberQrScannerUI() {
+  const hubSection = document.querySelector('#member-hub-view section.card');
+  const manualBtn = document.getElementById('manualValidateBtn');
+  if (!hubSection || !manualBtn || document.getElementById('openCameraQrBtn')) return;
+
+  // Wrap buttons neatly side-by-side
+  const btnWrapper = document.createElement('div');
+  btnWrapper.style.cssText = 'display: flex; gap: 10px; flex-wrap: wrap;';
+  manualBtn.parentNode.insertBefore(btnWrapper, manualBtn);
+  btnWrapper.appendChild(manualBtn);
+
+  const scanBtn = document.createElement('button');
+  scanBtn.id = 'openCameraQrBtn';
+  scanBtn.className = 'btn btn-secondary';
+  scanBtn.style.cssText = 'min-height: 40px; padding: 6px 16px; border-color: var(--brand-forest); color: var(--brand-forest);';
+  scanBtn.innerHTML = '📷 Scan QR with Camera';
+  btnWrapper.appendChild(scanBtn);
+
+  const scannerWrap = document.createElement('div');
+  scannerWrap.id = 'inAppQrScannerWrapper';
+  scannerWrap.style.cssText = 'display: none; margin-top: 16px; padding: 16px; background: var(--surface-subtle); border-radius: var(--radius-sm); border: 1px solid var(--border-medium); text-align: center;';
+  scannerWrap.innerHTML = `
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+      <strong style="font-size: 0.9rem; color: var(--brand-forest);">Point Camera at Applicant QR Code</strong>
+      <button type="button" id="closeCameraQrBtn" class="btn btn-secondary" style="min-height: 30px; padding: 2px 10px; font-size: 0.78rem;">Close Camera</button>
+    </div>
+    <div id="inAppQrReader" style="max-width: 340px; margin: 0 auto; border-radius: 8px; overflow: hidden;"></div>
+  `;
+  hubSection.appendChild(scannerWrap);
+
+  scanBtn.addEventListener('click', async () => {
+    if (isQrScannerRunning) {
+      await stopInAppQrScanner();
+      return;
+    }
+
+    const loaded = await ensureQrLibraryLoaded();
+    if (!loaded) {
+      showToast('Could not load camera scanner library. Please check your connection.', 'error');
+      return;
+    }
+
+    scannerWrap.style.display = 'block';
+    html5QrScanner = new window.Html5Qrcode('inAppQrReader');
+
+    try {
+      isQrScannerRunning = true;
+      await html5QrScanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 220, height: 220 } },
+        async (decodedText) => {
+          await stopInAppQrScanner();
+
+          let extractedCode = decodedText.trim();
+          try {
+            const url = new URL(decodedText);
+            extractedCode = url.searchParams.get('verifyCode') || url.searchParams.get('validateApplicant') || extractedCode;
+          } catch {
+            // Raw 6-char code fallback
+          }
+
+          if (!extractedCode || extractedCode.length < 6) {
+            showToast('Unrecognized QR code format.', 'error');
+            return;
+          }
+
+          showToast(`Verifying code ${extractedCode.toUpperCase()}...`, 'info');
+          const res = await verifyUniversalCode(extractedCode, currentUser.email);
+          showToast(res.message, res.success ? 'success' : 'error');
+          await handleAuth();
+        },
+        () => {} // Ignore frame scan misses
+      );
+    } catch (err) {
+      isQrScannerRunning = false;
+      scannerWrap.style.display = 'none';
+      showToast('Camera permission denied or unavailable on this device.', 'error');
+    }
+  });
+
+  document.getElementById('closeCameraQrBtn')?.addEventListener('click', stopInAppQrScanner);
+}
+
+/* =========================================================
+   SUGGESTION 5: APPLICANT GRADE BREAKDOWN DRAWER
+   ========================================================= */
+function renderGradeBreakdownUI(breakdown) {
+  const bar = document.getElementById('progressBar');
+  const gradeSection = bar?.closest('section.card');
+  if (!gradeSection) return;
+
+  let container = document.getElementById('gradeBreakdownDrawer');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'gradeBreakdownDrawer';
+    container.style.cssText = 'margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border-medium); display: grid; grid-template-columns: repeat(auto-fit, minmax(115px, 1fr)); gap: 8px;';
+    gradeSection.appendChild(container);
+  }
+
+  const items = [
+    { label: 'Events', val: breakdown.eventPoints, max: 25 },
+    { label: 'Signatories', val: breakdown.sigPoints, max: 15 },
+    { label: 'Tambay Hrs', val: breakdown.tambayPoints, max: 5 },
+    { label: 'Interview', val: breakdown.interviewPoints, max: 15 },
+    { label: 'OGT 1 & 2', val: breakdown.ogtPoints, max: 20 },
+    { label: 'Consti Quiz', val: breakdown.constiPoints, max: 10 },
+    { label: 'Buddy Tasks', val: breakdown.buddyTaskPoints, max: 10 }
+  ];
+
+  container.innerHTML = items.map(item => {
+    const isFull = item.val >= item.max;
+    return `
+      <div style="background: var(--surface-subtle); border: 1px solid ${isFull ? 'var(--brand-mint)' : 'var(--border-subtle)'}; border-radius: var(--radius-sm); padding: 6px 10px; display: flex; flex-direction: column; justify-content: space-between;">
+        <span style="font-size: 0.7rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase;">${item.label}</span>
+        <strong style="font-family: var(--font-mono); font-size: 0.9rem; color: ${isFull ? 'var(--brand-forest)' : 'var(--text-heading)'};">
+          ${Number(item.val).toFixed(1).replace(/\.0$/, '')} <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 400;">/ ${item.max}%</span>
+        </strong>
+      </div>
+    `;
+  }).join('');
 }
 
 async function renderShopView() {
@@ -403,17 +619,16 @@ async function renderOfficerBuddyTasksManager() {
   const groupSelect = document.getElementById('buddyTaskTargetGroupSelect');
   if (!container) return;
 
-  const [tasks, groups] = await Promise.all([
+  const [tasks, groups, isRAComm] = await Promise.all([
     getBuddyTasks(),
-    getManagedBuddyGroups()
+    getManagedBuddyGroups(),
+    checkIfRAComm(currentUser?.email)
   ]);
 
-  const isRAComm = await checkIfRAComm(currentUser?.email);
   let memberGroup = null;
-  
   if (!isRAComm && currentUser) {
-     const memberProfile = await getMemberProfile(currentUser.email);
-     memberGroup = memberProfile?.buddy_group_name;
+    const memberProfile = await getMemberProfile(currentUser.email);
+    memberGroup = memberProfile?.buddy_group_name;
   }
 
   if (groupSelect) {
@@ -467,11 +682,14 @@ async function renderAnnouncementsBoard() {
   const badge = document.getElementById('racommPostBadge');
   if (!list || !currentUser) return;
 
-  const isRAComm = await checkIfRAComm(currentUser.email);
+  const [isRAComm, items] = await Promise.all([
+    checkIfRAComm(currentUser.email),
+    getAnnouncements()
+  ]);
+
   if (form) form.style.display = isRAComm ? 'block' : 'none';
   if (badge) badge.style.display = isRAComm ? 'inline-block' : 'none';
 
-  const items = await getAnnouncements();
   if (items.length === 0) {
     list.innerHTML = '<p class="subtext">No announcements posted yet.</p>';
     return;
@@ -665,7 +883,6 @@ async function renderOfficerEventSchedules() {
   container.innerHTML = events.map(e => {
     const savedIso = savedDates[`event_date_${e.id}`];
     
-    // Format UTC time to local datetime-local format
     let localDateStr = '';
     if (savedIso) {
       const d = new Date(savedIso);
@@ -696,59 +913,62 @@ async function renderLeaderboard() {
   ]);
 
   if (container) {
-      const groupStats = groups.map(g => {
-        const members = applicants.filter(a => a.buddyGroup === g.name);
-        const avg = members.length ? members.reduce((sum, a) => sum + a.overallPercent, 0) / members.length : 0;
-        return { name: g.name, avg: Math.round(avg), count: members.length };
-      }).sort((a, b) => b.avg - a.avg);
+    const groupStats = groups.map(g => {
+      const members = applicants.filter(a => a.buddyGroup === g.name);
+      const avg = members.length ? members.reduce((sum, a) => sum + a.overallPercent, 0) / members.length : 0;
+      return { name: g.name, avg: Math.round(avg), count: members.length };
+    }).sort((a, b) => b.avg - a.avg);
 
-      container.innerHTML = groupStats.map((g, i) => `
-        <div class="card" style="margin: 0; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid ${i === 0 ? '#FBB03B' : 'var(--brand-clay)'};">
-          <div style="display: flex; align-items: center; gap: 12px;">
-            <h2 style="color: ${i === 0 ? '#FBB03B' : 'var(--text-muted)'}; margin: 0;">#${i + 1}</h2>
-            <div>
-              <h3 style="margin-bottom: 2px;">${g.name}</h3>
-              <small class="subtext">${g.count} Applicants</small>
-            </div>
+    container.innerHTML = groupStats.map((g, i) => `
+      <div class="card" style="margin: 0; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid ${i === 0 ? '#FBB03B' : 'var(--brand-clay)'};">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <h2 style="color: ${i === 0 ? '#FBB03B' : 'var(--text-muted)'}; margin: 0;">#${i + 1}</h2>
+          <div>
+            <h3 style="margin-bottom: 2px;">${g.name}</h3>
+            <small class="subtext">${g.count} Applicants</small>
           </div>
-          <h2 style="color: var(--brand-forest); margin: 0;">${g.avg}%</h2>
         </div>
-      `).join('') || '<p class="subtext">No groups established yet.</p>';
+        <h2 style="color: var(--brand-forest); margin: 0;">${g.avg}%</h2>
+      </div>
+    `).join('') || '<p class="subtext">No groups established yet.</p>';
   }
 
   if (tambayList) {
-      const top5 = applicants
-        .filter(a => a.tambayHours > 0)
-        .sort((a, b) => b.tambayHours - a.tambayHours)
-        .slice(0, 5);
+    const top5 = applicants
+      .filter(a => a.tambayHours > 0)
+      .sort((a, b) => b.tambayHours - a.tambayHours)
+      .slice(0, 5);
 
-      if (top5.length === 0) {
-        tambayList.innerHTML = '<li class="subtext" style="padding: 10px 14px;">No tambay hours logged yet.</li>';
-      } else {
-        tambayList.innerHTML = top5.map((a, i) => `
-          <li class="task-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px;">
-            <div style="display: flex; align-items: center; gap: 12px;">
-              <strong style="font-size: 1.1rem; color: ${i === 0 ? '#FBB03B' : (i === 1 ? '#A8A9AD' : (i === 2 ? '#CD7F32' : 'var(--text-muted)'))};">#${i + 1}</strong>
-              <div>
-                <strong style="color: var(--text-heading); display: block;">${a.nickname ? `${a.nickname} (${a.fullName})` : a.fullName}</strong>
-                <small style="color: var(--text-muted);">${a.buddyGroup}</small>
-              </div>
+    if (top5.length === 0) {
+      tambayList.innerHTML = '<li class="subtext" style="padding: 10px 14px;">No tambay hours logged yet.</li>';
+    } else {
+      tambayList.innerHTML = top5.map((a, i) => `
+        <li class="task-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <strong style="font-size: 1.1rem; color: ${i === 0 ? '#FBB03B' : (i === 1 ? '#A8A9AD' : (i === 2 ? '#CD7F32' : 'var(--text-muted)'))};">#${i + 1}</strong>
+            <div>
+              <strong style="color: var(--text-heading); display: block;">${a.nickname ? `${a.nickname} (${a.fullName})` : a.fullName}</strong>
+              <small style="color: var(--text-muted);">${a.buddyGroup}</small>
             </div>
-            <span class="badge" style="background: var(--brand-mint-subtle); color: var(--brand-forest); font-family: var(--font-mono); font-weight: 700; font-size: 0.85rem;">
-              ${a.tambayHours.toFixed(1)} hrs
-            </span>
-          </li>
-        `).join('');
-      }
+          </div>
+          <span class="badge" style="background: var(--brand-mint-subtle); color: var(--brand-forest); font-family: var(--font-mono); font-weight: 700; font-size: 0.85rem;">
+            ${a.tambayHours.toFixed(1)} hrs
+          </span>
+        </li>
+      `).join('');
+    }
   }
 }
 
 async function renderDashboard() {
-  const [signatories, tambayHours, events, profile] = await Promise.all([
+  if (!currentUser) return;
+
+  const [signatories, tambayHours, events, profile, activeSession] = await Promise.all([
     getSignatories(),
     getTambayHours(),
     getEvents(),
-    getUserProfileData(currentUser.id)
+    getUserProfileData(currentUser.id),
+    getActiveTambaySession(currentUser.id)
   ]);
 
   const totalSigs = signatories.length || 21;
@@ -776,6 +996,17 @@ async function renderDashboard() {
   if (bar) bar.style.width = `${totalPercent}%`;
   if (barLabel) barLabel.textContent = `${totalPercent}%`;
 
+  // Render Grade Breakdown Drawer (Suggestion 5)
+  renderGradeBreakdownUI({
+    eventPoints,
+    sigPoints,
+    tambayPoints,
+    interviewPoints,
+    ogtPoints,
+    constiPoints,
+    buddyTaskPoints
+  });
+
   const sigText = document.getElementById('overviewSigText');
   if (sigText) sigText.textContent = `${completedSigs}/${totalSigs}`;
 
@@ -788,7 +1019,6 @@ async function renderDashboard() {
   const eventBadge = document.getElementById('eventBadge');
   if (eventBadge) eventBadge.textContent = `${attendedEvents} / 5 Attended (${eventPoints}%)`;
 
-  const activeSession = await getActiveTambaySession(currentUser.id);
   const activeBanner = document.getElementById('activeTambayBanner');
   if (activeSession && activeBanner) {
     activeBanner.style.display = 'block';
@@ -804,7 +1034,6 @@ async function renderDashboard() {
   // Trigger Survey Network Generation on the Applicant Dashboard
   initSurveyNetwork(signatories);
 
-
   const eventList = document.getElementById('eventList');
   if (eventList) {
     eventList.innerHTML = events.map(evt => `
@@ -812,11 +1041,13 @@ async function renderDashboard() {
         <div>
           <strong style="color: var(--brand-forest); font-size: 0.95rem;">${evt.name}</strong>
           <div style="margin-top: 2px;">
-            <small style="color: var(--text-muted);">Weight: 5.0% • Officer-verified</small>
+            <small style="color: var(--text-muted);">
+              Weight: 5.0% • ${evt.scheduledDate ? `Scheduled: ${new Date(evt.scheduledDate).toLocaleDateString()} ${new Date(evt.scheduledDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Officer-verified'}
+            </small>
           </div>
         </div>
         <div style="display: flex; align-items: center; gap: 8px;">
-          <a href="${generateGoogleCalendarUrl(evt.name)}" target="_blank" class="btn btn-secondary" style="min-height: 32px; padding: 4px 8px; font-size: 0.75rem;">📅 Add to Calendar</a>
+          <a href="${generateGoogleCalendarUrl(evt.name, evt.scheduledDate)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="min-height: 32px; padding: 4px 8px; font-size: 0.75rem;">📅 Add to Calendar</a>
           <span class="badge" style="background: ${evt.attended ? 'var(--brand-mint)' : 'var(--surface-subtle)'}; color: ${evt.attended ? '#ffffff' : 'inherit'}; font-weight: 600;">
             ${evt.attended ? 'Attended (+5%)' : 'Pending'}
           </span>
@@ -830,8 +1061,10 @@ async function renderRoster() {
   const tbody = document.getElementById('applicantRosterTbody');
   if (!tbody || !currentUser) return;
 
-  let applicants = await getAllApplicantsProgress();
-  const isRAComm = await checkIfRAComm(currentUser.email);
+  let [applicants, isRAComm] = await Promise.all([
+    getAllApplicantsProgress(),
+    checkIfRAComm(currentUser.email)
+  ]);
 
   if (!isRAComm) {
     const memberProfile = await getMemberProfile(currentUser.email);
@@ -866,13 +1099,19 @@ async function renderRoster() {
   `).join('');
 }
 
+/* =========================================================
+   SUGGESTION 2: BUDDY TASK CHECKLIST IN INSPECTION MODAL
+   ========================================================= */
 async function openInspection(appId) {
   inspectedApplicantId = appId;
   const modal = document.getElementById('adminInspectionModal');
-  const [details, events, isRAComm] = await Promise.all([
+  const [details, events, isRAComm, allBuddyTasks, applicantTaskCompletions, groups] = await Promise.all([
     getApplicantFullDetails(appId),
     getEvents(appId),
-    checkIfRAComm(currentUser.email)
+    checkIfRAComm(currentUser.email),
+    getBuddyTasks(),
+    getApplicantBuddyTaskCompletions(appId),
+    getManagedBuddyGroups()
   ]);
 
   if (!details || !modal) return;
@@ -881,7 +1120,6 @@ async function openInspection(appId) {
   document.getElementById('inspectApplicantName').textContent = `${p.full_name} ("${p.nickname}")`;
   document.getElementById('inspectApplicantEmail').textContent = `ID: ${p.id} | Balance: ${p.currency ?? 0} AC`;
 
-  const groups = await getManagedBuddyGroups();
   const select = document.getElementById('inspectBuddyGroupSelect');
   const saveGrpBtn = document.getElementById('saveAssignedGroupBtn');
   
@@ -894,10 +1132,17 @@ async function openInspection(appId) {
   }
   if (saveGrpBtn) saveGrpBtn.style.display = isRAComm ? 'block' : 'none';
 
+  // Filter Buddy Tasks applicable to this applicant
+  const appGroup = p.buddy_group_name || 'Unassigned';
+  const relevantBuddyTasks = allBuddyTasks.filter(t =>
+    t.target_group === 'ALL' || t.target_group.toLowerCase() === appGroup.toLowerCase()
+  );
+  const completedBuddyTaskSet = new Set(applicantTaskCompletions.map(c => c.task_id));
+
   const panelsWrapper = document.getElementById('inspectPanelsWrapper');
   if (panelsWrapper) {
     panelsWrapper.innerHTML = `
-      <div style="padding: 12px; background: var(--surface-subtle); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); width: 100%;">
+      <div style="padding: 12px; background: var(--surface-subtle); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); width: 100%; margin-bottom: 8px;">
         <h4 style="margin: 0 0 8px 0; color: var(--brand-forest); font-size: 0.88rem;">Official Events Attendance (5% each)</h4>
         <div style="display: flex; flex-direction: column; gap: 6px; font-size: 0.82rem;">
           ${events.map(evt => `
@@ -906,6 +1151,24 @@ async function openInspection(appId) {
               <input type="checkbox" class="admin-event-check" data-event-id="${evt.id}" ${evt.attended ? 'checked' : ''} ${!isRAComm ? 'disabled' : ''} />
             </label>
           `).join('')}
+        </div>
+      </div>
+
+      <div style="padding: 12px; background: var(--surface-subtle); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); width: 100%; margin-bottom: 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <h4 style="margin: 0; color: var(--brand-forest); font-size: 0.88rem;">Assigned Buddy Tasks Checklist</h4>
+          ${isRAComm && relevantBuddyTasks.length > 0 ? `<button type="button" id="autoCalcBuddyScoreBtn" class="btn btn-secondary" style="min-height: 24px; padding: 2px 8px; font-size: 0.7rem;">Auto-Compute 10%</button>` : ''}
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; font-size: 0.82rem;">
+          ${relevantBuddyTasks.length === 0
+            ? '<small class="subtext">No buddy tasks assigned to this group yet.</small>'
+            : relevantBuddyTasks.map(bt => `
+              <label style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: var(--surface); border-radius: 4px; border: 1px solid var(--border-subtle); cursor: ${isRAComm ? 'pointer' : 'not-allowed'};">
+                <span style="font-size: 0.8rem; color: var(--text-heading);">${bt.title} <small style="color: var(--text-muted);">(${bt.target_group})</small></span>
+                <input type="checkbox" class="admin-buddy-task-check" data-task-id="${bt.id}" ${completedBuddyTaskSet.has(bt.id) ? 'checked' : ''} ${!isRAComm ? 'disabled' : ''} />
+              </label>
+            `).join('')
+          }
         </div>
       </div>
 
@@ -947,6 +1210,34 @@ async function openInspection(appId) {
             e.target.checked = !checked;
           }
         });
+      });
+
+      // Buddy Task Completion Checkboxes Handler
+      panelsWrapper.querySelectorAll('.admin-buddy-task-check').forEach(chk => {
+        chk.addEventListener('change', async (e) => {
+          const taskId = e.target.dataset.taskId;
+          const checked = e.target.checked;
+          const ok = await toggleBuddyTaskCompletion(taskId, inspectedApplicantId, checked, currentUser.email);
+          if (ok) {
+            showToast(`Buddy task marked as ${checked ? 'completed' : 'pending'}.`, 'success');
+          } else {
+            showToast('Failed to update buddy task completion.', 'error');
+            e.target.checked = !checked;
+          }
+        });
+      });
+
+      // Auto-Compute 10% Buddy Task Grade from Checked Boxes
+      document.getElementById('autoCalcBuddyScoreBtn')?.addEventListener('click', () => {
+        const allChecks = Array.from(panelsWrapper.querySelectorAll('.admin-buddy-task-check'));
+        if (allChecks.length === 0) return;
+        const checkedCount = allChecks.filter(c => c.checked).length;
+        const computedScore = Number(((checkedCount / allChecks.length) * 10).toFixed(2));
+        const buddyInput = document.getElementById('gradeBuddyInput');
+        if (buddyInput) {
+          buddyInput.value = computedScore;
+          showToast(`Computed ${checkedCount}/${allChecks.length} tasks = ${computedScore}% (Click Save Evaluation Scores to apply)`, 'info');
+        }
       });
 
       document.getElementById('saveManualGradesBtn')?.addEventListener('click', async () => {
@@ -1098,14 +1389,19 @@ async function handleAuth() {
       showToast(res.message, res.success ? 'success' : 'error');
     }
 
-    const isMember = await checkIfResidentMember(currentUser.email);
-    const isRAComm = await checkIfRAComm(currentUser.email);
+    const [isMember, isRAComm] = await Promise.all([
+      checkIfResidentMember(currentUser.email),
+      checkIfRAComm(currentUser.email)
+    ]);
 
     if (isMember || isRAComm) {
       if (badge) badge.textContent = isRAComm ? 'RAComm Officer' : 'Resident Member';
       if (onboardSec) onboardSec.style.display = 'none';
       if (appDash) appDash.style.display = 'none';
       if (memDash) memDash.style.display = 'block';
+
+      // Mount In-App QR Camera Scanner Button for Resident Members (Suggestion 4)
+      injectMemberQrScannerUI();
 
       const racommTabs = document.querySelectorAll('.racomm-only-tab');
       racommTabs.forEach(tab => {
@@ -1127,13 +1423,14 @@ async function handleAuth() {
 
         updateSettingsButtons(settings.multiplier, settings.dailyCapEnabled, settings.memberSigLimitEnabled);
 
-        await renderBuddyGroupBoard();
-        await renderOfficerEventSchedules();
+        await Promise.all([
+          renderBuddyGroupBoard(),
+          renderOfficerEventSchedules()
+        ]);
       } else {
         document.querySelectorAll('#racommTabNav .tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelector('[data-tab="member-hub-view"]')?.classList.add('active');
 
-        // Universally reset all tabs so shared tabs don't show
         document.querySelectorAll('.tab-content').forEach(c => {
           c.style.display = 'none';
           c.classList.remove('active');
@@ -1145,9 +1442,11 @@ async function handleAuth() {
         }
       }
       
-      await renderRoster();
-      await renderOfficerBuddyTasksManager();
-      await renderLeaderboard();
+      await Promise.all([
+        renderRoster(),
+        renderOfficerBuddyTasksManager(),
+        renderLeaderboard()
+      ]);
 
     } else {
       if (badge) badge.textContent = 'Applicant';
@@ -1203,10 +1502,12 @@ async function handleAuth() {
           }).join('') || '<li class="subtext">No buddies assigned yet.</li>';
         }
 
-        await renderDashboard();
-        await renderApplicantBuddyTasks(profile.buddy_group_name);
-        await renderShopView();
-        await renderLeaderboard();
+        await Promise.all([
+          renderDashboard(),
+          renderApplicantBuddyTasks(profile.buddy_group_name),
+          renderShopView(),
+          renderLeaderboard()
+        ]);
       }
     }
   } else {
@@ -1256,57 +1557,68 @@ if (!window.__appInitialized) {
       window.hasRealtimeSubscribed = true;
       
       supabase.channel('app-db-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async () => {
-          await renderRoster();
-          await renderBuddyGroupBoard();
-          await renderDashboard();
-          await renderLeaderboard();
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
+          debounceTask('profiles', async () => {
+            await Promise.all([renderRoster(), renderBuddyGroupBoard(), renderDashboard(), renderLeaderboard()]);
+          });
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, async () => {
-          await renderBuddyGroupBoard();
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, () => {
+          debounceTask('members', async () => {
+            await renderBuddyGroupBoard();
+          });
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'signatories' }, async () => {
-          showToast('Signatory matrix updated.', 'info');
-          await renderDashboard();
-          await renderLeaderboard();
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'signatories' }, () => {
+          debounceTask('signatories', async () => {
+            showToast('Signatory matrix updated.', 'info');
+            await Promise.all([renderDashboard(), renderLeaderboard()]);
+          });
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'event_attendees' }, async () => {
-          showToast('Event attendance updated.', 'info');
-          await renderDashboard();
-          await renderRoster();
-          await renderLeaderboard();
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'event_attendees' }, () => {
+          debounceTask('events', async () => {
+            showToast('Event attendance updated.', 'info');
+            await Promise.all([renderDashboard(), renderRoster(), renderLeaderboard()]);
+          });
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'buddy_tasks' }, async () => {
-          const profile = await getUserProfileData(currentUser?.id);
-          await renderApplicantBuddyTasks(profile?.buddy_group_name);
-          await renderOfficerBuddyTasksManager();
-          await renderShopView();
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'buddy_tasks' }, () => {
+          debounceTask('buddy_tasks', async () => {
+            const profile = await getUserProfileData(currentUser?.id);
+            await Promise.all([
+              renderApplicantBuddyTasks(profile?.buddy_group_name),
+              renderOfficerBuddyTasksManager(),
+              renderShopView()
+            ]);
+          });
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'task_contributions' }, async () => {
-          await renderShopView();
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'task_contributions' }, () => {
+          debounceTask('task_contributions', () => renderShopView());
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'buddy_task_completions' }, async () => {
-          const profile = await getUserProfileData(currentUser?.id);
-          await renderApplicantBuddyTasks(profile?.buddy_group_name);
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'buddy_task_completions' }, () => {
+          debounceTask('buddy_task_completions', async () => {
+            const profile = await getUserProfileData(currentUser?.id);
+            await renderApplicantBuddyTasks(profile?.buddy_group_name);
+          });
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, async () => {
-          showToast('New announcement posted.', 'info');
-          await renderAnnouncementsBoard();
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => {
+          debounceTask('announcements', async () => {
+            showToast('New announcement posted.', 'info');
+            await renderAnnouncementsBoard();
+          });
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'availability_slots' }, async () => {
-          await renderWhen2Meet();
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'availability_slots' }, () => {
+          debounceTask('availability', () => renderWhen2Meet());
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'tambay_sessions' }, async () => {
-          await renderDashboard();
-          await renderRoster();
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tambay_sessions' }, () => {
+          debounceTask('tambay_sessions', async () => {
+            await Promise.all([renderDashboard(), renderRoster()]);
+          });
         })
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, async (payload) => {
           if (payload.new.user_id === currentUser?.id) {
             showToast(payload.new.message, 'info');
             const badge = document.getElementById('notifBadge');
             if (badge) {
-                badge.style.display = 'block';
-                badge.textContent = parseInt(badge.textContent || 0) + 1;
+              badge.style.display = 'block';
+              badge.textContent = parseInt(badge.textContent || 0, 10) + 1;
             }
           }
         })
@@ -1341,7 +1653,10 @@ if (!window.__appInitialized) {
         const tabId = btn.dataset.tab;
         if (!tabId) return;
 
-        // Roster and Buddy Tasks are excluded from this block so regular members can access them
+        if (tabId !== 'member-hub-view' && isQrScannerRunning) {
+          await stopInAppQrScanner();
+        }
+
         if (tabId === 'racomm-buddy-groups' || tabId === 'racomm-settings') {
           const isOfficer = await checkIfRAComm(currentUser?.email);
           if (!isOfficer) {
@@ -1356,8 +1671,6 @@ if (!window.__appInitialized) {
         }
         btn.classList.add('active');
 
-        // UNIVERSAL HIDE FIX: This specifically targets all `.tab-content` divs on the page, 
-        // including those placed entirely outside the dashboard div structures.
         document.querySelectorAll('.tab-content').forEach(c => {
           c.style.display = 'none';
           c.classList.remove('active');
@@ -1369,8 +1682,7 @@ if (!window.__appInitialized) {
           target.classList.add('active');
 
           if (tabId === 'tab-schedule') {
-            await renderAnnouncementsBoard();
-            await renderWhen2Meet();
+            await Promise.all([renderAnnouncementsBoard(), renderWhen2Meet()]);
           } else if (tabId === 'racomm-buddy-groups') {
             await renderBuddyGroupBoard();
           } else if (tabId === 'racomm-buddy-tasks') {
@@ -1417,10 +1729,12 @@ if (!window.__appInitialized) {
       const canvas = document.getElementById('qrcodeCanvas');
       const text = document.getElementById('applicantShortCodeText');
 
-      const activeSession = await getActiveTambaySession(currentUser.id);
+      const [activeSession, code] = await Promise.all([
+        getActiveTambaySession(currentUser.id),
+        generateApplicantShortCode(null, 'TAMBAY')
+      ]);
       const isTimingOut = !!activeSession;
 
-      const code = await generateApplicantShortCode(null, 'TAMBAY');
       if (text) text.textContent = code || 'ERROR';
 
       const verifyUrl = `${window.location.origin}${window.location.pathname}?verifyCode=${code}`;
@@ -1449,26 +1763,22 @@ if (!window.__appInitialized) {
     document.getElementById('notificationBellBtn')?.addEventListener('click', async () => {
       if (!currentUser) return;
       
-      // Fetch and clear the notifications from the database
       const notifs = await fetchAndClearNotifications(currentUser.id);
       
-      // Reset the red badge to 0 and hide it
       const badge = document.getElementById('notifBadge');
       if (badge) {
-          badge.style.display = 'none';
-          badge.textContent = '0';
+        badge.style.display = 'none';
+        badge.textContent = '0';
       }
       
-      // Actually show the user what the notifications were!
       if (notifs && notifs.length > 0) {
-          notifs.forEach((notif, index) => {
-              // Add a slight stagger if there are multiple notifications so they stack nicely
-              setTimeout(() => {
-                  showToast(notif.message, 'info');
-              }, index * 300); 
-          });
+        notifs.forEach((notif, index) => {
+          setTimeout(() => {
+            showToast(notif.message, 'info');
+          }, index * 300); 
+        });
       } else {
-          showToast('No new notifications.', 'info');
+        showToast('No new notifications.', 'info');
       }
     });
 
@@ -1620,6 +1930,7 @@ if (!window.__appInitialized) {
       if (await updateGlobalSettings('hourly_multiplier', '1.0')) {
         showToast('Multiplier set to 1.0x', 'info');
         const settings = await getGlobalSettings();
+        document.getElementById('currentMultiplierText').textContent = '1.0x';
         updateSettingsButtons(settings.multiplier, settings.dailyCapEnabled, settings.memberSigLimitEnabled);
       }
     });
@@ -1628,6 +1939,7 @@ if (!window.__appInitialized) {
       if (await updateGlobalSettings('hourly_multiplier', '2.0')) {
         showToast('Multiplier set to 2.0x', 'success');
         const settings = await getGlobalSettings();
+        document.getElementById('currentMultiplierText').textContent = '2.0x';
         updateSettingsButtons(settings.multiplier, settings.dailyCapEnabled, settings.memberSigLimitEnabled);
       }
     });
@@ -1636,6 +1948,7 @@ if (!window.__appInitialized) {
       if (await updateGlobalSettings('daily_cap_enabled', 'true')) {
         showToast('Daily cap enabled', 'info');
         const settings = await getGlobalSettings();
+        document.getElementById('currentCapText').textContent = 'Active';
         updateSettingsButtons(settings.multiplier, settings.dailyCapEnabled, settings.memberSigLimitEnabled);
       }
     });
@@ -1644,6 +1957,7 @@ if (!window.__appInitialized) {
       if (await updateGlobalSettings('daily_cap_enabled', 'false')) {
         showToast('Daily cap removed', 'info');
         const settings = await getGlobalSettings();
+        document.getElementById('currentCapText').textContent = 'Disabled';
         updateSettingsButtons(settings.multiplier, settings.dailyCapEnabled, settings.memberSigLimitEnabled);
       }
     });
@@ -1721,8 +2035,7 @@ if (!window.__appInitialized) {
         const newGroup = e.target.value;
         if (await assignApplicantBuddyGroup(applicantId, newGroup)) {
           showToast(`Applicant assigned to ${newGroup}`, 'success');
-          await renderBuddyGroupBoard();
-          await renderRoster();
+          await Promise.all([renderBuddyGroupBoard(), renderRoster()]);
         }
       }
 
@@ -1742,8 +2055,7 @@ if (!window.__appInitialized) {
       if (inspectedApplicantId && groupName) {
         if (await assignApplicantBuddyGroup(inspectedApplicantId, groupName)) {
           showToast(`Assigned to ${groupName}!`, 'success');
-          await renderRoster();
-          await renderBuddyGroupBoard();
+          await Promise.all([renderRoster(), renderBuddyGroupBoard()]);
         }
       }
     });
@@ -1819,8 +2131,7 @@ if (!window.__appInitialized) {
       if (val && !isNaN(val)) {
         await adminAdjustTambayHours(inspectedApplicantId, parseFloat(val));
         showToast('Hours adjusted.', 'success');
-        await openInspection(inspectedApplicantId);
-        await renderRoster();
+        await Promise.all([openInspection(inspectedApplicantId), renderRoster()]);
       }
     });
 
@@ -1847,8 +2158,7 @@ if (!window.__appInitialized) {
         if (success) {
           document.getElementById('adminInspectionModal').style.display = 'none';
           showToast('Profile deleted successfully.', 'info');
-          await renderRoster();
-          await renderBuddyGroupBoard();
+          await Promise.all([renderRoster(), renderBuddyGroupBoard()]);
         } else {
           showToast('Failed to delete applicant profile.', 'error');
         }
@@ -1856,7 +2166,6 @@ if (!window.__appInitialized) {
     });
 
     document.getElementById('adminExportPdfBtn')?.addEventListener('click', async () => {
-      // 1. Open the tab IMMEDIATELY before awaiting anything to bypass popup blockers
       const win = window.open('', '_blank');
       if (!win) {
         showToast('Popup blocked! Please allow popups for this site.', 'error');
@@ -1865,7 +2174,6 @@ if (!window.__appInitialized) {
       
       win.document.write('<h3 style="font-family: sans-serif; color: #1b382b;">Loading report...</h3>');
 
-      // 2. Fetch the data
       const details = await getApplicantFullDetails(inspectedApplicantId);
       if (!details) {
         win.close();
@@ -1874,7 +2182,6 @@ if (!window.__appInitialized) {
       
       const p = details.profile;
       
-      // 3. Overwrite the loading text with the real data
       win.document.open();
       win.document.write(`
         <html>
