@@ -178,7 +178,7 @@ export async function getAllMembersList() {
 }
 
 /* =========================================================
-   MEMBER SIGNATURE QUOTA TRACKER HELPER
+   MEMBER SIGNATURE QUOTA & ACTIVITY LOG HELPERS
    ========================================================= */
 export async function getMemberSignatureCounts() {
   if (!supabase) return {};
@@ -200,6 +200,104 @@ export async function getMemberSignatureCounts() {
     }
   });
   return counts;
+}
+
+export async function getMemberPersonalActivityLog(memberFullName) {
+  if (!supabase || !memberFullName) {
+    return { signedList: [], tambayVerifications: [], regularSigCount: 0 };
+  }
+
+  const cleanName = memberFullName.trim();
+  const [sigsRes, logsRes, activeRes, profilesRes] = await Promise.all([
+    supabase.from('signatories').select('*').eq('completed', true).ilike('signed_by', cleanName),
+    supabase.from('tambay_logs').select('*').ilike('verified_by', `${cleanName}%`).order('created_at', { ascending: false }).limit(20),
+    supabase.from('tambay_sessions').select('*').ilike('verified_by', cleanName),
+    supabase.from('profiles').select('id, full_name, nickname, buddy_group_name')
+  ]);
+
+  const profileMap = new Map((profilesRes.data || []).map(p => [p.id, p]));
+
+  let regularSigCount = 0;
+  const signedList = (sigsRes.data || []).map(s => {
+    const p = profileMap.get(s.user_id) || {};
+    const isPESTask = s.role === 'PES' || s.type === 'PES' || (s.committee_name || '').toUpperCase() === 'PES';
+    const isVPTask = s.role === 'VP' || s.type === 'VP';
+    const isOATask = ['O.A', 'ALUMNI', 'OTHER MEMBER'].includes((s.committee_name || '').toUpperCase()) ||
+                     ['O.A', 'ALUMNI', 'OTHER MEMBER'].includes((s.role || '').toUpperCase());
+    if (!isPESTask && !isVPTask && !isOATask) {
+      regularSigCount++;
+    }
+    return {
+      ...s,
+      applicantName: p.nickname ? `${p.full_name} ("${p.nickname}")` : (p.full_name || 'Applicant'),
+      applicantGroup: p.buddy_group_name || 'Unassigned',
+      isRegularQuota: !isPESTask && !isVPTask && !isOATask
+    };
+  });
+
+  const tambayVerifications = [
+    ...(activeRes.data || []).map(a => {
+      const p = profileMap.get(a.user_id) || {};
+      return {
+        id: a.id,
+        applicantName: p.nickname ? `${p.full_name} ("${p.nickname}")` : (p.full_name || 'Applicant'),
+        type: 'Active Time-In',
+        hours: null,
+        timestamp: a.time_in
+      };
+    }),
+    ...(logsRes.data || []).map(l => {
+      const p = profileMap.get(l.user_id) || {};
+      return {
+        id: l.id,
+        applicantName: p.nickname ? `${p.full_name} ("${p.nickname}")` : (p.full_name || 'Applicant'),
+        type: 'Completed Session',
+        hours: l.hours,
+        timestamp: l.created_at
+      };
+    })
+  ];
+
+  return { signedList, tambayVerifications, regularSigCount };
+}
+
+export async function getMostApproachedMembersLeaderboard() {
+  if (!supabase) return [];
+  const [sigsRes, logsRes] = await Promise.all([
+    supabase.from('signatories').select('signed_by').eq('completed', true),
+    supabase.from('tambay_logs').select('verified_by')
+  ]);
+
+  const statsMap = new Map();
+
+  const ensureEntry = (name) => {
+    if (!statsMap.has(name)) {
+      statsMap.set(name, { name, sigs: 0, tambay: 0, total: 0 });
+    }
+    return statsMap.get(name);
+  };
+
+  (sigsRes.data || []).forEach(s => {
+    const raw = (s.signed_by || '').trim();
+    if (!raw || raw.includes('Admin Override')) return;
+    const entry = ensureEntry(raw);
+    entry.sigs++;
+    entry.total++;
+  });
+
+  (logsRes.data || []).forEach(l => {
+    let raw = (l.verified_by || '').trim();
+    if (!raw || raw.includes('Admin Adjust') || raw.includes('Force-Close')) return;
+    raw = raw.replace(/\s*\(1\.5x Boost Applied\)\s*/i, '').trim();
+    if (!raw) return;
+    const entry = ensureEntry(raw);
+    entry.tambay++;
+    entry.total++;
+  });
+
+  return Array.from(statsMap.values())
+    .sort((a, b) => b.total - a.total || b.sigs - a.sigs)
+    .slice(0, 8);
 }
 
 // Notification Helpers
@@ -615,7 +713,7 @@ export async function verifyUniversalCode(code, verifierEmail) {
 }
 
 /* =========================================================
-   LIVE TAMBAYAN SESSIONS & RACOMM FORCE-CLOSE GUARD
+   LIVE TAMBAYAN SESSIONS, LOG HISTORY & RACOMM FORCE-CLOSE
    ========================================================= */
 export async function getAllActiveTambaySessions() {
   if (!supabase) return [];
@@ -668,6 +766,21 @@ export async function adminForceCloseTambaySession(userId, creditHours = 0, offi
   );
 
   return true;
+}
+
+export async function getApplicantTambayLogHistory(userId = null) {
+  if (!supabase) return [];
+  const uid = userId || await getCurrentUserId();
+  if (!uid) return [];
+
+  const { data, error } = await supabase
+    .from('tambay_logs')
+    .select('*')
+    .eq('user_id', uid)
+    .order('created_at', { ascending: false });
+
+  if (error || !data) return [];
+  return data;
 }
 
 export async function getTambayHours(userId = null) {
@@ -945,8 +1058,53 @@ export async function toggleBuddyTaskCompletion(taskId, applicantId, isCompleted
 }
 
 /* =========================================================
-   ADMINISTRATION & GRADING HELPERS
+   BULK EVENT ATTENDANCE & ADMIN HELPERS
    ========================================================= */
+export async function getEventAttendeeUserIds(eventId) {
+  if (!supabase || !eventId) return [];
+  const { data, error } = await supabase
+    .from('event_attendees')
+    .select('user_id')
+    .eq('event_id', eventId);
+
+  if (error || !data) return [];
+  return data.map(r => r.user_id);
+}
+
+export async function adminBulkSetEventAttendance(eventId, targetUserIds, officerEmail) {
+  if (!supabase || !eventId) return false;
+
+  const existingIds = new Set(await getEventAttendeeUserIds(eventId));
+  const desiredIds = new Set(targetUserIds || []);
+
+  const toInsert = [...desiredIds]
+    .filter(uid => !existingIds.has(uid))
+    .map(uid => ({
+      user_id: uid,
+      event_id: eventId,
+      marked_by: officerEmail
+    }));
+
+  const toDelete = [...existingIds].filter(uid => !desiredIds.has(uid));
+
+  const ops = [];
+  if (toInsert.length > 0) {
+    ops.push(supabase.from('event_attendees').insert(toInsert));
+  }
+  if (toDelete.length > 0) {
+    ops.push(
+      supabase
+        .from('event_attendees')
+        .delete()
+        .eq('event_id', eventId)
+        .in('user_id', toDelete)
+    );
+  }
+
+  if (ops.length === 0) return true;
+  const results = await Promise.all(ops);
+  return results.every(r => !r.error);
+}
 
 export async function getManagedBuddyGroups() {
   if (!supabase) return [];
