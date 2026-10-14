@@ -1669,7 +1669,7 @@ async function renderLeaderboard() {
           <h2>Most Approached Resident Members</h2>
           <p class="subtext">Resident members with the most applicant signatories endorsed and tambay sessions verified.</p>
         </div>
-        <span class="badge" style="background: var(--brand-clay); color: #fff;">Members MVP</span>
+        <span class="badge" style="background: var(--brand-clay); color: #fff;">Members</span>
       </div>
       <ul class="task-list">${memItemsHtml}</ul>
     `;
