@@ -177,6 +177,31 @@ export async function getAllMembersList() {
   return cachedMembersList;
 }
 
+/* =========================================================
+   MEMBER SIGNATURE QUOTA TRACKER HELPER
+   ========================================================= */
+export async function getMemberSignatureCounts() {
+  if (!supabase) return {};
+  const { data, error } = await supabase
+    .from('signatories')
+    .select('signed_by, committee_name, role, type')
+    .eq('completed', true);
+
+  if (error || !data) return {};
+  const counts = {};
+  data.forEach(s => {
+    const isPESTask = s.role === 'PES' || s.type === 'PES' || (s.committee_name || '').toUpperCase() === 'PES';
+    const isVPTask = s.role === 'VP' || s.type === 'VP';
+    const isOATask = ['O.A', 'ALUMNI', 'OTHER MEMBER'].includes((s.committee_name || '').toUpperCase()) ||
+                     ['O.A', 'ALUMNI', 'OTHER MEMBER'].includes((s.role || '').toUpperCase());
+
+    if (!isPESTask && !isVPTask && !isOATask && s.signed_by) {
+      counts[s.signed_by] = (counts[s.signed_by] || 0) + 1;
+    }
+  });
+  return counts;
+}
+
 // Notification Helpers
 export async function createNotification(userId, message) {
   if (!supabase || !userId) return;
@@ -285,6 +310,76 @@ export async function generateApplicantShortCode(targetId = null, type = 'SIGNAT
     return null;
   }
   return code;
+}
+
+/* =========================================================
+   VERIFICATION PREVIEW HELPER FOR RESIDENT MEMBERS
+   ========================================================= */
+export async function getVerificationCodePreview(code, verifierEmail) {
+  if (!supabase || !code || !verifierEmail) {
+    return { valid: false, message: 'Invalid verification parameters.' };
+  }
+
+  const cleanCode = code.trim().toUpperCase();
+  const cleanEmail = verifierEmail.trim().toLowerCase();
+
+  const [codeRes, member] = await Promise.all([
+    supabase.from('verification_codes').select('*').eq('code', cleanCode).maybeSingle(),
+    getMemberProfile(cleanEmail)
+  ]);
+
+  const codeRecord = codeRes.data;
+  if (codeRes.error || !codeRecord) {
+    return { valid: false, message: 'Invalid or expired verification code.' };
+  }
+
+  if (!member) {
+    return { valid: false, message: 'Only registered resident members can verify codes.' };
+  }
+
+  const { data: applicant } = await supabase
+    .from('profiles')
+    .select('id, full_name, nickname, buddy_group_name, tambay_boost_active')
+    .eq('id', codeRecord.user_id)
+    .maybeSingle();
+
+  if (codeRecord.type === 'SIGNATORY') {
+    const { data: sig } = await supabase
+      .from('signatories')
+      .select('*')
+      .eq('id', codeRecord.target_id)
+      .maybeSingle();
+
+    if (!sig) {
+      return { valid: false, message: 'Target signatory was not found.' };
+    }
+    if (sig.completed) {
+      return { valid: false, message: 'This signatory has already been endorsed.' };
+    }
+
+    return {
+      valid: true,
+      code: cleanCode,
+      type: 'SIGNATORY',
+      applicant,
+      signatory: sig,
+      member
+    };
+  }
+
+  if (codeRecord.type === 'TAMBAY') {
+    const active = await getActiveTambaySession(codeRecord.user_id);
+    return {
+      valid: true,
+      code: cleanCode,
+      type: 'TAMBAY',
+      applicant,
+      activeSession: active,
+      member
+    };
+  }
+
+  return { valid: false, message: 'Unsupported verification code type.' };
 }
 
 export async function verifyUniversalCode(code, verifierEmail) {
@@ -519,6 +614,62 @@ export async function verifyUniversalCode(code, verifierEmail) {
   return { success: false, message: 'Unsupported verification code type.' };
 }
 
+/* =========================================================
+   LIVE TAMBAYAN SESSIONS & RACOMM FORCE-CLOSE GUARD
+   ========================================================= */
+export async function getAllActiveTambaySessions() {
+  if (!supabase) return [];
+  const [sessionsRes, profilesRes] = await Promise.all([
+    supabase.from('tambay_sessions').select('*').order('time_in', { ascending: true }),
+    supabase.from('profiles').select('id, full_name, nickname, buddy_group_name')
+  ]);
+
+  const sessions = sessionsRes.data || [];
+  const profileMap = new Map((profilesRes.data || []).map(p => [p.id, p]));
+
+  return sessions.map(s => {
+    const p = profileMap.get(s.user_id) || {};
+    const elapsedHours = (Date.now() - new Date(s.time_in).getTime()) / (1000 * 60 * 60);
+    return {
+      ...s,
+      fullName: p.full_name || 'Applicant',
+      nickname: p.nickname || '',
+      buddyGroup: p.buddy_group_name || 'Unassigned',
+      elapsedHours,
+      isStale: elapsedHours >= 8
+    };
+  });
+}
+
+export async function adminForceCloseTambaySession(userId, creditHours = 0, officerEmail = 'RAComm Officer') {
+  if (!supabase || !userId) return false;
+  const active = await getActiveTambaySession(userId);
+  if (!active) return false;
+
+  const { error: delErr } = await supabase
+    .from('tambay_sessions')
+    .delete()
+    .eq('id', active.id);
+
+  if (delErr) return false;
+
+  const parsedCredit = Number((parseFloat(creditHours) || 0).toFixed(2));
+  if (parsedCredit > 0) {
+    await supabase.from('tambay_logs').insert([{
+      user_id: userId,
+      hours: parsedCredit,
+      verified_by: `${officerEmail} (RAComm Force-Close)`
+    }]);
+  }
+
+  await createNotification(
+    userId,
+    `Your active tambay session was closed by RAComm (${parsedCredit > 0 ? `+${parsedCredit} hrs credited` : '0 hrs credited - forgotten time-out'}).`
+  );
+
+  return true;
+}
+
 export async function getTambayHours(userId = null) {
   if (!supabase) return 0;
   const uid = userId || await getCurrentUserId();
@@ -692,7 +843,6 @@ export async function swapSignatoryTrait(sigId, newTrait, cost) {
   const hasFunds = await spendCurrency(cost);
   if (!hasFunds) return false;
 
-  // Single atomic update instead of 3 sequential queries
   const { error } = await supabase
     .from('signatories')
     .update({
@@ -894,14 +1044,13 @@ export async function getAllApplicantsProgress() {
     supabase.from('profiles').select('*').order('created_at', { ascending: false }),
     supabase.from('signatories').select('user_id, completed'),
     supabase.from('tambay_logs').select('user_id, hours'),
-    supabase.from('tambay_sessions').select('user_id'),
+    supabase.from('tambay_sessions').select('user_id, time_in'),
     supabase.from('event_attendees').select('user_id')
   ]);
 
   const profiles = profilesRes.data || [];
-  const activeSet = new Set((activeSessionsRes.data || []).map(s => s.user_id));
+  const activeSessionMap = new Map((activeSessionsRes.data || []).map(s => [s.user_id, s.time_in]));
 
-  // O(N) Pre-Indexing via Maps instead of O(N*M) nested array filtering
   const sigStatsMap = new Map();
   (sigsRes.data || []).forEach(s => {
     const cur = sigStatsMap.get(s.user_id) || { total: 0, completed: 0 };
@@ -942,6 +1091,8 @@ export async function getAllApplicantsProgress() {
       (parseFloat(p.grade_buddy_tasks) || 0);
 
     const overallPercent = Math.min(100, Math.round(automatedScore + manualScore));
+    const activeTimeIn = activeSessionMap.get(p.id) || null;
+    const activeElapsedHrs = activeTimeIn ? (Date.now() - new Date(activeTimeIn).getTime()) / (1000 * 60 * 60) : 0;
 
     return {
       id: p.id,
@@ -952,7 +1103,9 @@ export async function getAllApplicantsProgress() {
       totalSigs,
       tambayHours,
       overallPercent,
-      isTimedIn: activeSet.has(p.id),
+      isTimedIn: activeSessionMap.has(p.id),
+      activeElapsedHrs,
+      isStaleSession: activeElapsedHrs >= 8,
       gradeInterview: p.grade_interview || 0,
       gradeOgt: p.grade_ogt || 0,
       gradeConsti: p.grade_consti_quiz || 0,
