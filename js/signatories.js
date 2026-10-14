@@ -7,11 +7,15 @@ import {
   getAvailableTasksPool,
   getCommitteeDirectory,
   getMemberSignatureCounts,
-  getGlobalSettings
+  getGlobalSettings,
+  getCurrentUserId
 } from './storage.js';
-import { showToast } from './app.js';
+import { getUserProfileData } from './auth.js';
+import { showToast, startQrCodeCountdown } from './app.js';
 
 let activeCategory = 'ALL';
+let activeStatusFilter = 'ALL'; // 'ALL' | 'PENDING' | 'COMPLETED'
+let activeSearchQuery = '';
 let delegatedBoundContainer = null;
 const inputDebounceTimers = new Map();
 
@@ -29,18 +33,42 @@ function cleanTraitText(text) {
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
-function filterCommitteeCards(container, cat) {
-  const cards = container.querySelectorAll('.committee-card');
-  cards.forEach(card => {
-    if (cat === 'ALL' || card.dataset.committee.toLowerCase() === cat.toLowerCase()) {
-      card.style.display = 'block';
+// Combined Filter: Committee Category + Pending/Completed Status + Search Term
+function applySignatoryFilters(container) {
+  const query = activeSearchQuery.toLowerCase().trim();
+
+  // Filter individual signatory task cards inside committees & PES
+  container.querySelectorAll('.sig-item-card').forEach(card => {
+    const isCompleted = card.dataset.completed === 'true';
+    const matchesStatus =
+      activeStatusFilter === 'ALL' ||
+      (activeStatusFilter === 'PENDING' && !isCompleted) ||
+      (activeStatusFilter === 'COMPLETED' && isCompleted);
+
+    const searchableText = (card.dataset.search || '').toLowerCase();
+    const matchesSearch = !query || searchableText.includes(query);
+
+    card.style.display = (matchesStatus && matchesSearch) ? 'block' : 'none';
+  });
+
+  // Filter committee parent containers
+  container.querySelectorAll('.committee-card').forEach(commCard => {
+    const matchesCategory =
+      activeCategory === 'ALL' ||
+      commCard.dataset.committee.toLowerCase() === activeCategory.toLowerCase();
+
+    const visibleChildren = commCard.querySelectorAll('.sig-item-card:not([style*="display: none"])').length;
+    const hasFilterActive = activeStatusFilter !== 'ALL' || query.length > 0;
+
+    if (!matchesCategory || (hasFilterActive && visibleChildren === 0)) {
+      commCard.style.display = 'none';
     } else {
-      card.style.display = 'none';
+      commCard.style.display = 'block';
     }
   });
 }
 
-// Auto-Save Indicator Helper (Displays plain "Saved" text)
+// Auto-Save Indicator Helper (Plain "Saved" text)
 function flashSavedIndicator(sigId) {
   const el = document.querySelector(`.sig-save-status[data-sig-id="${sigId}"]`);
   if (!el) return;
@@ -52,12 +80,131 @@ function flashSavedIndicator(sigId) {
   }, 2000);
 }
 
+/* =========================================================
+   FEATURE 6: PRINTABLE BIYAHE SIGNATORY SLAMBOOK PDF
+   ========================================================= */
+async function exportApplicantSlambookPdf() {
+  const win = window.open('', '_blank');
+  if (!win) {
+    showToast('Popup blocked! Please allow popups to export your Slambook.', 'error');
+    return;
+  }
+
+  win.document.write('<h3 style="font-family: sans-serif; color: #C1272D;">Generating your AO Biyahe Signatory Slambook...</h3>');
+
+  const uid = await getCurrentUserId();
+  const [signatories, profile, directory] = await Promise.all([
+    getSignatories(uid),
+    getUserProfileData(uid),
+    getCommitteeDirectory()
+  ]);
+
+  const completedCount = signatories.filter(s => s.completed).length;
+  const pesList = signatories.filter(s => s.role === 'PES' || s.type === 'PES' || (s.committee_name || '').toUpperCase() === 'PES');
+  const oaList = signatories.filter(s => ['O.A', 'ALUMNI', 'OTHER MEMBER'].includes((s.committee_name || '').toUpperCase()) || ['O.A', 'ALUMNI', 'OTHER MEMBER'].includes((s.role || '').toUpperCase()));
+  const regularList = signatories.filter(s => !pesList.includes(s) && !oaList.includes(s));
+
+  const formatCardRow = (s) => {
+    const isVP = s.role === 'VP' || s.type === 'VP';
+    const dirMatch = directory.find(d => d.role_type === 'VP' && (d.committee_name || '').toLowerCase() === (s.committee_name || '').toLowerCase());
+    const signer = s.signed_by || s.member_name || (isVP && dirMatch ? dirMatch.full_name : 'Unsigned');
+    return `
+      <div class="slam-card ${s.completed ? 'signed' : 'pending'}">
+        <div class="slam-header">
+          <span class="tag">${s.committee_name || s.role} • ${isVP ? 'VP Endorsement' : 'Member'}</span>
+          <span class="status">${s.completed ? `Signed by ${signer}` : 'Pending'}</span>
+        </div>
+        <div class="trait">${cleanTraitText(s.trait || s.task)}</div>
+        ${s.selected_task ? `<div class="meta"><strong>Task Completed:</strong> ${s.selected_task}</div>` : ''}
+        <div class="grid">
+          <div><strong>Member Name:</strong> ${signer}</div>
+          <div><strong>Nickname:</strong> ${s.nickname || '—'}</div>
+          <div><strong>Favorite GEOP Tradition:</strong> ${s.favorite_tradition || '—'}</div>
+          <div><strong>Top Field Role:</strong> ${s.top_field_role || '—'}</div>
+          <div style="grid-column: 1 / -1;"><strong>Unique Fact:</strong> ${s.unique_fact || '—'}</div>
+        </div>
+      </div>
+    `;
+  };
+
+  win.document.open();
+  win.document.write(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>AO Biyahe Signatory Slambook - ${profile?.full_name || 'Applicant'}</title>
+        <style>
+          body { font-family: 'Segoe UI', sans-serif; padding: 28px; color: #2B2B2B; background: #F4F1EB; }
+          .banner { background: #111111; color: #F4F1EB; padding: 20px 24px; border-bottom: 5px solid #C1272D; border-radius: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+          .banner h1 { margin: 0 0 4px 0; color: #F4F1EB; font-size: 1.5rem; }
+          .banner p { margin: 0; color: #FBB03B; font-weight: 700; }
+          h2 { color: #C1272D; border-bottom: 2px solid #C4B9A3; padding-bottom: 6px; margin-top: 24px; }
+          .slam-card { background: #FFFFFF; border: 1px solid #DCD4C5; border-left: 5px solid #C4B9A3; border-radius: 8px; padding: 12px 16px; margin-bottom: 10px; page-break-inside: avoid; }
+          .slam-card.signed { border-left-color: #C1272D; }
+          .slam-header { display: flex; justify-content: space-between; font-size: 0.78rem; color: #666; margin-bottom: 4px; font-weight: 600; text-transform: uppercase; }
+          .trait { font-size: 1rem; font-weight: 700; color: #C1272D; margin-bottom: 6px; }
+          .meta { font-size: 0.82rem; margin-bottom: 6px; color: #444; }
+          .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; font-size: 0.82rem; background: #F9F7F3; padding: 8px 10px; border-radius: 6px; }
+          @media print { body { background: #fff; padding: 0; } }
+        </style>
+      </head>
+      <body>
+        <div class="banner">
+          <div>
+            <h1>UP GEOP Applicant Signatory Slambook</h1>
+            <p>AO Biyahe — "Kasya pa, sakay na!"</p>
+          </div>
+          <div style="text-align: right; font-size: 0.85rem;">
+            <div><strong>${profile?.full_name || ''}</strong> (${profile?.nickname || ''})</div>
+            <div>Buddy Group: ${profile?.buddy_group_name || 'Unassigned'}</div>
+            <div style="color: #FBB03B; font-weight: 700;">${completedCount} / ${signatories.length} Signed</div>
+          </div>
+        </div>
+
+        <h2>Executive Clearance (PES)</h2>
+        ${pesList.map(s => formatCardRow(s)).join('')}
+
+        <h2>Committee & VP Signatories</h2>
+        ${regularList.map(s => formatCardRow(s)).join('')}
+
+        ${oaList.length > 0 ? `
+          <h2>O.A & Alumni Memories</h2>
+          ${oaList.map(s => `
+            <div class="slam-card ${s.completed ? 'signed' : 'pending'}">
+              <div class="slam-header">
+                <span>${s.task || 'O.A Signature'}</span>
+                <span>${s.completed ? `Signed by ${s.signed_by || s.member_name}` : 'Pending'}</span>
+              </div>
+              <div class="trait">${cleanTraitText(s.trait || s.task)}</div>
+              <div class="grid">
+                <div><strong>Name:</strong> ${s.member_name || '—'}</div>
+                <div><strong>GEOP Batch:</strong> ${s.geop_batch || '—'}</div>
+                <div style="grid-column: 1 / -1;"><strong>Favorite Flagship Event:</strong> ${s.favorite_flagship_event || '—'}</div>
+                <div style="grid-column: 1 / -1;"><strong>Favorite GEOP Memory:</strong> ${s.favorite_geop_memory || '—'}</div>
+              </div>
+            </div>
+          `).join('')}
+        ` : ''}
+
+        <script>window.onload = function() { window.print(); }<\/script>
+      </body>
+    </html>
+  `);
+  win.document.close();
+}
+
 function attachSignatoryDelegation(container) {
   if (delegatedBoundContainer === container) return;
   delegatedBoundContainer = container;
 
-  // Live typing auto-save (debounced 600ms) so applicants never lose typed fields
+  // Live typing auto-save (debounced 600ms) + Search Input handler
   container.addEventListener('input', (e) => {
+    if (e.target.id === 'signatorySearchInput') {
+      activeSearchQuery = e.target.value;
+      applySignatoryFilters(container);
+      return;
+    }
+
     const sigInput = e.target.closest('.sig-input');
     if (!sigInput || sigInput.tagName === 'SELECT') return;
     const sigId = sigInput.dataset.sigId;
@@ -73,8 +220,26 @@ function attachSignatoryDelegation(container) {
     }, 600));
   });
 
-  // Single delegated click listener for filters, resets, and QR code generation
+  // Single delegated click listener for filters, slambook export, resets, and QR code generation
   container.addEventListener('click', async (e) => {
+    if (e.target.closest('#exportSlambookPdfBtn')) {
+      await exportApplicantSlambookPdf();
+      return;
+    }
+
+    const statusBtn = e.target.closest('.sig-status-filter-btn');
+    if (statusBtn) {
+      activeStatusFilter = statusBtn.dataset.status;
+      container.querySelectorAll('.sig-status-filter-btn').forEach(b => {
+        b.classList.remove('btn-checkin');
+        b.classList.add('btn-secondary');
+      });
+      statusBtn.classList.remove('btn-secondary');
+      statusBtn.classList.add('btn-checkin');
+      applySignatoryFilters(container);
+      return;
+    }
+
     const filterBtn = e.target.closest('.committee-filter-btn');
     if (filterBtn) {
       activeCategory = filterBtn.dataset.category;
@@ -84,7 +249,7 @@ function attachSignatoryDelegation(container) {
       });
       filterBtn.classList.remove('btn-secondary');
       filterBtn.classList.add('btn-checkin');
-      filterCommitteeCards(container, activeCategory);
+      applySignatoryFilters(container);
       return;
     }
 
@@ -145,6 +310,8 @@ function attachSignatoryDelegation(container) {
                alt="Signatory QR" width="160" height="160" style="border-radius: 6px;" />
         `;
       }
+
+      startQrCodeCountdown('SIGNATORY', sigId);
 
       if (qrModal) {
         qrModal.style.display = 'block';
@@ -277,8 +444,10 @@ export async function renderSignatoriesTab(container) {
       </button>
     ` : `<small style="color: var(--brand-forest); font-weight: 600;">Officially endorsed by ${task.signed_by || pes.fullName}</small>`;
 
+    const searchBlob = `${pes.title} ${pes.fullName} ${pes.email} ${task.signed_by || ''} PES`.replace(/"/g, '');
+
     return `
-      <div class="card" style="margin: 0; background: ${bgColor}; border-color: ${borderColor};">
+      <div class="card sig-item-card" data-completed="${task.completed ? 'true' : 'false'}" data-search="${searchBlob}" style="margin: 0; background: ${bgColor}; border-color: ${borderColor};">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
           <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">${pes.title}</span>
           <div style="display: flex; align-items: center; gap: 8px;">
@@ -325,8 +494,10 @@ export async function renderSignatoriesTab(container) {
         </button>
       ` : `<small style="color: var(--brand-forest); font-weight: 600;">Officially endorsed by ${vpTask.signed_by || comm.vp}</small>`;
 
+      const vpSearchBlob = `${comm.name} ${comm.vp} ${comm.vpTitle} ${comm.vpEmail} VP`.replace(/"/g, '');
+
       vpTaskHtml = `
-        <div class="card" style="margin-bottom: 16px; border-color: ${borderColor}; background: ${bgColor};">
+        <div class="card sig-item-card" data-completed="${vpTask.completed ? 'true' : 'false'}" data-search="${vpSearchBlob}" style="margin-bottom: 16px; border-color: ${borderColor}; background: ${bgColor};">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
             <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">VP Endorsement</span>
             <div style="display: flex; align-items: center; gap: 8px;">
@@ -386,7 +557,6 @@ export async function renderSignatoriesTab(container) {
 
       let taskContentHtml = '';
       if (!task.completed) {
-        // Member Signature Quota Tracker inside dropdown options
         const membersOptions = membersList.map(m => {
           const used = sigCounts[m.full_name] || 0;
           const remaining = Math.max(0, 4 - used);
@@ -418,8 +588,10 @@ export async function renderSignatoriesTab(container) {
         taskContentHtml = `<small style="color: var(--brand-forest); font-weight: 600;">Signed by ${task.signed_by || 'Verified Member'}</small>`;
       }
 
+      const memSearchBlob = `${comm.name} ${cleanedTrait} ${task.member_name || ''} ${task.signed_by || ''} ${task.selected_task || ''}`.replace(/"/g, '');
+
       return `
-        <div class="card" style="margin: 0; border-color: ${borderColor}; background: ${bgColor};">
+        <div class="card sig-item-card" data-completed="${task.completed ? 'true' : 'false'}" data-search="${memSearchBlob}" style="margin: 0; border-color: ${borderColor}; background: ${bgColor};">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
             <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">Member Task #${idx + 1}</span>
             <div style="display: flex; align-items: center; gap: 8px;">
@@ -471,8 +643,10 @@ export async function renderSignatoriesTab(container) {
           </button>
         ` : `<small style="color: var(--brand-forest); font-weight: 600;">Signed by ${task.signed_by || task.member_name}</small>`;
 
+        const oaSearchBlob = `O.A ${cleanedTrait} ${task.member_name || ''} ${task.signed_by || ''} ${task.geop_batch || ''}`.replace(/"/g, '');
+
         return `
-          <div class="card" style="margin: 0; border-color: ${borderColor}; background: ${bgColor};">
+          <div class="card sig-item-card" data-completed="${task.completed ? 'true' : 'false'}" data-search="${oaSearchBlob}" style="margin: 0; border-color: ${borderColor}; background: ${bgColor};">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
               <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">${topBadgeText}</span>
               <div style="display: flex; align-items: center; gap: 8px;">
@@ -495,6 +669,8 @@ export async function renderSignatoriesTab(container) {
     </button>
   `).join('');
 
+  const pendingCount = total - completed;
+
   container.innerHTML = `
     <section class="card">
       <div class="card-header">
@@ -502,9 +678,14 @@ export async function renderSignatoriesTab(container) {
           <h2>Signatories Matrix</h2>
           <p class="subtext">Fulfill member tasks, obtain VP endorsements, and gain executive PES approval.</p>
         </div>
-        <span class="badge" style="background: var(--brand-forest); color: white; font-weight: 700;">
-          ${completed} / ${total} Signed
-        </span>
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <button type="button" id="exportSlambookPdfBtn" class="btn btn-secondary" style="min-height: 32px; padding: 4px 10px; font-size: 0.78rem;">
+            📖 Export Slambook (PDF)
+          </button>
+          <span class="badge" style="background: var(--brand-forest); color: white; font-weight: 700;">
+            ${completed} / ${total} Signed
+          </span>
+        </div>
       </div>
 
       <!-- PES EXECUTIVE APPOINTMENTS (PINNED TO TOP) -->
@@ -525,10 +706,26 @@ export async function renderSignatoriesTab(container) {
         </div>
       </div>
 
-      <div style="background: var(--surface-subtle); border-left: 4px solid var(--brand-clay); padding: 12px 16px; border-radius: var(--radius-sm); margin-bottom: 20px;">
+      <div style="background: var(--surface-subtle); border-left: 4px solid var(--brand-clay); padding: 12px 16px; border-radius: var(--radius-sm); margin-bottom: 16px;">
         <small style="color: var(--text-muted); line-height: 1.4; display: block;">
           Heads up: each resident member can personally sign up to 4 signatory tasks. Spread yours across different members.
         </small>
+      </div>
+
+      <!-- FEATURE 3: SEARCH & PENDING/COMPLETED STATUS FILTER BAR -->
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px;">
+        <input type="text" id="signatorySearchInput" value="${activeSearchQuery}" placeholder="Search trait, committee, or member name..." style="flex: 1; min-width: 200px; font-size: 0.82rem; padding: 7px 12px;" />
+        <div style="display: flex; gap: 6px;">
+          <button type="button" class="btn sig-status-filter-btn ${activeStatusFilter === 'ALL' ? 'btn-checkin' : 'btn-secondary'}" data-status="ALL" style="min-height: 34px; padding: 4px 10px; font-size: 0.78rem;">
+            All (${total})
+          </button>
+          <button type="button" class="btn sig-status-filter-btn ${activeStatusFilter === 'PENDING' ? 'btn-checkin' : 'btn-secondary'}" data-status="PENDING" style="min-height: 34px; padding: 4px 10px; font-size: 0.78rem;">
+            Pending Only (${pendingCount})
+          </button>
+          <button type="button" class="btn sig-status-filter-btn ${activeStatusFilter === 'COMPLETED' ? 'btn-checkin' : 'btn-secondary'}" data-status="COMPLETED" style="min-height: 34px; padding: 4px 10px; font-size: 0.78rem;">
+            Completed (${completed})
+          </button>
+        </div>
       </div>
 
       <!-- COMMITTEE FILTER PILLS -->
@@ -553,5 +750,5 @@ export async function renderSignatoriesTab(container) {
     </section>
   `;
 
-  filterCommitteeCards(container, activeCategory);
+  applySignatoryFilters(container);
 }
