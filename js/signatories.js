@@ -37,7 +37,6 @@ function cleanTraitText(text) {
 function applySignatoryFilters(container) {
   const query = activeSearchQuery.toLowerCase().trim();
 
-  // Filter individual signatory task cards inside committees & PES
   container.querySelectorAll('.sig-item-card').forEach(card => {
     const isCompleted = card.dataset.completed === 'true';
     const matchesStatus =
@@ -51,7 +50,6 @@ function applySignatoryFilters(container) {
     card.style.display = (matchesStatus && matchesSearch) ? 'block' : 'none';
   });
 
-  // Filter committee parent containers
   container.querySelectorAll('.committee-card').forEach(commCard => {
     const matchesCategory =
       activeCategory === 'ALL' ||
@@ -81,12 +79,12 @@ function flashSavedIndicator(sigId) {
 }
 
 /* =========================================================
-   FEATURE 6: PRINTABLE BIYAHE SIGNATORY SLAMBOOK PDF
+   PRINTABLE BIYAHE SIGNATORY SLAMBOOK PDF
    ========================================================= */
 async function exportApplicantSlambookPdf() {
   const win = window.open('', '_blank');
   if (!win) {
-    showToast('Popup blocked! Please allow popups to export your Slambook.', 'error');
+    showToast('Popup blocked. Please allow popups to export your Slambook.', 'error');
     return;
   }
 
@@ -332,7 +330,7 @@ function attachSignatoryDelegation(container) {
       const sigId = taskSelect.dataset.sigId;
       if (sigId) {
         await selectTaskForSignatory(sigId, val || null);
-        showToast(val ? 'Task selected!' : 'Task reset.', 'info');
+        showToast(val ? 'Task selected.' : 'Task reset.', 'info');
         await renderSignatoriesTab(container);
       }
       return;
@@ -712,7 +710,7 @@ export async function renderSignatoriesTab(container) {
         </small>
       </div>
 
-      <!-- FEATURE 3: SEARCH & PENDING/COMPLETED STATUS FILTER BAR -->
+      <!-- SEARCH & PENDING/COMPLETED STATUS FILTER BAR -->
       <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px;">
         <input type="text" id="signatorySearchInput" value="${activeSearchQuery}" placeholder="Search trait, committee, or member name..." style="flex: 1; min-width: 200px; font-size: 0.82rem; padding: 7px 12px;" />
         <div style="display: flex; gap: 6px;">
