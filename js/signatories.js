@@ -5,12 +5,15 @@ import {
   updateSignatoryAnswer,
   generateApplicantShortCode,
   getAvailableTasksPool,
-  getCommitteeDirectory
+  getCommitteeDirectory,
+  getMemberSignatureCounts,
+  getGlobalSettings
 } from './storage.js';
 import { showToast } from './app.js';
 
 let activeCategory = 'ALL';
 let delegatedBoundContainer = null;
+const inputDebounceTimers = new Map();
 
 function cleanTraitText(text) {
   if (!text) return '';
@@ -37,9 +40,38 @@ function filterCommitteeCards(container, cat) {
   });
 }
 
+// Auto-Save Indicator Helper (Displays plain "Saved" text)
+function flashSavedIndicator(sigId) {
+  const el = document.querySelector(`.sig-save-status[data-sig-id="${sigId}"]`);
+  if (!el) return;
+  el.textContent = 'Saved';
+  el.style.opacity = '1';
+  if (el._hideTimer) clearTimeout(el._hideTimer);
+  el._hideTimer = setTimeout(() => {
+    el.style.opacity = '0';
+  }, 2000);
+}
+
 function attachSignatoryDelegation(container) {
   if (delegatedBoundContainer === container) return;
   delegatedBoundContainer = container;
+
+  // Live typing auto-save (debounced 600ms) so applicants never lose typed fields
+  container.addEventListener('input', (e) => {
+    const sigInput = e.target.closest('.sig-input');
+    if (!sigInput || sigInput.tagName === 'SELECT') return;
+    const sigId = sigInput.dataset.sigId;
+    const field = sigInput.dataset.field;
+    if (!sigId || !field) return;
+
+    const key = `${sigId}-${field}`;
+    if (inputDebounceTimers.has(key)) clearTimeout(inputDebounceTimers.get(key));
+    inputDebounceTimers.set(key, setTimeout(async () => {
+      inputDebounceTimers.delete(key);
+      const ok = await updateSignatoryAnswer(sigId, field, sigInput.value.trim());
+      if (ok) flashSavedIndicator(sigId);
+    }, 600));
+  });
 
   // Single delegated click listener for filters, resets, and QR code generation
   container.addEventListener('click', async (e) => {
@@ -73,6 +105,22 @@ function attachSignatoryDelegation(container) {
       if (!sigId || sigId === 'null') {
         showToast('Signatory record not initialized.', 'error');
         return;
+      }
+
+      // Flush any inputs on this card immediately before generating the code
+      const parentCard = codeBtn.closest('.card');
+      if (parentCard) {
+        const inputs = Array.from(parentCard.querySelectorAll('.sig-input'));
+        await Promise.all(inputs.map(inp => {
+          const field = inp.dataset.field;
+          const key = `${sigId}-${field}`;
+          if (inputDebounceTimers.has(key)) {
+            clearTimeout(inputDebounceTimers.get(key));
+            inputDebounceTimers.delete(key);
+          }
+          return field ? updateSignatoryAnswer(sigId, field, inp.value.trim()) : Promise.resolve();
+        }));
+        flashSavedIndicator(sigId);
       }
 
       const code = await generateApplicantShortCode(sigId, 'SIGNATORY');
@@ -129,7 +177,13 @@ function attachSignatoryDelegation(container) {
       const field = sigInput.dataset.field;
       const val = sigInput.value.trim();
       if (sigId && field) {
-        await updateSignatoryAnswer(sigId, field, val);
+        const key = `${sigId}-${field}`;
+        if (inputDebounceTimers.has(key)) {
+          clearTimeout(inputDebounceTimers.get(key));
+          inputDebounceTimers.delete(key);
+        }
+        const ok = await updateSignatoryAnswer(sigId, field, val);
+        if (ok) flashSavedIndicator(sigId);
       }
     }
   });
@@ -139,12 +193,16 @@ export async function renderSignatoriesTab(container) {
   if (!container) return;
   attachSignatoryDelegation(container);
 
-  const [signatories, membersList, fallbackTasksPool, directory] = await Promise.all([
+  const [signatories, membersList, fallbackTasksPool, directory, sigCounts, settings] = await Promise.all([
     getSignatories(),
     getAllMembersList(),
     getAvailableTasksPool(),
-    getCommitteeDirectory()
+    getCommitteeDirectory(),
+    getMemberSignatureCounts(),
+    getGlobalSettings()
   ]);
+
+  const sigLimitEnabled = settings.memberSigLimitEnabled;
 
   const PES_LIST = directory.filter(d => d.role_type === 'PES').map(p => ({
     roleKey: p.role_key,
@@ -223,7 +281,10 @@ export async function renderSignatoriesTab(container) {
       <div class="card" style="margin: 0; background: ${bgColor}; border-color: ${borderColor};">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
           <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">${pes.title}</span>
-          <span class="badge" style="background: ${badgeColor}; color: ${task.completed ? '#fff' : 'inherit'};">${textStatus}</span>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="sig-save-status" data-sig-id="${task.id}" style="font-size: 0.72rem; color: var(--text-muted); font-weight: 600; opacity: 0; transition: opacity 0.25s ease;"></span>
+            <span class="badge" style="background: ${badgeColor}; color: ${task.completed ? '#fff' : 'inherit'};">${textStatus}</span>
+          </div>
         </div>
         <div style="display: flex; gap: 14px; align-items: center; margin-bottom: 12px;">
           <img src="${pes.photo}" alt="${pes.fullName}" loading="lazy" onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(pes.fullName)}&background=1b382b&color=fff';" style="width: 54px; height: 54px; border-radius: 50%; object-fit: cover; border: 2px solid var(--brand-clay); flex-shrink: 0;" />
@@ -268,7 +329,10 @@ export async function renderSignatoriesTab(container) {
         <div class="card" style="margin-bottom: 16px; border-color: ${borderColor}; background: ${bgColor};">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
             <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">VP Endorsement</span>
-            <span class="badge" style="background: ${badgeColor}; color: ${vpTask.completed ? '#fff' : 'inherit'};">${textStatus}</span>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="sig-save-status" data-sig-id="${vpTask.id}" style="font-size: 0.72rem; color: var(--text-muted); font-weight: 600; opacity: 0; transition: opacity 0.25s ease;"></span>
+              <span class="badge" style="background: ${badgeColor}; color: ${vpTask.completed ? '#fff' : 'inherit'};">${textStatus}</span>
+            </div>
           </div>
           <div style="display: flex; gap: 14px; align-items: center; margin-bottom: 14px;">
             <img src="${comm.photo}" alt="${comm.vp}" loading="lazy" onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(comm.vp)}&background=1b382b&color=fff';" style="width: 54px; height: 54px; border-radius: 50%; object-fit: cover; border: 2px solid var(--brand-forest); flex-shrink: 0;" />
@@ -322,7 +386,19 @@ export async function renderSignatoriesTab(container) {
 
       let taskContentHtml = '';
       if (!task.completed) {
-        const membersOptions = membersList.map(m => `<option value="${m.full_name}" ${task.member_name === m.full_name ? 'selected' : ''}>${m.full_name}</option>`).join('');
+        // Member Signature Quota Tracker inside dropdown options
+        const membersOptions = membersList.map(m => {
+          const used = sigCounts[m.full_name] || 0;
+          const remaining = Math.max(0, 4 - used);
+          const isFull = sigLimitEnabled && remaining === 0;
+          const isSelected = task.member_name === m.full_name;
+          const quotaText = sigLimitEnabled
+            ? (isFull ? ' (FULL - 4/4)' : ` (${remaining}/4 left)`)
+            : ` (${used} signed)`;
+          const disabledOpt = (isFull && !isSelected) ? 'disabled' : '';
+          return `<option value="${m.full_name}" ${isSelected ? 'selected' : ''} ${disabledOpt}>${m.full_name}${quotaText}</option>`;
+        }).join('');
+
         taskContentHtml = `
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 10px;">
             <select class="sig-input" data-sig-id="${task.id}" data-field="member_name" style="font-size: 0.8rem; padding: 6px;">
@@ -346,7 +422,10 @@ export async function renderSignatoriesTab(container) {
         <div class="card" style="margin: 0; border-color: ${borderColor}; background: ${bgColor};">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
             <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">Member Task #${idx + 1}</span>
-            <span class="badge" style="background: ${badgeColor}; color: ${task.completed ? '#fff' : 'inherit'};">${task.completed ? 'Completed' : 'Pending'}</span>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="sig-save-status" data-sig-id="${task.id}" style="font-size: 0.72rem; color: var(--text-muted); font-weight: 600; opacity: 0; transition: opacity 0.25s ease;"></span>
+              <span class="badge" style="background: ${badgeColor}; color: ${task.completed ? '#fff' : 'inherit'};">${task.completed ? 'Completed' : 'Pending'}</span>
+            </div>
           </div>
           <div style="margin-bottom: 10px;">
             <strong style="display: block; font-size: 0.92rem; color: var(--brand-forest); margin-bottom: 4px;">${cleanedTrait}</strong>
@@ -396,7 +475,10 @@ export async function renderSignatoriesTab(container) {
           <div class="card" style="margin: 0; border-color: ${borderColor}; background: ${bgColor};">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
               <span class="badge" style="background: var(--surface-subtle); color: var(--text-muted); font-weight: 600;">${topBadgeText}</span>
-              <span class="badge" style="background: ${badgeColor}; color: ${task.completed ? '#fff' : 'inherit'};">${task.completed ? 'Completed' : 'Pending'}</span>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="sig-save-status" data-sig-id="${task.id}" style="font-size: 0.72rem; color: var(--text-muted); font-weight: 600; opacity: 0; transition: opacity 0.25s ease;"></span>
+                <span class="badge" style="background: ${badgeColor}; color: ${task.completed ? '#fff' : 'inherit'};">${task.completed ? 'Completed' : 'Pending'}</span>
+              </div>
             </div>
             <div style="margin-bottom: 10px;">
               <strong style="display: block; font-size: 0.92rem; color: var(--brand-forest); margin-bottom: 4px;">${cleanedTrait}</strong>
