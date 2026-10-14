@@ -21,6 +21,15 @@ export async function getUserProfileData(userId) {
   return data;
 }
 
+function shuffleArray(arr) {
+  const copy = [...arr];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
 export async function createApplicantProfile(userId, fullName, nickname) {
   if (!supabase || !userId) return false;
 
@@ -42,14 +51,13 @@ export async function createApplicantProfile(userId, fullName, nickname) {
     return false;
   }
 
-  // 2. Fetch and shuffle the Traits Pool
+  // 2. Fetch and shuffle the Traits Pool using unbiased Fisher-Yates
   const traitsPool = await getAvailableTraitsPool();
-  let shuffledTraits = [...traitsPool].sort(() => 0.5 - Math.random());
+  let shuffledTraits = shuffleArray(traitsPool);
   
-  // Fallback just in case the Google Sheet fails to load
   if (shuffledTraits.length < 12) {
-     const filler = Array(12).fill('Unique Member Trait');
-     shuffledTraits = [...shuffledTraits, ...filler];
+    const filler = Array(12).fill('Unique Member Trait');
+    shuffledTraits = [...shuffledTraits, ...filler];
   }
 
   let traitIdx = 0;
@@ -58,7 +66,7 @@ export async function createApplicantProfile(userId, fullName, nickname) {
   // 3. Generate the 3 PES Slots
   const pesRoles = ['President', 'Executive Vice President', 'Secretary-General'];
   pesRoles.forEach(r => {
-     sigsToInsert.push({ user_id: userId, role: 'PES', type: 'PES', committee_name: 'PES', task: r, trait: r });
+    sigsToInsert.push({ user_id: userId, role: 'PES', type: 'PES', committee_name: 'PES', task: r, trait: r });
   });
 
   // 4. Generate the 6 VPs and 12 Member Slots
@@ -72,11 +80,9 @@ export async function createApplicantProfile(userId, fullName, nickname) {
   ];
 
   comms.forEach(c => {
-     // 1 VP per committee
-     sigsToInsert.push({ user_id: userId, role: 'VP', type: 'VP', committee_name: c.name, task: c.vp, trait: c.vp });
-     // 2 Members per committee with unique traits
-     sigsToInsert.push({ user_id: userId, role: 'Member', type: 'Member', committee_name: c.name, task: 'Committee Member', trait: shuffledTraits[traitIdx++] });
-     sigsToInsert.push({ user_id: userId, role: 'Member', type: 'Member', committee_name: c.name, task: 'Committee Member', trait: shuffledTraits[traitIdx++] });
+    sigsToInsert.push({ user_id: userId, role: 'VP', type: 'VP', committee_name: c.name, task: c.vp, trait: c.vp });
+    sigsToInsert.push({ user_id: userId, role: 'Member', type: 'Member', committee_name: c.name, task: 'Committee Member', trait: shuffledTraits[traitIdx++] });
+    sigsToInsert.push({ user_id: userId, role: 'Member', type: 'Member', committee_name: c.name, task: 'Committee Member', trait: shuffledTraits[traitIdx++] });
   });
 
   // 5. Insert all 21 slots into the database
