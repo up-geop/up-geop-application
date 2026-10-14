@@ -3,6 +3,7 @@ import {
   supabase,
   getSignatories,
   getTambayHours,
+  getApplicantTambayLogHistory,
   getActiveTambaySession,
   getAllActiveTambaySessions,
   adminForceCloseTambaySession,
@@ -12,6 +13,8 @@ import {
   checkIfResidentMember,
   checkIfRAComm,
   getMemberProfile,
+  getMemberPersonalActivityLog,
+  getMostApproachedMembersLeaderboard,
   getGlobalSettings,
   updateGlobalSettings,
   getAllApplicantsProgress,
@@ -21,6 +24,8 @@ import {
   adminAdjustTokens,
   adminToggleApplicantSignatory,
   adminUpdateApplicantGrades,
+  getEventAttendeeUserIds,
+  adminBulkSetEventAttendance,
   getBuddyGroupMembers,
   getManagedBuddyGroups,
   createBuddyGroup,
@@ -56,6 +61,8 @@ import { signInWithGoogle, signOutUser, getCurrentUser, getUserProfileData, crea
 
 let currentUser = null;
 let timerInterval = null;
+let qrCountdownInterval = null;
+let lastGeneratedQrMeta = { type: 'TAMBAY', targetId: null };
 let inspectedApplicantId = null;
 let currentMonday = getMonday(new Date());
 let activeSwapMode = 'random';
@@ -121,6 +128,99 @@ function stopTimer() {
   if (timerInterval) clearInterval(timerInterval);
 }
 
+/* =========================================================
+   FEATURE 7: 10-MINUTE COUNTDOWN BAR & AUTO-REFRESH ON QR CODE
+   ========================================================= */
+export function startQrCodeCountdown(type = 'TAMBAY', targetId = null) {
+  lastGeneratedQrMeta = { type, targetId };
+  if (qrCountdownInterval) clearInterval(qrCountdownInterval);
+
+  const qrContainer = document.getElementById('qrDisplayContainer');
+  if (!qrContainer) return;
+
+  let controlsWrap = document.getElementById('qrCountdownControlsWrap');
+  if (!controlsWrap) {
+    controlsWrap = document.createElement('div');
+    controlsWrap.id = 'qrCountdownControlsWrap';
+    controlsWrap.style.cssText = 'margin-top: 12px; max-width: 260px; margin-left: auto; margin-right: auto;';
+    const closeBtn = document.getElementById('closeQrBtn')?.parentElement;
+    if (closeBtn) {
+      qrContainer.insertBefore(controlsWrap, closeBtn);
+    } else {
+      qrContainer.appendChild(controlsWrap);
+    }
+  }
+
+  const totalSeconds = 600; // 10 minutes
+  let remaining = totalSeconds;
+
+  const renderControls = () => {
+    const mins = Math.floor(remaining / 60);
+    const secs = remaining % 60;
+    const pct = Math.max(0, (remaining / totalSeconds) * 100);
+    const timeStr = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+    controlsWrap.innerHTML = `
+      <div style="display: flex; justify-content: space-between; font-size: 0.74rem; color: var(--text-muted); margin-bottom: 4px;">
+        <span>Code Validity</span>
+        <strong style="font-family: var(--font-mono); color: ${remaining < 60 ? '#b33a2b' : 'var(--brand-forest)'};">${timeStr}</strong>
+      </div>
+      <div style="background: var(--border-subtle); height: 6px; border-radius: 4px; overflow: hidden; margin-bottom: 8px;">
+        <div style="background: ${remaining < 60 ? '#b33a2b' : 'var(--brand-forest)'}; width: ${pct}%; height: 100%; transition: width 1s linear;"></div>
+      </div>
+      <button type="button" id="regenerateQrCodeBtn" class="btn btn-secondary" style="min-height: 32px; padding: 4px 10px; font-size: 0.76rem; width: 100%;">
+        🔄 Regenerate Code
+      </button>
+    `;
+
+    controlsWrap.querySelector('#regenerateQrCodeBtn')?.addEventListener('click', async () => {
+      if (lastGeneratedQrMeta.type === 'TAMBAY') {
+        document.getElementById('showQrBtn')?.click();
+      } else {
+        const code = await generateApplicantShortCode(lastGeneratedQrMeta.targetId, 'SIGNATORY');
+        if (code) {
+          const textElem = document.getElementById('applicantShortCodeText');
+          const canvasElem = document.getElementById('qrcodeCanvas');
+          if (textElem) textElem.textContent = code;
+          const verifyUrl = `${window.location.origin}${window.location.pathname}?verifyCode=${code}`;
+          if (canvasElem) {
+            canvasElem.innerHTML = `
+              <div style="margin-bottom: 8px;">
+                <span class="badge" style="background: var(--brand-forest); color: #ffffff;">Signatory Code</span>
+              </div>
+              <img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(verifyUrl)}" 
+                   alt="Signatory QR" width="160" height="160" style="border-radius: 6px;" />
+            `;
+          }
+          startQrCodeCountdown('SIGNATORY', lastGeneratedQrMeta.targetId);
+          showToast(`New code generated: ${code}`, 'info');
+        }
+      }
+    });
+  };
+
+  renderControls();
+  qrCountdownInterval = setInterval(() => {
+    remaining--;
+    if (remaining <= 0) {
+      clearInterval(qrCountdownInterval);
+      const textElem = document.getElementById('applicantShortCodeText');
+      if (textElem) textElem.textContent = 'EXPIRED';
+      renderControls();
+      return;
+    }
+    renderControls();
+  }, 1000);
+}
+
+function autoCloseQrDisplayIfOpen() {
+  const qrContainer = document.getElementById('qrDisplayContainer');
+  if (qrContainer && qrContainer.style.display !== 'none') {
+    qrContainer.style.display = 'none';
+    if (qrCountdownInterval) clearInterval(qrCountdownInterval);
+  }
+}
+
 function updateSettingsButtons(mult, capEnabled, sigLimitEnabled) {
   const btn1x = document.getElementById('set1xBtn');
   const btn2x = document.getElementById('set2xBtn');
@@ -154,6 +254,340 @@ function formatName(name) {
     return parts[0] + '\n' + parts.slice(1).join(' ');
   }
   return name;
+}
+
+/* =========================================================
+   FEATURE 1: MEMBER PERSONAL ACTIVITY LOG ("WHO HAVE I SIGNED / TIMED IN?")
+   ========================================================= */
+async function renderMemberPersonalActivityCard() {
+  const memHubTab = document.getElementById('member-hub-view');
+  if (!memHubTab || !currentUser) return;
+
+  const [memberProfile, settings] = await Promise.all([
+    getMemberProfile(currentUser.email),
+    getGlobalSettings()
+  ]);
+  if (!memberProfile) return;
+
+  const { signedList, tambayVerifications, regularSigCount } = await getMemberPersonalActivityLog(memberProfile.full_name);
+
+  let card = document.getElementById('memberPersonalActivityCard');
+  if (!card) {
+    card = document.createElement('section');
+    card.id = 'memberPersonalActivityCard';
+    card.className = 'card';
+    memHubTab.appendChild(card);
+  }
+
+  const quotaBadgeText = settings.memberSigLimitEnabled
+    ? `${regularSigCount} / 4 Regular Sigs Used`
+    : `${regularSigCount} Regular Sigs (Limit Off)`;
+  const isQuotaFull = settings.memberSigLimitEnabled && regularSigCount >= 4;
+
+  const signedHtml = signedList.length === 0
+    ? '<li class="subtext" style="padding: 8px 0;">You have not endorsed any applicant signatories yet.</li>'
+    : signedList.map(s => `
+      <li class="task-item" style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; font-size: 0.82rem;">
+        <div>
+          <strong style="color: var(--text-heading);">${s.applicantName}</strong>
+          <span class="badge" style="margin-left: 6px; font-size: 0.68rem;">${s.applicantGroup}</span>
+          <div style="color: var(--text-muted); font-size: 0.76rem; margin-top: 2px;">
+            ${s.committee_name || s.role}: <strong>${s.trait || s.task}</strong>
+          </div>
+        </div>
+        <span class="badge" style="background: ${s.isRegularQuota ? 'var(--brand-mint-subtle)' : 'var(--surface-subtle)'}; color: var(--brand-forest);">
+          ${s.isRegularQuota ? 'Regular Quota' : (s.committee_name || s.role)}
+        </span>
+      </li>
+    `).join('');
+
+  const tambayHtml = tambayVerifications.length === 0
+    ? '<li class="subtext" style="padding: 8px 0;">No tambay sessions verified yet.</li>'
+    : tambayVerifications.slice(0, 10).map(t => `
+      <li class="task-item" style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; font-size: 0.8rem;">
+        <div>
+          <strong style="color: var(--text-heading);">${t.applicantName}</strong>
+          <div style="color: var(--text-muted); font-size: 0.74rem;">
+            ${t.type} • ${t.timestamp ? new Date(t.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+          </div>
+        </div>
+        <span class="badge" style="background: ${t.hours ? 'var(--brand-mint-subtle)' : '#FFF7EB'}; color: var(--brand-forest); font-family: var(--font-mono);">
+          ${t.hours ? `+${t.hours} hrs` : 'In Progress'}
+        </span>
+      </li>
+    `).join('');
+
+  card.innerHTML = `
+    <div class="card-header" style="margin-bottom: 12px;">
+      <div>
+        <h3 style="font-size: 1.05rem; color: var(--brand-forest); margin: 0;">My Verification History & Quota</h3>
+        <p class="subtext">Applicants you have personally signed or timed in/out as <strong>${memberProfile.full_name}</strong>.</p>
+      </div>
+      <span class="badge" style="background: ${isQuotaFull ? '#b33a2b' : 'var(--brand-forest)'}; color: #fff;">
+        ${quotaBadgeText}
+      </span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px;">
+      <div>
+        <strong style="font-size: 0.78rem; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 6px;">
+          Signatories Endorsed (${signedList.length})
+        </strong>
+        <ul class="task-list" style="max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;">
+          ${signedHtml}
+        </ul>
+      </div>
+      <div>
+        <strong style="font-size: 0.78rem; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 6px;">
+          Recent Tambay Verifications (${tambayVerifications.length})
+        </strong>
+        <ul class="task-list" style="max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;">
+          ${tambayHtml}
+        </ul>
+      </div>
+    </div>
+  `;
+}
+
+/* =========================================================
+   FEATURE 2: RACOMM BULK EVENT ATTENDANCE MATRIX MODAL
+   ========================================================= */
+function ensureBulkEventAttendanceModal() {
+  let modal = document.getElementById('bulkEventAttendanceModal');
+  if (modal) return modal;
+
+  modal = document.createElement('div');
+  modal.id = 'bulkEventAttendanceModal';
+  modal.className = 'modal-backdrop';
+  modal.style.display = 'none';
+  modal.innerHTML = `
+    <div class="modal-dialog" style="max-width: 540px;">
+      <div class="modal-header-bar">
+        <div>
+          <h2 style="font-family: var(--font-display); color: var(--brand-forest); font-size: 1.2rem; margin: 0;">Bulk Event Check-In Matrix</h2>
+          <small class="subtext">Credit (+5%) attendance across multiple applicants at once.</small>
+        </div>
+        <button type="button" id="closeBulkEventModalBtn" class="btn btn-secondary" style="padding: 4px 10px; font-size: 1.1rem; line-height: 1;">&times;</button>
+      </div>
+      <div class="modal-scrollable-body">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <div>
+            <label style="font-size: 0.76rem; font-weight: 600; display: block; margin-bottom: 4px;">Select Official Event:</label>
+            <select id="bulkEventSelect" style="width: 100%; font-size: 0.82rem;"></select>
+          </div>
+          <div>
+            <label style="font-size: 0.76rem; font-weight: 600; display: block; margin-bottom: 4px;">Filter Buddy Group:</label>
+            <select id="bulkEventGroupFilter" style="width: 100%; font-size: 0.82rem;"></select>
+          </div>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 4px;">
+          <span id="bulkEventCountLabel" class="badge">0 Selected</span>
+          <div style="display: flex; gap: 6px;">
+            <button type="button" id="bulkSelectAllVisibleBtn" class="btn btn-secondary" style="min-height: 28px; padding: 2px 8px; font-size: 0.74rem;">Select Visible</button>
+            <button type="button" id="bulkDeselectAllVisibleBtn" class="btn btn-secondary" style="min-height: 28px; padding: 2px 8px; font-size: 0.74rem;">Clear Visible</button>
+          </div>
+        </div>
+        <div id="bulkEventApplicantsList" style="display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow-y: auto; padding: 8px; background: var(--surface-subtle); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);"></div>
+      </div>
+      <div class="modal-actions-bar">
+        <button type="button" id="saveBulkEventAttendanceBtn" class="btn btn-checkin" style="flex: 2;">Save Event Attendance</button>
+        <button type="button" id="cancelBulkEventModalBtn" class="btn btn-secondary" style="flex: 1;">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const closeModal = () => { modal.style.display = 'none'; };
+  document.getElementById('closeBulkEventModalBtn').addEventListener('click', closeModal);
+  document.getElementById('cancelBulkEventModalBtn').addEventListener('click', closeModal);
+
+  const updateCountBadge = () => {
+    const checked = modal.querySelectorAll('.bulk-evt-app-check:checked').length;
+    const total = modal.querySelectorAll('.bulk-evt-app-check').length;
+    const badge = document.getElementById('bulkEventCountLabel');
+    if (badge) badge.textContent = `${checked} / ${total} Attended`;
+  };
+
+  const loadChecksForSelectedEvent = async () => {
+    const eventId = document.getElementById('bulkEventSelect')?.value;
+    if (!eventId) return;
+    const attendedUserIds = new Set(await getEventAttendeeUserIds(eventId));
+    modal.querySelectorAll('.bulk-evt-app-check').forEach(chk => {
+      chk.checked = attendedUserIds.has(chk.dataset.userId);
+    });
+    updateCountBadge();
+  };
+
+  document.getElementById('bulkEventSelect').addEventListener('change', loadChecksForSelectedEvent);
+
+  document.getElementById('bulkEventGroupFilter').addEventListener('change', (e) => {
+    const grp = e.target.value;
+    modal.querySelectorAll('.bulk-evt-app-row').forEach(row => {
+      row.style.display = (grp === 'ALL' || row.dataset.group === grp) ? 'flex' : 'none';
+    });
+  });
+
+  document.getElementById('bulkSelectAllVisibleBtn').addEventListener('click', () => {
+    modal.querySelectorAll('.bulk-evt-app-row').forEach(row => {
+      if (row.style.display !== 'none') {
+        const chk = row.querySelector('.bulk-evt-app-check');
+        if (chk) chk.checked = true;
+      }
+    });
+    updateCountBadge();
+  });
+
+  document.getElementById('bulkDeselectAllVisibleBtn').addEventListener('click', () => {
+    modal.querySelectorAll('.bulk-evt-app-row').forEach(row => {
+      if (row.style.display !== 'none') {
+        const chk = row.querySelector('.bulk-evt-app-check');
+        if (chk) chk.checked = false;
+      }
+    });
+    updateCountBadge();
+  });
+
+  modal.addEventListener('change', (e) => {
+    if (e.target.classList.contains('bulk-evt-app-check')) updateCountBadge();
+  });
+
+  document.getElementById('saveBulkEventAttendanceBtn').addEventListener('click', async () => {
+    const eventId = document.getElementById('bulkEventSelect')?.value;
+    if (!eventId || !currentUser) return;
+    const btn = document.getElementById('saveBulkEventAttendanceBtn');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    const checkedIds = Array.from(modal.querySelectorAll('.bulk-evt-app-check:checked')).map(c => c.dataset.userId);
+    const ok = await adminBulkSetEventAttendance(eventId, checkedIds, currentUser.email);
+
+    btn.disabled = false;
+    btn.textContent = 'Save Event Attendance';
+
+    if (ok) {
+      showToast(`Bulk attendance saved (${checkedIds.length} applicants marked attended)!`, 'success');
+      closeModal();
+      await Promise.all([renderRoster(), renderLeaderboard()]);
+    } else {
+      showToast('Failed to save bulk event attendance.', 'error');
+    }
+  });
+
+  modal._loadChecksForSelectedEvent = loadChecksForSelectedEvent;
+  return modal;
+}
+
+async function openBulkEventAttendanceModal() {
+  const modal = ensureBulkEventAttendanceModal();
+  const [events, applicants, groups] = await Promise.all([
+    getEvents(),
+    getAllApplicantsProgress(),
+    getManagedBuddyGroups()
+  ]);
+
+  const evtSelect = document.getElementById('bulkEventSelect');
+  const grpSelect = document.getElementById('bulkEventGroupFilter');
+  const listEl = document.getElementById('bulkEventApplicantsList');
+
+  if (evtSelect) {
+    evtSelect.innerHTML = events.map(e => `<option value="${e.id}">${e.name}</option>`).join('');
+  }
+  if (grpSelect) {
+    grpSelect.innerHTML = `
+      <option value="ALL">All Buddy Groups (${applicants.length})</option>
+      <option value="Unassigned">Unassigned</option>
+      ${groups.map(g => `<option value="${g.name}">${g.name}</option>`).join('')}
+    `;
+  }
+
+  if (listEl) {
+    listEl.innerHTML = applicants.map(a => `
+      <label class="bulk-evt-app-row" data-group="${a.buddyGroup}" style="display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; background: var(--surface); border-radius: 6px; border: 1px solid var(--border-subtle); cursor: pointer; font-size: 0.82rem;">
+        <div>
+          <strong>${a.fullName}</strong> (${a.nickname})
+          <span class="badge" style="margin-left: 6px; font-size: 0.68rem;">${a.buddyGroup}</span>
+        </div>
+        <input type="checkbox" class="bulk-evt-app-check" data-user-id="${a.id}" />
+      </label>
+    `).join('') || '<p class="subtext">No applicants registered.</p>';
+  }
+
+  modal.style.display = 'flex';
+  if (modal._loadChecksForSelectedEvent) {
+    await modal._loadChecksForSelectedEvent();
+  }
+}
+
+function injectBulkEventRosterButton(isRAComm) {
+  const csvBtn = document.getElementById('adminExportCsvBtn');
+  if (!csvBtn) return;
+
+  let bulkBtn = document.getElementById('adminBulkEventModalBtn');
+  if (!isRAComm) {
+    if (bulkBtn) bulkBtn.style.display = 'none';
+    return;
+  }
+
+  if (!bulkBtn) {
+    bulkBtn = document.createElement('button');
+    bulkBtn.id = 'adminBulkEventModalBtn';
+    bulkBtn.className = 'btn btn-secondary';
+    bulkBtn.style.cssText = 'min-height: 36px; padding: 4px 10px; font-size: 0.82rem;';
+    bulkBtn.textContent = '📋 Bulk Event Check-In';
+    csvBtn.parentNode.insertBefore(bulkBtn, csvBtn);
+    bulkBtn.addEventListener('click', openBulkEventAttendanceModal);
+  }
+  bulkBtn.style.display = 'inline-flex';
+}
+
+/* =========================================================
+   FEATURE 4: APPLICANT PERSONAL TAMBAY LOG HISTORY
+   ========================================================= */
+async function renderApplicantTambayHistory() {
+  if (!currentUser) return;
+  const tambayBadge = document.getElementById('tambayBadge');
+  const tambayCard = tambayBadge?.closest('section.card');
+  if (!tambayCard) return;
+
+  const logs = await getApplicantTambayLogHistory(currentUser.id);
+
+  let historyWrap = document.getElementById('applicantPersonalTambayHistoryWrap');
+  if (!historyWrap) {
+    historyWrap = document.createElement('details');
+    historyWrap.id = 'applicantPersonalTambayHistoryWrap';
+    historyWrap.style.cssText = 'margin-top: 16px; padding-top: 12px; border-top: 1px dashed var(--border-medium);';
+    tambayCard.appendChild(historyWrap);
+  }
+
+  if (logs.length === 0) {
+    historyWrap.innerHTML = `
+      <summary style="cursor: pointer; font-weight: 600; font-size: 0.85rem; color: var(--brand-forest); user-select: none;">
+        📜 My Tambay Session History (0 sessions)
+      </summary>
+      <p class="subtext" style="margin-top: 8px;">No completed tambay sessions recorded yet.</p>
+    `;
+    return;
+  }
+
+  historyWrap.innerHTML = `
+    <summary style="cursor: pointer; font-weight: 600; font-size: 0.85rem; color: var(--brand-forest); user-select: none;">
+      📜 My Tambay Session History (${logs.length} session${logs.length === 1 ? '' : 's'})
+    </summary>
+    <ul class="task-list" style="margin-top: 10px; display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto;">
+      ${logs.map(l => `
+        <li class="task-item" style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; font-size: 0.8rem;">
+          <div>
+            <strong style="color: var(--text-heading);">${new Date(l.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}</strong>
+            <small style="color: var(--text-muted); margin-left: 6px;">${new Date(l.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>
+            <div style="font-size: 0.74rem; color: var(--text-muted);">Verified by: ${l.verified_by || 'Resident Member'}</div>
+          </div>
+          <span class="badge" style="background: var(--brand-mint-subtle); color: var(--brand-forest); font-family: var(--font-mono); font-weight: 700;">
+            +${Number(l.hours).toFixed(2)} hrs
+          </span>
+        </li>
+      `).join('')}
+    </ul>
+  `;
 }
 
 /* =========================================================
@@ -312,7 +746,7 @@ async function renderLiveTambayanPresence() {
       return `
         <div class="card-header" style="margin-bottom: 4px;">
           <div>
-            <h3 style="font-size: 1.05rem; color: var(--brand-forest); margin: 0;"> Who's at the Tambayan Right Now?</h3>
+            <h3 style="font-size: 1.05rem; color: var(--brand-forest); margin: 0;">Who's at the Tambayan Right Now?</h3>
             <p class="subtext">No applicants are currently timed in at the tambayan.</p>
           </div>
           <span class="badge">0 Active</span>
@@ -355,8 +789,8 @@ async function renderLiveTambayanPresence() {
     return `
       <div class="card-header" style="margin-bottom: 10px;">
         <div>
-          <h3 style="font-size: 1.05rem; color: var(--brand-forest); margin: 0;"> Who's at the Tambayan Right Now?</h3>
-          <p class="subtext">Applicants currently timed in.</p>
+          <h3 style="font-size: 1.05rem; color: var(--brand-forest); margin: 0;">Who's at the Tambayan Right Now?</h3>
+          <p class="subtext">Live roster of applicants currently timed in.</p>
         </div>
         <span class="badge" style="background: var(--brand-mint); color: #fff;">${activeSessions.length} Active</span>
       </div>
@@ -366,7 +800,6 @@ async function renderLiveTambayanPresence() {
     `;
   };
 
-  // Mount inside Applicant Tambay Tab
   const appTambayTab = document.getElementById('tab-tambay');
   if (appTambayTab) {
     let appWidget = document.getElementById('applicantLiveTambayanWidget');
@@ -384,7 +817,6 @@ async function renderLiveTambayanPresence() {
     appWidget.innerHTML = buildWidgetHtml(false);
   }
 
-  // Mount inside Member Verification Hub
   const memHubTab = document.getElementById('member-hub-view');
   if (memHubTab) {
     let memWidget = document.getElementById('memberLiveTambayanWidget');
@@ -399,7 +831,7 @@ async function renderLiveTambayanPresence() {
 }
 
 /* =========================================================
-   SUGGESTION 1: INTERACTIVE SURVEY CONTROL NETWORK
+   INTERACTIVE SURVEY CONTROL NETWORK
    ========================================================= */
 function initSurveyNetwork(signatories) {
   const container = document.getElementById('surveyNetworkMap');
@@ -453,8 +885,8 @@ function initSurveyNetwork(signatories) {
     }
 
     const tooltipStatus = sig.completed
-      ? `✅ Signed by ${sig.signed_by || 'Verified'}\nRequirement: ${sig.trait || sig.task}`
-      : `⏳ Pending (${sig.committee_name || sig.role || 'Member'})\nRequirement: ${sig.trait || sig.task}\nClick to jump to this task!`;
+      ? `Signed by ${sig.signed_by || 'Verified'}\nRequirement: ${sig.trait || sig.task}`
+      : `Pending (${sig.committee_name || sig.role || 'Member'})\nRequirement: ${sig.trait || sig.task}\nClick to jump to this task!`;
 
     nodes.push({
       id: sig.nodeId,
@@ -558,7 +990,7 @@ function initSurveyNetwork(signatories) {
         const extra = sig.favorite_tradition
           ? ` • Tradition: "${sig.favorite_tradition}"`
           : (sig.favorite_geop_memory ? ` • Memory: "${sig.favorite_geop_memory}"` : '');
-        showToast(`✅ Signed by ${sig.signed_by || sig.member_name} (${sig.trait || sig.task})${extra}`, 'success');
+        showToast(`Signed by ${sig.signed_by || sig.member_name} (${sig.trait || sig.task})${extra}`, 'success');
       } else {
         const sigTabBtn = document.querySelector('#applicantTabNav [data-tab="tab-signatories"]');
         if (sigTabBtn) sigTabBtn.click();
@@ -587,7 +1019,7 @@ function initSurveyNetwork(signatories) {
 }
 
 /* =========================================================
-   SUGGESTION 4: IN-APP CAMERA QR SCANNER FOR MEMBERS
+   IN-APP CAMERA QR SCANNER FOR MEMBERS
    ========================================================= */
 async function ensureQrLibraryLoaded() {
   if (window.Html5Qrcode) return true;
@@ -679,7 +1111,6 @@ function injectMemberQrScannerUI() {
             return;
           }
 
-          // Open Verification Preview Card for the Member
           await openVerificationPreviewModal(extractedCode);
         },
         () => {}
@@ -695,7 +1126,7 @@ function injectMemberQrScannerUI() {
 }
 
 /* =========================================================
-   SUGGESTION 5: APPLICANT GRADE BREAKDOWN DRAWER
+   APPLICANT GRADE BREAKDOWN DRAWER
    ========================================================= */
 function renderGradeBreakdownUI(breakdown) {
   const bar = document.getElementById('progressBar');
@@ -1143,14 +1574,19 @@ async function renderOfficerEventSchedules() {
   }).join('');
 }
 
+/* =========================================================
+   FEATURE 5: MOST APPROACHED RESIDENT MEMBERS ON LEADERBOARD
+   ========================================================= */
 async function renderLeaderboard() {
   const container = document.getElementById('leaderboardContainer');
   const tambayList = document.getElementById('topTambayersList');
+  const leaderboardTab = document.getElementById('tab-leaderboard');
   if (!container && !tambayList) return;
 
-  const [applicants, groups] = await Promise.all([
+  const [applicants, groups, topMembers] = await Promise.all([
     getAllApplicantsProgress(),
-    getManagedBuddyGroups()
+    getManagedBuddyGroups(),
+    getMostApproachedMembersLeaderboard()
   ]);
 
   if (container) {
@@ -1198,6 +1634,45 @@ async function renderLeaderboard() {
         </li>
       `).join('');
     }
+  }
+
+  // Mount Most Approached Resident Members Card on Leaderboard
+  if (leaderboardTab) {
+    let memSpotlightCard = document.getElementById('mostApproachedMembersCard');
+    if (!memSpotlightCard) {
+      memSpotlightCard = document.createElement('section');
+      memSpotlightCard.id = 'mostApproachedMembersCard';
+      memSpotlightCard.className = 'card';
+      leaderboardTab.appendChild(memSpotlightCard);
+    }
+
+    const memItemsHtml = topMembers.length === 0
+      ? '<li class="subtext" style="padding: 10px 14px;">No resident member verifications recorded yet.</li>'
+      : topMembers.map((m, i) => `
+        <li class="task-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <strong style="font-size: 1.1rem; color: ${i === 0 ? '#FBB03B' : (i === 1 ? '#A8A9AD' : (i === 2 ? '#CD7F32' : 'var(--text-muted)'))};">#${i + 1}</strong>
+            <div>
+              <strong style="color: var(--text-heading); display: block;">${m.name}</strong>
+              <small style="color: var(--text-muted);">${m.sigs} Signatories • ${m.tambay} Tambay Verifications</small>
+            </div>
+          </div>
+          <span class="badge" style="background: var(--brand-mint-subtle); color: var(--brand-forest); font-family: var(--font-mono); font-weight: 700; font-size: 0.82rem;">
+            ${m.total} Total
+          </span>
+        </li>
+      `).join('');
+
+    memSpotlightCard.innerHTML = `
+      <div class="card-header">
+        <div>
+          <h2>Most Approached Resident Members</h2>
+          <p class="subtext">Resident members with the most applicant signatories endorsed and tambay sessions verified.</p>
+        </div>
+        <span class="badge" style="background: var(--brand-clay); color: #fff;">Members MVP</span>
+      </div>
+      <ul class="task-list">${memItemsHtml}</ul>
+    `;
   }
 }
 
@@ -1272,7 +1747,10 @@ async function renderDashboard() {
   if (sigContainer) await renderSignatoriesTab(sigContainer);
 
   initSurveyNetwork(signatories);
-  await renderLiveTambayanPresence();
+  await Promise.all([
+    renderLiveTambayanPresence(),
+    renderApplicantTambayHistory()
+  ]);
 
   const eventList = document.getElementById('eventList');
   if (eventList) {
@@ -1305,6 +1783,8 @@ async function renderRoster() {
     getAllApplicantsProgress(),
     checkIfRAComm(currentUser.email)
   ]);
+
+  injectBulkEventRosterButton(isRAComm);
 
   if (!isRAComm) {
     const memberProfile = await getMemberProfile(currentUser.email);
@@ -1351,7 +1831,7 @@ async function renderRoster() {
 }
 
 /* =========================================================
-   SUGGESTION 2: BUDDY TASK CHECKLIST IN INSPECTION MODAL
+   BUDDY TASK CHECKLIST IN INSPECTION MODAL
    ========================================================= */
 async function openInspection(appId) {
   inspectedApplicantId = appId;
@@ -1633,7 +2113,6 @@ async function handleAuth() {
     const code = urlParams.get('verifyCode') || urlParams.get('validateApplicant');
     if (code) {
       window.history.replaceState({}, document.title, window.location.pathname);
-      // Open Verification Preview Modal instead of blind immediate execution
       await openVerificationPreviewModal(code);
     }
 
@@ -1693,7 +2172,8 @@ async function handleAuth() {
         renderRoster(),
         renderOfficerBuddyTasksManager(),
         renderLeaderboard(),
-        renderLiveTambayanPresence()
+        renderLiveTambayanPresence(),
+        renderMemberPersonalActivityCard()
       ]);
 
     } else {
@@ -1791,7 +2271,6 @@ if (!window.__appInitialized) {
 
     await handleAuth();
 
-    // Hunt down and destroy any lingering Service Workers
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(function(registrations) {
         for (let registration of registrations) {
@@ -1815,10 +2294,13 @@ if (!window.__appInitialized) {
             await renderBuddyGroupBoard();
           });
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'signatories' }, () => {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'signatories' }, (payload) => {
+          if (payload?.new?.user_id === currentUser?.id && payload?.new?.completed) {
+            autoCloseQrDisplayIfOpen();
+          }
           debounceTask('signatories', async () => {
             showToast('Signatory matrix updated.', 'info');
-            await Promise.all([renderDashboard(), renderLeaderboard()]);
+            await Promise.all([renderDashboard(), renderLeaderboard(), renderMemberPersonalActivityCard()]);
           });
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'event_attendees' }, () => {
@@ -1855,13 +2337,22 @@ if (!window.__appInitialized) {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'availability_slots' }, () => {
           debounceTask('availability', () => renderWhen2Meet());
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'tambay_sessions' }, () => {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tambay_sessions' }, (payload) => {
+          if (payload?.new?.user_id === currentUser?.id || payload?.old?.user_id === currentUser?.id) {
+            autoCloseQrDisplayIfOpen();
+          }
           debounceTask('tambay_sessions', async () => {
-            await Promise.all([renderDashboard(), renderRoster(), renderLiveTambayanPresence()]);
+            await Promise.all([
+              renderDashboard(),
+              renderRoster(),
+              renderLiveTambayanPresence(),
+              renderMemberPersonalActivityCard()
+            ]);
           });
         })
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, async (payload) => {
           if (payload.new.user_id === currentUser?.id) {
+            autoCloseQrDisplayIfOpen();
             showToast(payload.new.message, 'info');
             const badge = document.getElementById('notifBadge');
             if (badge) {
@@ -1903,7 +2394,7 @@ if (!window.__appInitialized) {
       if (!btn) return;
       const target = document.getElementById(btn.dataset.copyTarget);
       const text = target?.textContent?.trim();
-      if (!text || text === '------') return;
+      if (!text || text === '------' || text === 'EXPIRED') return;
 
       try {
         await navigator.clipboard.writeText(text);
@@ -1966,8 +2457,10 @@ if (!window.__appInitialized) {
             await renderShopView();
           } else if (tabId === 'tab-leaderboard') {
             await renderLeaderboard();
-          } else if (tabId === 'tab-tambay' || tabId === 'member-hub-view') {
-            await renderLiveTambayanPresence();
+          } else if (tabId === 'tab-tambay') {
+            await Promise.all([renderLiveTambayanPresence(), renderApplicantTambayHistory()]);
+          } else if (tabId === 'member-hub-view') {
+            await Promise.all([renderLiveTambayanPresence(), renderMemberPersonalActivityCard()]);
           }
         }
       });
@@ -1994,7 +2487,6 @@ if (!window.__appInitialized) {
         return;
       }
       if (valModal) valModal.style.display = 'none';
-      // Open Verification Preview Card for the Member
       await openVerificationPreviewModal(code);
     });
 
@@ -2026,11 +2518,13 @@ if (!window.__appInitialized) {
       }
 
       if (container) container.style.display = 'block';
+      startQrCodeCountdown('TAMBAY', null);
     });
 
     document.getElementById('closeQrBtn')?.addEventListener('click', () => {
       const container = document.getElementById('qrDisplayContainer');
       if (container) container.style.display = 'none';
+      if (qrCountdownInterval) clearInterval(qrCountdownInterval);
     });
 
     /* Notification Bell Handler */
