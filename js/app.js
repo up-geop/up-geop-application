@@ -72,6 +72,14 @@ let html5QrScanner = null;
 let isQrScannerRunning = false;
 let pendingVerificationCode = null;
 
+// Roster Sorting & Quick-Filter State
+let rosterSortField = 'overallPercent';
+let rosterSortAsc = false;
+let rosterGroupFilter = 'ALL';
+let rosterStatusFilter = 'ALL';
+let rosterSearchTerm = '';
+let rosterControlsInitialized = false;
+
 // Keyed Debounce Utility to prevent Realtime re-render storms
 const debounceTimers = new Map();
 function debounceTask(key, fn, delay = 300) {
@@ -129,7 +137,7 @@ function stopTimer() {
 }
 
 /* =========================================================
-   FEATURE 7: 10-MINUTE COUNTDOWN BAR & AUTO-REFRESH ON QR CODE
+   10-MINUTE COUNTDOWN BAR & AUTO-REFRESH ON QR CODE
    ========================================================= */
 export function startQrCodeCountdown(type = 'TAMBAY', targetId = null) {
   lastGeneratedQrMeta = { type, targetId };
@@ -169,7 +177,7 @@ export function startQrCodeCountdown(type = 'TAMBAY', targetId = null) {
         <div style="background: ${remaining < 60 ? '#b33a2b' : 'var(--brand-forest)'}; width: ${pct}%; height: 100%; transition: width 1s linear;"></div>
       </div>
       <button type="button" id="regenerateQrCodeBtn" class="btn btn-secondary" style="min-height: 32px; padding: 4px 10px; font-size: 0.76rem; width: 100%;">
-        🔄 Regenerate Code
+        Regenerate Code
       </button>
     `;
 
@@ -257,7 +265,7 @@ function formatName(name) {
 }
 
 /* =========================================================
-   FEATURE 1: MEMBER PERSONAL ACTIVITY LOG ("WHO HAVE I SIGNED / TIMED IN?")
+   MEMBER PERSONAL ACTIVITY LOG ("WHO HAVE I SIGNED / TIMED IN?")
    ========================================================= */
 async function renderMemberPersonalActivityCard() {
   const memHubTab = document.getElementById('member-hub-view');
@@ -350,7 +358,7 @@ async function renderMemberPersonalActivityCard() {
 }
 
 /* =========================================================
-   FEATURE 2: RACOMM BULK EVENT ATTENDANCE MATRIX MODAL
+   RACOMM BULK EVENT ATTENDANCE MATRIX MODAL
    ========================================================= */
 function ensureBulkEventAttendanceModal() {
   let modal = document.getElementById('bulkEventAttendanceModal');
@@ -465,7 +473,7 @@ function ensureBulkEventAttendanceModal() {
     btn.textContent = 'Save Event Attendance';
 
     if (ok) {
-      showToast(`Bulk attendance saved (${checkedIds.length} applicants marked attended)!`, 'success');
+      showToast(`Bulk attendance saved (${checkedIds.length} applicants marked attended).`, 'success');
       closeModal();
       await Promise.all([renderRoster(), renderLeaderboard()]);
     } else {
@@ -533,7 +541,7 @@ function injectBulkEventRosterButton(isRAComm) {
     bulkBtn.id = 'adminBulkEventModalBtn';
     bulkBtn.className = 'btn btn-secondary';
     bulkBtn.style.cssText = 'min-height: 36px; padding: 4px 10px; font-size: 0.82rem;';
-    bulkBtn.textContent = '📋 Bulk Event Check-In';
+    bulkBtn.textContent = 'Bulk Event Check-In';
     csvBtn.parentNode.insertBefore(bulkBtn, csvBtn);
     bulkBtn.addEventListener('click', openBulkEventAttendanceModal);
   }
@@ -541,28 +549,96 @@ function injectBulkEventRosterButton(isRAComm) {
 }
 
 /* =========================================================
-   FEATURE 4: APPLICANT PERSONAL TAMBAY LOG HISTORY
+   ITEM 6: TAMBAY PACE & "HOURS NEEDED PER DAY" CALCULATOR + LOG HISTORY
    ========================================================= */
-async function renderApplicantTambayHistory() {
+async function renderApplicantTambayHistoryAndPace() {
   if (!currentUser) return;
   const tambayBadge = document.getElementById('tambayBadge');
   const tambayCard = tambayBadge?.closest('section.card');
   if (!tambayCard) return;
 
-  const logs = await getApplicantTambayLogHistory(currentUser.id);
+  const [logs, settings] = await Promise.all([
+    getApplicantTambayLogHistory(currentUser.id),
+    getGlobalSettings()
+  ]);
 
+  const totalHours = logs.reduce((acc, row) => acc + (parseFloat(row.hours) || 0), 0);
+  const remainingHours = Math.max(0, CONFIG.TARGET_TAMBAY_HOURS - totalHours);
+
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const hoursToday = logs
+    .filter(l => new Date(l.created_at) >= startOfDay)
+    .reduce((acc, row) => acc + (parseFloat(row.hours) || 0), 0);
+
+  const dailyCap = 3.0;
+  const remainingTodayCap = Math.max(0, dailyCap - hoursToday);
+  const minDaysRequired = settings.dailyCapEnabled
+    ? Math.ceil(remainingHours / dailyCap)
+    : (remainingHours > 0 ? 1 : 0);
+
+  // Inject Tambay Pace & Daily Cap Advisor Box
+  let paceBox = document.getElementById('applicantTambayPaceBox');
+  if (!paceBox) {
+    paceBox = document.createElement('div');
+    paceBox.id = 'applicantTambayPaceBox';
+    paceBox.style.cssText = 'margin-top: 14px; padding: 12px 14px; background: var(--surface-subtle); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);';
+    tambayCard.appendChild(paceBox);
+  }
+
+  const todayCapPct = Math.min(100, Math.round((hoursToday / dailyCap) * 100));
+
+  paceBox.innerHTML = `
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: ${settings.dailyCapEnabled ? '10px' : '0'};">
+      <div>
+        <span style="font-size: 0.7rem; text-transform: uppercase; font-weight: 600; color: var(--text-muted); display: block;">Hours Needed</span>
+        <strong style="font-family: var(--font-mono); font-size: 0.95rem; color: var(--brand-forest);">
+          ${remainingHours === 0 ? 'Target Met (24h)' : `${remainingHours.toFixed(1)} hrs left`}
+        </strong>
+      </div>
+      <div>
+        <span style="font-size: 0.7rem; text-transform: uppercase; font-weight: 600; color: var(--text-muted); display: block;">Today's Logged Hours</span>
+        <strong style="font-family: var(--font-mono); font-size: 0.95rem; color: var(--text-heading);">
+          ${hoursToday.toFixed(2)}${settings.dailyCapEnabled ? ` / ${dailyCap.toFixed(1)} hrs` : ' hrs'}
+        </strong>
+      </div>
+      <div>
+        <span style="font-size: 0.7rem; text-transform: uppercase; font-weight: 600; color: var(--text-muted); display: block;">Pace Estimate</span>
+        <strong style="font-size: 0.85rem; color: var(--text-heading);">
+          ${remainingHours === 0
+            ? 'Complete'
+            : (settings.dailyCapEnabled
+                ? `Min. ${minDaysRequired} tambay day${minDaysRequired === 1 ? '' : 's'} (at 3h/day cap)`
+                : 'Daily cap disabled')}
+        </strong>
+      </div>
+    </div>
+    ${settings.dailyCapEnabled ? `
+      <div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-muted); margin-bottom: 3px;">
+          <span>Daily Cap Usage Today</span>
+          <span>${remainingTodayCap > 0 ? `${remainingTodayCap.toFixed(2)} hrs remaining today` : 'Daily 3.0 hr limit reached'}</span>
+        </div>
+        <div style="background: var(--border-subtle); height: 6px; border-radius: 3px; overflow: hidden;">
+          <div style="background: ${remainingTodayCap <= 0 ? '#b33a2b' : 'var(--brand-forest)'}; width: ${todayCapPct}%; height: 100%; transition: width 0.3s ease;"></div>
+        </div>
+      </div>
+    ` : ''}
+  `;
+
+  // Collapsible Session History Drawer
   let historyWrap = document.getElementById('applicantPersonalTambayHistoryWrap');
   if (!historyWrap) {
     historyWrap = document.createElement('details');
     historyWrap.id = 'applicantPersonalTambayHistoryWrap';
-    historyWrap.style.cssText = 'margin-top: 16px; padding-top: 12px; border-top: 1px dashed var(--border-medium);';
+    historyWrap.style.cssText = 'margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border-medium);';
     tambayCard.appendChild(historyWrap);
   }
 
   if (logs.length === 0) {
     historyWrap.innerHTML = `
       <summary style="cursor: pointer; font-weight: 600; font-size: 0.85rem; color: var(--brand-forest); user-select: none;">
-        📜 My Tambay Session History (0 sessions)
+        My Tambay Session History (0 sessions)
       </summary>
       <p class="subtext" style="margin-top: 8px;">No completed tambay sessions recorded yet.</p>
     `;
@@ -571,7 +647,7 @@ async function renderApplicantTambayHistory() {
 
   historyWrap.innerHTML = `
     <summary style="cursor: pointer; font-weight: 600; font-size: 0.85rem; color: var(--brand-forest); user-select: none;">
-      📜 My Tambay Session History (${logs.length} session${logs.length === 1 ? '' : 's'})
+      My Tambay Session History (${logs.length} session${logs.length === 1 ? '' : 's'})
     </summary>
     <ul class="task-list" style="margin-top: 10px; display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto;">
       ${logs.map(l => `
@@ -711,7 +787,7 @@ async function openVerificationPreviewModal(code) {
         <div><strong>Action:</strong> Clocking Out of Tambay Session</div>
         <div><strong>Timed In At:</strong> ${new Date(active.time_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (by ${active.verified_by})</div>
         <div><strong>Raw Elapsed Duration:</strong> ${elapsedHrs} hrs</div>
-        ${preview.applicant?.tambay_boost_active ? `<div style="color: var(--brand-forest); font-weight: 700;">⚡ 1.5× Tambay Boost Active!</div>` : ''}
+        ${preview.applicant?.tambay_boost_active ? `<div style="color: var(--brand-forest); font-weight: 700;">1.5x Tambay Boost Active</div>` : ''}
       `;
     } else {
       sessionInfoHtml = `<div><strong>Action:</strong> Starting a new live Tambay Session</div>`;
@@ -765,7 +841,7 @@ async function renderLiveTambayanPresence() {
           <div>
             <strong style="color: var(--text-heading); font-size: 0.88rem;">${displayName}</strong>
             <span class="badge" style="margin-left: 6px; font-size: 0.7rem;">${s.buddyGroup}</span>
-            ${s.isStale ? `<span class="badge" style="background: #b33a2b; color: #fff; margin-left: 4px; font-size: 0.7rem;">⚠️ 8h+ Forgotten Time-Out?</span>` : ''}
+            ${s.isStale ? `<span class="badge" style="background: #b33a2b; color: #fff; margin-left: 4px; font-size: 0.7rem;">8h+ Stale Session</span>` : ''}
             <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
               In since ${new Date(s.time_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (${durText} elapsed) • Verified by ${s.verified_by}
             </div>
@@ -886,7 +962,7 @@ function initSurveyNetwork(signatories) {
 
     const tooltipStatus = sig.completed
       ? `Signed by ${sig.signed_by || 'Verified'}\nRequirement: ${sig.trait || sig.task}`
-      : `Pending (${sig.committee_name || sig.role || 'Member'})\nRequirement: ${sig.trait || sig.task}\nClick to jump to this task!`;
+      : `Pending (${sig.committee_name || sig.role || 'Member'})\nRequirement: ${sig.trait || sig.task}\nClick to jump to this task.`;
 
     nodes.push({
       id: sig.nodeId,
@@ -979,7 +1055,7 @@ function initSurveyNetwork(signatories) {
       if (!params.nodes || params.nodes.length === 0) return;
       const clickedNodeId = params.nodes[0];
       if (clickedNodeId === 0) {
-        showToast(`Control Station: ${completedCount} of ${signatories.length} nodes tied in!`, 'info');
+        showToast(`Control Station: ${completedCount} of ${signatories.length} nodes tied in.`, 'info');
         return;
       }
 
@@ -1060,7 +1136,7 @@ function injectMemberQrScannerUI() {
   scanBtn.id = 'openCameraQrBtn';
   scanBtn.className = 'btn btn-secondary';
   scanBtn.style.cssText = 'min-height: 40px; padding: 6px 16px; border-color: var(--brand-forest); color: var(--brand-forest);';
-  scanBtn.innerHTML = '📷 Scan QR with Camera';
+  scanBtn.textContent = 'Scan QR with Camera';
   btnWrapper.appendChild(scanBtn);
 
   const scannerWrap = document.createElement('div');
@@ -1204,7 +1280,7 @@ async function renderShopView() {
         </div>
 
         ${isUnlocked ? `
-          <div style="color: var(--brand-forest); font-weight: 700; font-size: 0.85rem;">🎉 Goal Met! +2 Days Extension Unlocked!</div>
+          <div style="color: var(--brand-forest); font-weight: 700; font-size: 0.85rem;">Goal Met: +2 Days Extension Unlocked</div>
         ` : `
           <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
             <div style="display: flex; gap: 8px; align-items: center;">
@@ -1277,7 +1353,7 @@ async function renderApplicantBuddyTasks(userGroup) {
 
         <div style="margin-top: 8px; font-size: 0.78rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px;">
           <span style="color: ${isOverdue ? '#9e2a2b' : 'var(--text-muted)'}; font-weight: ${isOverdue ? '700' : 'normal'};">
-            📅 Deadline: <strong>${deadline.toLocaleDateString()} ${deadline.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong>
+            Deadline: <strong>${deadline.toLocaleDateString()} ${deadline.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong>
             ${isPotUnlocked ? '<span style="color: var(--brand-forest); font-weight: 700; margin-left: 4px;">(+2 Days Shop Boost Active)</span>' : ''}
           </span>
         </div>
@@ -1348,33 +1424,140 @@ async function renderOfficerBuddyTasksManager() {
   }).join('');
 }
 
+/* =========================================================
+   ITEM 5: TARGETED & PINNED ANNOUNCEMENTS (ALL vs. BUDDY GROUP)
+   ========================================================= */
+async function renderPinnedOverviewAnnouncement(userGroup) {
+  const overviewTab = document.getElementById('tab-overview');
+  if (!overviewTab || !currentUser) return;
+
+  const allAnnouncements = await getAnnouncements();
+  const relevant = allAnnouncements.filter(a => {
+    const tg = (a.target_group || 'ALL').trim();
+    return !tg || tg.toUpperCase() === 'ALL' || (userGroup && tg.toLowerCase() === userGroup.toLowerCase());
+  });
+
+  let pinnedEl = document.getElementById('applicantPinnedAnnouncementCard');
+  if (relevant.length === 0) {
+    if (pinnedEl) pinnedEl.style.display = 'none';
+    return;
+  }
+
+  const latest = relevant[0];
+  const isRecent = (Date.now() - new Date(latest.created_at).getTime()) < (24 * 60 * 60 * 1000);
+  const targetLabel = (!latest.target_group || latest.target_group === 'ALL') ? 'All Portal' : latest.target_group;
+
+  if (!pinnedEl) {
+    pinnedEl = document.createElement('section');
+    pinnedEl.id = 'applicantPinnedAnnouncementCard';
+    pinnedEl.className = 'card';
+    pinnedEl.style.cssText = 'border-left: 4px solid var(--brand-forest); background: var(--surface); margin-bottom: 16px;';
+    const statsGrid = overviewTab.querySelector('.stats-grid');
+    if (statsGrid) {
+      overviewTab.insertBefore(pinnedEl, statsGrid);
+    } else {
+      overviewTab.prepend(pinnedEl);
+    }
+  }
+
+  pinnedEl.style.display = 'block';
+  pinnedEl.innerHTML = `
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; gap: 8px; flex-wrap: wrap;">
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <span class="badge" style="background: var(--brand-forest); color: #fff;">Pinned Announcement</span>
+        <span class="badge">${targetLabel}</span>
+        ${isRecent ? `<span class="badge" style="background: var(--brand-mint); color: #111; font-weight: 700;">NEW</span>` : ''}
+      </div>
+      <small style="color: var(--text-muted); font-size: 0.75rem;">${new Date(latest.created_at).toLocaleDateString()}</small>
+    </div>
+    <h3 style="font-size: 1rem; color: var(--text-heading); margin-bottom: 4px;">${latest.title}</h3>
+    <p style="font-size: 0.85rem; color: var(--text-body); white-space: pre-line; margin: 0;">${latest.content}</p>
+  `;
+}
+
 async function renderAnnouncementsBoard() {
   const list = document.getElementById('announcementsList');
   const form = document.getElementById('racommAnnouncementForm');
   const badge = document.getElementById('racommPostBadge');
   if (!list || !currentUser) return;
 
-  const [isRAComm, items] = await Promise.all([
+  const [isRAComm, isMember, items, groups] = await Promise.all([
     checkIfRAComm(currentUser.email),
-    getAnnouncements()
+    checkIfResidentMember(currentUser.email),
+    getAnnouncements(),
+    getManagedBuddyGroups()
   ]);
 
-  if (form) form.style.display = isRAComm ? 'block' : 'none';
-  if (badge) badge.style.display = isRAComm ? 'inline-block' : 'none';
+  let userBuddyGroup = null;
+  if (isMember || isRAComm) {
+    const memProf = await getMemberProfile(currentUser.email);
+    userBuddyGroup = memProf?.buddy_group_name || null;
+  } else {
+    const appProf = await getUserProfileData(currentUser.id);
+    userBuddyGroup = appProf?.buddy_group_name || null;
+  }
 
-  if (items.length === 0) {
+  const canPost = isRAComm || (isMember && userBuddyGroup && userBuddyGroup !== 'Unassigned');
+
+  if (form) {
+    form.style.display = canPost ? 'block' : 'none';
+    let targetSelect = document.getElementById('announcementTargetGroupSelect');
+    if (!targetSelect) {
+      targetSelect = document.createElement('select');
+      targetSelect.id = 'announcementTargetGroupSelect';
+      targetSelect.style.cssText = 'width: 100%; margin-bottom: 8px; font-size: 0.85rem;';
+      const postBtn = document.getElementById('postAnnouncementBtn');
+      if (postBtn) form.insertBefore(targetSelect, postBtn);
+    }
+
+    if (isRAComm) {
+      targetSelect.innerHTML = `
+        <option value="ALL">Target Audience: All Portal (Universal)</option>
+        ${groups.map(g => `<option value="${g.name}">Target Audience: ${g.name} Only</option>`).join('')}
+      `;
+      targetSelect.disabled = false;
+    } else if (userBuddyGroup) {
+      targetSelect.innerHTML = `<option value="${userBuddyGroup}">Target Audience: ${userBuddyGroup} Only</option>`;
+      targetSelect.disabled = true;
+    }
+  }
+
+  if (badge) {
+    badge.style.display = canPost ? 'inline-block' : 'none';
+    badge.textContent = isRAComm ? 'Officer' : 'Member';
+  }
+
+  const visibleItems = isRAComm
+    ? items
+    : items.filter(a => {
+        const tg = (a.target_group || 'ALL').trim();
+        return !tg || tg.toUpperCase() === 'ALL' || (userBuddyGroup && tg.toLowerCase() === userBuddyGroup.toLowerCase());
+      });
+
+  if (visibleItems.length === 0) {
     list.innerHTML = '<p class="subtext">No announcements posted yet.</p>';
     return;
   }
 
-  list.innerHTML = items.map(a => `
-    <div class="card" style="margin: 0; padding: 14px; position: relative;">
-      ${isRAComm ? `<button class="btn btn-secondary delete-ann-btn" data-id="${a.id}" style="position:absolute; top:10px; right:10px; min-height:30px; padding:2px 8px; font-size:0.75rem; color:#b33a2b;">Delete</button>` : ''}
-      <h3 style="font-size: 1rem; color: var(--brand-forest); margin-bottom: 4px;">${a.title}</h3>
-      <p style="font-size: 0.85rem; margin-bottom: 8px; white-space: pre-line;">${a.content}</p>
-      <small style="color: var(--text-muted);">Posted by ${a.author_email} on ${new Date(a.created_at).toLocaleDateString()}</small>
-    </div>
-  `).join('');
+  const nowMs = Date.now();
+  list.innerHTML = visibleItems.map(a => {
+    const isRecent = (nowMs - new Date(a.created_at).getTime()) < (24 * 60 * 60 * 1000);
+    const targetText = (!a.target_group || a.target_group === 'ALL') ? 'All Portal' : a.target_group;
+    const canDelete = isRAComm || (a.author_email && a.author_email.toLowerCase() === currentUser.email.toLowerCase());
+
+    return `
+      <div class="card" style="margin: 0; padding: 14px; position: relative; border-left: 4px solid ${targetText === 'All Portal' ? 'var(--brand-forest)' : 'var(--brand-clay)'};">
+        ${canDelete ? `<button class="btn btn-secondary delete-ann-btn" data-id="${a.id}" style="position:absolute; top:10px; right:10px; min-height:28px; padding:2px 8px; font-size:0.75rem; color:#b33a2b;">Delete</button>` : ''}
+        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+          <span class="badge" style="font-size: 0.7rem;">${targetText}</span>
+          ${isRecent ? `<span class="badge" style="background: var(--brand-mint); color: #111; font-size: 0.68rem; font-weight: 700;">NEW</span>` : ''}
+        </div>
+        <h3 style="font-size: 1rem; color: var(--brand-forest); margin-bottom: 4px;">${a.title}</h3>
+        <p style="font-size: 0.85rem; margin-bottom: 8px; white-space: pre-line;">${a.content}</p>
+        <small style="color: var(--text-muted);">Posted by ${a.author_email} on ${new Date(a.created_at).toLocaleDateString()}</small>
+      </div>
+    `;
+  }).join('');
 }
 
 async function renderWhen2Meet() {
@@ -1575,7 +1758,7 @@ async function renderOfficerEventSchedules() {
 }
 
 /* =========================================================
-   FEATURE 5: MOST APPROACHED RESIDENT MEMBERS ON LEADERBOARD
+   MOST APPROACHED RESIDENT MEMBERS ON LEADERBOARD
    ========================================================= */
 async function renderLeaderboard() {
   const container = document.getElementById('leaderboardContainer');
@@ -1636,7 +1819,6 @@ async function renderLeaderboard() {
     }
   }
 
-  // Mount Most Approached Resident Members Card on Leaderboard
   if (leaderboardTab) {
     let memSpotlightCard = document.getElementById('mostApproachedMembersCard');
     if (!memSpotlightCard) {
@@ -1669,7 +1851,7 @@ async function renderLeaderboard() {
           <h2>Most Approached Resident Members</h2>
           <p class="subtext">Resident members with the most applicant signatories endorsed and tambay sessions verified.</p>
         </div>
-        <span class="badge" style="background: var(--brand-clay); color: #fff;">Members</span>
+        <span class="badge" style="background: var(--brand-clay); color: #fff;">Members MVP</span>
       </div>
       <ul class="task-list">${memItemsHtml}</ul>
     `;
@@ -1749,7 +1931,8 @@ async function renderDashboard() {
   initSurveyNetwork(signatories);
   await Promise.all([
     renderLiveTambayanPresence(),
-    renderApplicantTambayHistory()
+    renderApplicantTambayHistoryAndPace(),
+    renderPinnedOverviewAnnouncement(profile?.buddy_group_name)
   ]);
 
   const eventList = document.getElementById('eventList');
@@ -1765,7 +1948,7 @@ async function renderDashboard() {
           </div>
         </div>
         <div style="display: flex; align-items: center; gap: 8px;">
-          <a href="${generateGoogleCalendarUrl(evt.name, evt.scheduledDate)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="min-height: 32px; padding: 4px 8px; font-size: 0.75rem;">📅 Add to Calendar</a>
+          <a href="${generateGoogleCalendarUrl(evt.name, evt.scheduledDate)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="min-height: 32px; padding: 4px 8px; font-size: 0.75rem;">Add to Calendar</a>
           <span class="badge" style="background: ${evt.attended ? 'var(--brand-mint)' : 'var(--surface-subtle)'}; color: ${evt.attended ? '#ffffff' : 'inherit'}; font-weight: 600;">
             ${evt.attended ? 'Attended (+5%)' : 'Pending'}
           </span>
@@ -1775,16 +1958,108 @@ async function renderDashboard() {
   }
 }
 
+/* =========================================================
+   ITEM 7: ROSTER COLUMN SORTING & STATUS QUICK-FILTERS
+   ========================================================= */
+function setupRosterControlsAndHeaders(groups, isRAComm) {
+  const searchInput = document.getElementById('searchApplicantInput');
+  const rosterTable = document.getElementById('applicantRosterTbody')?.closest('table');
+  if (!searchInput || !rosterTable) return;
+
+  const controlsBar = searchInput.parentElement;
+  if (controlsBar) {
+    controlsBar.style.flexWrap = 'wrap';
+
+    let groupFilterSelect = document.getElementById('rosterGroupFilterSelect');
+    if (isRAComm) {
+      if (!groupFilterSelect) {
+        groupFilterSelect = document.createElement('select');
+        groupFilterSelect.id = 'rosterGroupFilterSelect';
+        groupFilterSelect.style.cssText = 'min-height: 36px; padding: 4px 8px; font-size: 0.8rem;';
+        controlsBar.insertBefore(groupFilterSelect, searchInput);
+        groupFilterSelect.addEventListener('change', (e) => {
+          rosterGroupFilter = e.target.value;
+          renderRoster();
+        });
+      }
+      groupFilterSelect.innerHTML = `
+        <option value="ALL" ${rosterGroupFilter === 'ALL' ? 'selected' : ''}>All Groups</option>
+        <option value="Unassigned" ${rosterGroupFilter === 'Unassigned' ? 'selected' : ''}>Unassigned</option>
+        ${groups.map(g => `<option value="${g.name}" ${rosterGroupFilter === g.name ? 'selected' : ''}>${g.name}</option>`).join('')}
+      `;
+      groupFilterSelect.style.display = 'inline-block';
+    } else if (groupFilterSelect) {
+      groupFilterSelect.style.display = 'none';
+    }
+
+    let statusFilterSelect = document.getElementById('rosterStatusFilterSelect');
+    if (!statusFilterSelect) {
+      statusFilterSelect = document.createElement('select');
+      statusFilterSelect.id = 'rosterStatusFilterSelect';
+      statusFilterSelect.style.cssText = 'min-height: 36px; padding: 4px 8px; font-size: 0.8rem;';
+      controlsBar.insertBefore(statusFilterSelect, searchInput);
+      statusFilterSelect.addEventListener('change', (e) => {
+        rosterStatusFilter = e.target.value;
+        renderRoster();
+      });
+    }
+    statusFilterSelect.innerHTML = `
+      <option value="ALL" ${rosterStatusFilter === 'ALL' ? 'selected' : ''}>All Status</option>
+      <option value="TIMED_IN" ${rosterStatusFilter === 'TIMED_IN' ? 'selected' : ''}>Timed In</option>
+      <option value="STALE" ${rosterStatusFilter === 'STALE' ? 'selected' : ''}>8h+ Stale</option>
+      <option value="OFFLINE" ${rosterStatusFilter === 'OFFLINE' ? 'selected' : ''}>Offline</option>
+    `;
+  }
+
+  const theadRow = rosterTable.querySelector('thead tr');
+  if (theadRow) {
+    const columns = [
+      { label: 'Applicant', field: 'fullName' },
+      { label: 'Buddy Group', field: 'buddyGroup' },
+      { label: 'Signatories', field: 'completedSigs' },
+      { label: 'Tambay', field: 'tambayHours' },
+      { label: 'Progress', field: 'overallPercent' },
+      { label: 'Status', field: 'isTimedIn' },
+      { label: 'Action', field: null }
+    ];
+
+    theadRow.innerHTML = columns.map(col => {
+      if (!col.field) return `<th>${col.label}</th>`;
+      const isSorted = rosterSortField === col.field;
+      const dirIndicator = isSorted ? (rosterSortAsc ? ' (asc)' : ' (desc)') : '';
+      return `<th class="sortable-roster-th" data-sort-field="${col.field}" style="cursor: pointer; user-select: none; color: ${isSorted ? 'var(--brand-forest)' : 'inherit'};">${col.label}${dirIndicator}</th>`;
+    }).join('');
+
+    if (!rosterControlsInitialized) {
+      rosterControlsInitialized = true;
+      theadRow.addEventListener('click', (e) => {
+        const th = e.target.closest('.sortable-roster-th');
+        if (!th) return;
+        const field = th.dataset.sortField;
+        if (rosterSortField === field) {
+          rosterSortAsc = !rosterSortAsc;
+        } else {
+          rosterSortField = field;
+          rosterSortAsc = field === 'fullName' || field === 'buddyGroup';
+        }
+        renderRoster();
+      });
+    }
+  }
+}
+
 async function renderRoster() {
   const tbody = document.getElementById('applicantRosterTbody');
   if (!tbody || !currentUser) return;
 
-  let [applicants, isRAComm] = await Promise.all([
+  let [applicants, isRAComm, groups] = await Promise.all([
     getAllApplicantsProgress(),
-    checkIfRAComm(currentUser.email)
+    checkIfRAComm(currentUser.email),
+    getManagedBuddyGroups()
   ]);
 
   injectBulkEventRosterButton(isRAComm);
+  setupRosterControlsAndHeaders(groups, isRAComm);
 
   if (!isRAComm) {
     const memberProfile = await getMemberProfile(currentUser.email);
@@ -1806,7 +2081,42 @@ async function renderRoster() {
     return;
   }
 
-  tbody.innerHTML = applicants.map(app => `
+  // Apply Quick-Filters (Group, Status, Search Term)
+  let filtered = applicants.filter(app => {
+    if (isRAComm && rosterGroupFilter !== 'ALL' && (app.buddyGroup || '') !== rosterGroupFilter) {
+      return false;
+    }
+    if (rosterStatusFilter === 'TIMED_IN' && !app.isTimedIn) return false;
+    if (rosterStatusFilter === 'STALE' && !app.isStaleSession) return false;
+    if (rosterStatusFilter === 'OFFLINE' && app.isTimedIn) return false;
+
+    if (rosterSearchTerm) {
+      const hay = `${app.fullName} ${app.nickname} ${app.buddyGroup}`.toLowerCase();
+      if (!hay.includes(rosterSearchTerm)) return false;
+    }
+    return true;
+  });
+
+  // Apply Column Sorting
+  filtered.sort((a, b) => {
+    let valA = a[rosterSortField];
+    let valB = b[rosterSortField];
+    if (typeof valA === 'string') {
+      valA = valA.toLowerCase();
+      valB = (valB || '').toLowerCase();
+      return rosterSortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+    }
+    valA = Number(valA) || 0;
+    valB = Number(valB) || 0;
+    return rosterSortAsc ? valA - valB : valB - valA;
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:16px;">No applicants match the selected filters.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(app => `
     <tr>
       <td><strong>${app.fullName}</strong> ("${app.nickname}")</td>
       <td>${app.buddyGroup}</td>
@@ -1816,7 +2126,7 @@ async function renderRoster() {
       <td>
         <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
           <span class="badge" style="background:${app.isTimedIn ? (app.isStaleSession ? '#b33a2b' : 'var(--brand-mint-subtle)') : 'var(--surface-subtle)'}; color:${app.isTimedIn ? (app.isStaleSession ? '#fff' : 'var(--brand-mint)') : 'inherit'};">
-            ${app.isTimedIn ? (app.isStaleSession ? '⚠️ 8h+ Timed In' : 'Timed In') : 'Offline'}
+            ${app.isTimedIn ? (app.isStaleSession ? '8h+ Timed In' : 'Timed In') : 'Offline'}
           </span>
           ${isRAComm && app.isTimedIn ? `
             <button type="button" class="btn btn-secondary force-close-tambay-btn" data-user-id="${app.id}" data-mode="zero" style="min-height: 24px; padding: 2px 6px; font-size: 0.7rem; color: #b33a2b;">
@@ -2331,7 +2641,11 @@ if (!window.__appInitialized) {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => {
           debounceTask('announcements', async () => {
             showToast('New announcement posted.', 'info');
-            await renderAnnouncementsBoard();
+            const profile = await getUserProfileData(currentUser?.id);
+            await Promise.all([
+              renderAnnouncementsBoard(),
+              renderPinnedOverviewAnnouncement(profile?.buddy_group_name)
+            ]);
           });
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'availability_slots' }, () => {
@@ -2458,7 +2772,7 @@ if (!window.__appInitialized) {
           } else if (tabId === 'tab-leaderboard') {
             await renderLeaderboard();
           } else if (tabId === 'tab-tambay') {
-            await Promise.all([renderLiveTambayanPresence(), renderApplicantTambayHistory()]);
+            await Promise.all([renderLiveTambayanPresence(), renderApplicantTambayHistoryAndPace()]);
           } else if (tabId === 'member-hub-view') {
             await Promise.all([renderLiveTambayanPresence(), renderMemberPersonalActivityCard()]);
           }
@@ -2569,7 +2883,7 @@ if (!window.__appInitialized) {
 
     document.getElementById('refreshLeaderboardBtn')?.addEventListener('click', async () => {
       await renderLeaderboard();
-      showToast('Leaderboard refreshed', 'info');
+      showToast('Leaderboard refreshed.', 'info');
     });
 
     /* Shop Handlers */
@@ -2626,7 +2940,7 @@ if (!window.__appInitialized) {
       const availableTraits = await getFilteredAvailableTraits(sigId);
 
       if (availableTraits.length === 0) {
-        showToast('All available traits from the pool are already assigned to you!', 'error');
+        showToast('All available traits from the pool are already assigned to you.', 'error');
         return;
       }
 
@@ -2671,7 +2985,7 @@ if (!window.__appInitialized) {
       const ok = await createBuddyTask(title, desc, targetGroup, isoDeadline);
 
       if (ok) {
-        showToast('Buddy task published successfully!', 'success');
+        showToast('Buddy task published successfully.', 'success');
         document.getElementById('buddyTaskTitleInput').value = '';
         document.getElementById('buddyTaskDescInput').value = '';
         document.getElementById('buddyTaskDeadlineInput').value = '';
@@ -2762,7 +3076,7 @@ if (!window.__appInitialized) {
         const ok = await updateOfficialEventDate(eventId, isoDate);
         
         if (ok) {
-          showToast('Event schedule updated!', 'success');
+          showToast('Event schedule updated.', 'success');
           await renderOfficerEventSchedules();
         } else {
           showToast('Failed to update event schedule.', 'error');
@@ -2822,7 +3136,7 @@ if (!window.__appInitialized) {
       const groupName = select?.value;
       if (inspectedApplicantId && groupName) {
         if (await assignApplicantBuddyGroup(inspectedApplicantId, groupName)) {
-          showToast(`Assigned to ${groupName}!`, 'success');
+          showToast(`Assigned to ${groupName}.`, 'success');
           await Promise.all([renderRoster(), renderBuddyGroupBoard()]);
         }
       }
@@ -2831,9 +3145,12 @@ if (!window.__appInitialized) {
     document.getElementById('postAnnouncementBtn')?.addEventListener('click', async () => {
       const titleIn = document.getElementById('announcementTitleInput');
       const contentIn = document.getElementById('announcementContentInput');
+      const targetSelect = document.getElementById('announcementTargetGroupSelect');
       if (!titleIn?.value.trim() || !contentIn?.value.trim()) return;
 
-      if (await createAnnouncement(titleIn.value.trim(), contentIn.value.trim(), currentUser.email, null)) {
+      const targetVal = targetSelect?.value && targetSelect.value !== 'ALL' ? targetSelect.value : null;
+
+      if (await createAnnouncement(titleIn.value.trim(), contentIn.value.trim(), currentUser.email, targetVal)) {
         titleIn.value = '';
         contentIn.value = '';
         showToast('Announcement posted.', 'success');
@@ -2877,10 +3194,8 @@ if (!window.__appInitialized) {
     });
 
     document.getElementById('searchApplicantInput')?.addEventListener('input', (e) => {
-      const term = e.target.value.toLowerCase().trim();
-      document.querySelectorAll('#applicantRosterTbody tr').forEach(row => {
-        row.style.display = row.textContent.toLowerCase().includes(term) ? '' : 'none';
-      });
+      rosterSearchTerm = e.target.value.toLowerCase().trim();
+      renderRoster();
     });
 
     document.getElementById('applicantRosterTbody')?.addEventListener('click', async (e) => {
@@ -2936,7 +3251,7 @@ if (!window.__appInitialized) {
     document.getElementById('adminExportPdfBtn')?.addEventListener('click', async () => {
       const win = window.open('', '_blank');
       if (!win) {
-        showToast('Popup blocked! Please allow popups for this site.', 'error');
+        showToast('Popup blocked. Please allow popups for this site.', 'error');
         return;
       }
       
