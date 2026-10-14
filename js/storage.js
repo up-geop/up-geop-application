@@ -6,8 +6,22 @@ if (!window.geopSupabaseInstance && window.supabase) {
 }
 export const supabase = window.geopSupabaseInstance || null;
 
+// In-Memory Caches for Static / Semi-Static Data
 let cachedTraitsPool = null;
 let cachedTasksPool = null;
+let cachedDirectory = null;
+let cachedMembersList = null;
+const memberProfileCache = new Map();
+
+export function invalidateCache(type = 'ALL') {
+  if (type === 'ALL' || type === 'MEMBERS') {
+    cachedMembersList = null;
+    memberProfileCache.clear();
+  }
+  if (type === 'ALL' || type === 'DIRECTORY') {
+    cachedDirectory = null;
+  }
+}
 
 function parseCSV(text) {
   const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
@@ -30,13 +44,15 @@ function parseCSV(text) {
 }
 
 export async function getCommitteeDirectory() {
+  if (cachedDirectory) return cachedDirectory;
   if (!supabase) return [];
   const { data, error } = await supabase.from('committee_directory').select('*');
   if (error) {
     console.error('Error fetching directory:', error);
     return [];
   }
-  return data || [];
+  cachedDirectory = data || [];
+  return cachedDirectory;
 }
 
 export async function getAvailableTraitsPool() {
@@ -118,41 +134,35 @@ export async function getCurrentUserId() {
   return session?.user?.id || null;
 }
 
-export async function checkIfResidentMember(email) {
-  if (!supabase || !email) return false;
+export async function getMemberProfile(email) {
+  if (!supabase || !email) return null;
+  const key = email.trim().toLowerCase();
+  if (memberProfileCache.has(key)) return memberProfileCache.get(key);
+
   const { data, error } = await supabase
     .from('members')
-    .select('email')
-    .ilike('email', email.trim())
+    .select('*')
+    .ilike('email', key)
     .maybeSingle();
 
-  if (error || !data) return false;
-  return true;
+  if (!error) {
+    memberProfileCache.set(key, data || null);
+  }
+  return data || null;
+}
+
+export async function checkIfResidentMember(email) {
+  const member = await getMemberProfile(email);
+  return !!member;
 }
 
 export async function checkIfRAComm(email) {
-  if (!supabase || !email) return false;
-  const { data, error } = await supabase
-    .from('members')
-    .select('racomm')
-    .ilike('email', email.trim())
-    .maybeSingle();
-
-  if (error || !data) return false;
-  return !!data.racomm;
-}
-
-export async function getMemberProfile(email) {
-  if (!supabase || !email) return null;
-  const { data } = await supabase
-    .from('members')
-    .select('*')
-    .ilike('email', email.trim())
-    .maybeSingle();
-  return data;
+  const member = await getMemberProfile(email);
+  return !!member?.racomm;
 }
 
 export async function getAllMembersList() {
+  if (cachedMembersList) return cachedMembersList;
   if (!supabase) return [];
   const { data, error } = await supabase
     .from('members')
@@ -163,7 +173,8 @@ export async function getAllMembersList() {
     console.error('Error fetching members list:', error);
     return [];
   }
-  return data || [];
+  cachedMembersList = data || [];
+  return cachedMembersList;
 }
 
 // Notification Helpers
@@ -183,7 +194,7 @@ export async function fetchAndClearNotifications(userId) {
 
 export async function getUnreadNotificationCount(userId) {
   if (!supabase || !userId) return 0;
-  const { count, error } = await supabase
+  const { count } = await supabase
     .from('notifications')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)
@@ -225,12 +236,9 @@ export async function selectTaskForSignatory(sigId, taskName) {
 
 export async function updateSignatoryAnswer(sigId, field, value) {
   if (!supabase || !sigId || !field) return false;
-  const updatePayload = {};
-  updatePayload[field] = value;
-
   const { error } = await supabase
     .from('signatories')
-    .update(updatePayload)
+    .update({ [field]: value })
     .eq('id', sigId);
 
   if (error) {
@@ -287,23 +295,17 @@ export async function verifyUniversalCode(code, verifierEmail) {
   const cleanCode = code.trim().toUpperCase();
   const cleanEmail = verifierEmail.trim().toLowerCase();
 
-  const { data: codeRecord, error: codeErr } = await supabase
-    .from('verification_codes')
-    .select('*')
-    .eq('code', cleanCode)
-    .maybeSingle();
+  const [codeRes, member] = await Promise.all([
+    supabase.from('verification_codes').select('*').eq('code', cleanCode).maybeSingle(),
+    getMemberProfile(cleanEmail)
+  ]);
 
-  if (codeErr || !codeRecord) {
+  const codeRecord = codeRes.data;
+  if (codeRes.error || !codeRecord) {
     return { success: false, message: 'Invalid or expired verification code.' };
   }
 
-  const { data: member, error: memErr } = await supabase
-    .from('members')
-    .select('*')
-    .ilike('email', cleanEmail)
-    .maybeSingle();
-
-  if (memErr || !member) {
+  if (!member) {
     return { success: false, message: 'Only registered resident members can verify codes.' };
   }
 
@@ -326,36 +328,35 @@ export async function verifyUniversalCode(code, verifierEmail) {
     const isVPTask = sig.role === 'VP' || sig.type === 'VP';
     const isOATask = (sig.committee_name || '').toUpperCase() === 'O.A' || (sig.role || '').toUpperCase() === 'O.A';
 
-    let directory = [];
     if (isPESTask || isVPTask) {
-      directory = await getCommitteeDirectory();
-    }
+      const directory = await getCommitteeDirectory();
 
-    if (isPESTask) {
-      const pesOfficer = directory.find(p => 
-        p.role_type === 'PES' && 
-        (p.full_name.toLowerCase() === (sig.member_name || '').toLowerCase() ||
-         p.title.toLowerCase() === (sig.trait || sig.task || '').toLowerCase())
-      );
+      if (isPESTask) {
+        const pesOfficer = directory.find(p => 
+          p.role_type === 'PES' && 
+          (p.full_name.toLowerCase() === (sig.member_name || '').toLowerCase() ||
+           p.title.toLowerCase() === (sig.trait || sig.task || '').toLowerCase())
+        );
 
-      if (pesOfficer && pesOfficer.email.toLowerCase() !== cleanEmail) {
-        return {
-          success: false,
-          message: `Forbidden: Only ${pesOfficer.title} (${pesOfficer.full_name}) can endorse this clearance.`
-        };
+        if (pesOfficer && pesOfficer.email.toLowerCase() !== cleanEmail) {
+          return {
+            success: false,
+            message: `Forbidden: Only ${pesOfficer.title} (${pesOfficer.full_name}) can endorse this clearance.`
+          };
+        }
       }
-    }
 
-    if (isVPTask) {
-      const commConfig = directory.find(
-        c => c.role_type === 'VP' && c.committee_name.toLowerCase() === (sig.committee_name || '').toLowerCase()
-      );
+      if (isVPTask) {
+        const commConfig = directory.find(
+          c => c.role_type === 'VP' && c.committee_name.toLowerCase() === (sig.committee_name || '').toLowerCase()
+        );
 
-      if (commConfig && commConfig.email.toLowerCase() !== cleanEmail) {
-        return {
-          success: false,
-          message: `Forbidden: Only ${commConfig.full_name} (${commConfig.email}) can endorse this VP clearance.`
-        };
+        if (commConfig && commConfig.email.toLowerCase() !== cleanEmail) {
+          return {
+            success: false,
+            message: `Forbidden: Only ${commConfig.full_name} (${commConfig.email}) can endorse this VP clearance.`
+          };
+        }
       }
     }
 
@@ -378,15 +379,13 @@ export async function verifyUniversalCode(code, verifierEmail) {
       }
     }
 
-    const updatePayload = {
-      completed: true,
-      signed_by: member.full_name,
-      verified_at: new Date().toISOString()
-    };
-
     let { error: updateErr } = await supabase
       .from('signatories')
-      .update(updatePayload)
+      .update({
+        completed: true,
+        signed_by: member.full_name,
+        verified_at: new Date().toISOString()
+      })
       .eq('id', sig.id);
 
     if (updateErr && updateErr.message && updateErr.message.includes('verified_at')) {
@@ -405,17 +404,19 @@ export async function verifyUniversalCode(code, verifierEmail) {
       return { success: false, message: updateErr.message || 'Database error occurred while recording signature.' };
     }
 
-    await supabase.from('verification_codes').delete().eq('code', cleanCode);
-    
-    // Notify the applicant
-    await createNotification(codeRecord.user_id, `${member.full_name} verified your ${sig.trait || sig.task} signatory!`);
+    await Promise.all([
+      supabase.from('verification_codes').delete().eq('code', cleanCode),
+      createNotification(codeRecord.user_id, `${member.full_name} verified your ${sig.trait || sig.task} signatory!`)
+    ]);
     
     return { success: true, message: `Successfully endorsed by ${member.full_name}!` };
   }
 
   if (codeRecord.type === 'TAMBAY') {
-    const active = await getActiveTambaySession(codeRecord.user_id);
-    const settings = await getGlobalSettings();
+    const [active, settings] = await Promise.all([
+      getActiveTambaySession(codeRecord.user_id),
+      getGlobalSettings()
+    ]);
     const baseMultiplier = settings.multiplier || 1.0;
 
     if (!active) {
@@ -431,16 +432,16 @@ export async function verifyUniversalCode(code, verifierEmail) {
         return { success: false, message: 'Failed to start tambay session.' };
       }
 
-      await supabase.from('verification_codes').delete().eq('code', cleanCode);
-      
-      // Notify the applicant
-      await createNotification(codeRecord.user_id, `${member.full_name} scanned your Time-In!`);
+      await Promise.all([
+        supabase.from('verification_codes').delete().eq('code', cleanCode),
+        createNotification(codeRecord.user_id, `${member.full_name} scanned your Time-In!`)
+      ]);
 
       return { success: true, message: `Applicant timed in by ${member.full_name}.` };
     } else {
       const now = new Date();
       const inTime = new Date(active.time_in);
-      let durationHours = (now - inTime) / (1000 * 60 * 60);
+      const durationHours = (now - inTime) / (1000 * 60 * 60);
 
       const { data: userProfile } = await supabase
         .from('profiles')
@@ -451,45 +452,35 @@ export async function verifyUniversalCode(code, verifierEmail) {
       const hasBoost = !!userProfile?.tambay_boost_active;
       const effectiveMultiplier = baseMultiplier * (hasBoost ? 1.5 : 1.0);
 
-      // --- NEW PER-DAY CAP LOGIC ---
       let creditedHours = durationHours * effectiveMultiplier;
       
       if (settings.dailyCapEnabled) {
-        // 1. Get midnight of the current day in the local timezone
         const startOfDay = new Date();
         startOfDay.setHours(0, 0, 0, 0);
 
-        // 2. Fetch all tambay logs for this user created AFTER midnight today
         const { data: todaysLogs } = await supabase
           .from('tambay_logs')
           .select('hours')
           .eq('user_id', codeRecord.user_id)
           .gte('created_at', startOfDay.toISOString());
 
-        // 3. Sum up the hours already awarded today
-        let hoursAlreadyToday = 0;
-        if (todaysLogs) {
-          hoursAlreadyToday = todaysLogs.reduce((sum, log) => sum + (parseFloat(log.hours) || 0), 0);
-        }
-
-        // 4. Calculate how much room is left under the 3.0 hour cap
+        const hoursAlreadyToday = (todaysLogs || []).reduce((sum, log) => sum + (parseFloat(log.hours) || 0), 0);
         const hoursRemainingToday = Math.max(0, 3.0 - hoursAlreadyToday);
 
-        // 5. Cap the new credited hours to whatever is remaining
         if (creditedHours > hoursRemainingToday) {
           creditedHours = hoursRemainingToday;
         }
       }
       
-      // If they hit the cap exactly and have 0 remaining, still record a tiny amount to show they logged out, or just use 0.
       if (creditedHours <= 0) {
-          await supabase.from('tambay_sessions').delete().eq('id', active.id);
-          await supabase.from('verification_codes').delete().eq('code', cleanCode);
-          return { success: false, message: 'Daily limit of 3 hours reached. Timed out with 0 additional hours credited.' };
+        await Promise.all([
+          supabase.from('tambay_sessions').delete().eq('id', active.id),
+          supabase.from('verification_codes').delete().eq('code', cleanCode)
+        ]);
+        return { success: false, message: 'Daily limit of 3 hours reached. Timed out with 0 additional hours credited.' };
       }
       
       creditedHours = Number(creditedHours.toFixed(2));
-      // -------------------------------
 
       await supabase.from('tambay_sessions').delete().eq('id', active.id);
       
@@ -505,17 +496,18 @@ export async function verifyUniversalCode(code, verifierEmail) {
         return { success: false, message: 'Failed to credit tambay hours.' };
       }
 
+      const postTasks = [
+        supabase.from('verification_codes').delete().eq('code', cleanCode),
+        createNotification(codeRecord.user_id, `${member.full_name} timed you out (+${creditedHours} hrs)!`)
+      ];
+
       if (hasBoost) {
-        await supabase
-          .from('profiles')
-          .update({ tambay_boost_active: false })
-          .eq('id', codeRecord.user_id);
+        postTasks.push(
+          supabase.from('profiles').update({ tambay_boost_active: false }).eq('id', codeRecord.user_id)
+        );
       }
 
-      await supabase.from('verification_codes').delete().eq('code', cleanCode);
-      
-      // Notify the applicant
-      await createNotification(codeRecord.user_id, `${member.full_name} timed you out (+${creditedHours} hrs)!`);
+      await Promise.all(postTasks);
 
       return { 
         success: true, 
@@ -539,6 +531,14 @@ export async function getTambayHours(userId = null) {
 
   if (error || !data) return 0;
   return data.reduce((acc, row) => acc + (parseFloat(row.hours) || 0), 0);
+}
+
+export async function resetTambayHours(userId = null) {
+  if (!supabase) return false;
+  const uid = userId || await getCurrentUserId();
+  if (!uid) return false;
+  const { error } = await supabase.from('tambay_logs').delete().eq('user_id', uid);
+  return !error;
 }
 
 export async function getActiveTambaySession(userId) {
@@ -629,7 +629,7 @@ export async function chipInToTask(taskId, amount) {
   const uid = await getCurrentUserId();
   if (!uid) return { success: false, message: 'User not authenticated.' };
 
-  const { data, error } = await supabase.rpc('chip_in_to_task', {
+  const { error } = await supabase.rpc('chip_in_to_task', {
     p_task_id: taskId,
     p_user_id: uid,
     p_amount: parseInt(amount, 10)
@@ -644,7 +644,7 @@ export async function withdrawFromTask(taskId, amount) {
   const uid = await getCurrentUserId();
   if (!uid) return { success: false, message: 'User not authenticated.' };
 
-  const { data, error } = await supabase.rpc('withdraw_from_task', {
+  const { error } = await supabase.rpc('withdraw_from_task', {
     p_task_id: taskId,
     p_user_id: uid,
     p_amount: parseInt(amount, 10)
@@ -692,25 +692,16 @@ export async function swapSignatoryTrait(sigId, newTrait, cost) {
   const hasFunds = await spendCurrency(cost);
   if (!hasFunds) return false;
 
-  let { error } = await supabase
+  // Single atomic update instead of 3 sequential queries
+  const { error } = await supabase
     .from('signatories')
-    .update({ task: newTrait })
+    .update({
+      task: newTrait,
+      trait: newTrait,
+      selected_task: null
+    })
     .eq('id', sigId)
     .eq('user_id', uid);
-
-  if (!error) {
-    await supabase
-      .from('signatories')
-      .update({ trait: newTrait })
-      .eq('id', sigId)
-      .eq('user_id', uid);
-
-    await supabase
-      .from('signatories')
-      .update({ selected_task: newTrait })
-      .eq('id', sigId)
-      .eq('user_id', uid);
-  }
 
   if (error) {
     console.error('Error updating signatory trait details:', error);
@@ -857,6 +848,7 @@ export async function assignMemberBuddyGroup(memberId, groupName) {
     .update({ buddy_group_name: groupName })
     .eq('id', memberId);
 
+  if (!error) invalidateCache('MEMBERS');
   return !error;
 }
 
@@ -907,20 +899,37 @@ export async function getAllApplicantsProgress() {
   ]);
 
   const profiles = profilesRes.data || [];
-  const sigs = sigsRes.data || [];
-  const logs = tambayLogsRes.data || [];
-  const attendedEvents = eventsRes.data || [];
   const activeSet = new Set((activeSessionsRes.data || []).map(s => s.user_id));
 
+  // O(N) Pre-Indexing via Maps instead of O(N*M) nested array filtering
+  const sigStatsMap = new Map();
+  (sigsRes.data || []).forEach(s => {
+    const cur = sigStatsMap.get(s.user_id) || { total: 0, completed: 0 };
+    cur.total++;
+    if (s.completed) cur.completed++;
+    sigStatsMap.set(s.user_id, cur);
+  });
+
+  const tambaySumMap = new Map();
+  (tambayLogsRes.data || []).forEach(l => {
+    const cur = tambaySumMap.get(l.user_id) || 0;
+    tambaySumMap.set(l.user_id, cur + (parseFloat(l.hours) || 0));
+  });
+
+  const eventCountMap = new Map();
+  (eventsRes.data || []).forEach(e => {
+    eventCountMap.set(e.user_id, (eventCountMap.get(e.user_id) || 0) + 1);
+  });
+
   return profiles.map(p => {
-    const userSigs = sigs.filter(s => s.user_id === p.id);
-    const totalSigs = userSigs.length || 21;
-    const completedSigs = userSigs.filter(s => s.completed).length;
+    const sigStat = sigStatsMap.get(p.id) || { total: 0, completed: 0 };
+    const totalSigs = sigStat.total || 21;
+    const completedSigs = sigStat.completed;
 
-    const userLogs = logs.filter(l => l.user_id === p.id);
-    const tambayHours = Number(userLogs.reduce((sum, l) => sum + (parseFloat(l.hours) || 0), 0).toFixed(1));
+    const rawTambay = tambaySumMap.get(p.id) || 0;
+    const tambayHours = Number(rawTambay.toFixed(1));
 
-    const userEventsCount = attendedEvents.filter(e => e.user_id === p.id).length;
+    const userEventsCount = eventCountMap.get(p.id) || 0;
 
     const sigRatio = totalSigs > 0 ? (completedSigs / totalSigs) : 0;
     const tambayRatio = Math.min(tambayHours / CONFIG.TARGET_TAMBAY_HOURS, 1);
@@ -1098,4 +1107,18 @@ export async function toggleUserAvailabilitySlot(userId, userName, timeSlot, isS
 export async function updateOfficialEventDate(eventId, dateIso) {
   if (!supabase || !eventId) return false;
   return await updateGlobalSettings(`event_date_${eventId}`, dateIso);
+}
+
+// Legacy/Admin compatibility exports for admin.js
+export async function addSignatoryRequirement(role, task) {
+  if (!supabase) return false;
+  const uid = await getCurrentUserId();
+  const { error } = await supabase.from('signatories').insert([{ user_id: uid, role, task, trait: task }]);
+  return !error;
+}
+
+export async function createEvent(name, passkey) {
+  if (!supabase) return false;
+  const { error } = await supabase.from('events').insert([{ name, passkey, weight_percent: 5 }]);
+  return !error;
 }
