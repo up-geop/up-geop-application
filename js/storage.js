@@ -210,7 +210,7 @@ export async function getMemberPersonalActivityLog(memberFullName) {
   const cleanName = memberFullName.trim();
   const [sigsRes, logsRes, activeRes, profilesRes] = await Promise.all([
     supabase.from('signatories').select('*').eq('completed', true).ilike('signed_by', cleanName),
-    supabase.from('tambay_logs').select('*').ilike('verified_by', `${cleanName}%`).order('created_at', { ascending: false }).limit(20),
+    supabase.from('tambay_logs').select('*').ilike('verified_by', `%${cleanName}%`).order('created_at', { ascending: false }).limit(20),
     supabase.from('tambay_sessions').select('*').ilike('verified_by', cleanName),
     supabase.from('profiles').select('id, full_name, nickname, buddy_group_name')
   ]);
@@ -290,9 +290,15 @@ export async function getMostApproachedMembersLeaderboard() {
     if (!raw || raw.includes('Admin Adjust') || raw.includes('Force-Close')) return;
     raw = raw.replace(/\s*\(1\.5x Boost Applied\)\s*/i, '').trim();
     if (!raw) return;
-    const entry = ensureEntry(raw);
-    entry.tambay++;
-    entry.total++;
+
+    // Split by '&' in case different members handled Time-In and Time-Out,
+    // and deduplicate with Set so the same person is never counted twice for 1 session
+    const uniqueNames = [...new Set(raw.split('&').map(n => n.trim()).filter(Boolean))];
+    uniqueNames.forEach(verifierName => {
+      const entry = ensureEntry(verifierName);
+      entry.tambay++;
+      entry.total++;
+    });
   });
 
   return Array.from(statsMap.values())
@@ -675,6 +681,14 @@ export async function verifyUniversalCode(code, verifierEmail) {
       
       creditedHours = Number(creditedHours.toFixed(2));
 
+      const timeInVerifier = (active.verified_by || member.full_name).trim();
+      const timeOutVerifier = member.full_name.trim();
+      
+      let finalVerifier = timeInVerifier;
+      if (timeInVerifier.toLowerCase() !== timeOutVerifier.toLowerCase()) {
+        finalVerifier = `${timeInVerifier} & ${timeOutVerifier}`;
+      }
+
       await supabase.from('tambay_sessions').delete().eq('id', active.id);
       
       const { error: logErr } = await supabase
@@ -682,7 +696,7 @@ export async function verifyUniversalCode(code, verifierEmail) {
         .insert([{
           user_id: codeRecord.user_id,
           hours: creditedHours,
-          verified_by: member.full_name + (hasBoost ? ' (1.5x Boost Applied)' : '')
+          verified_by: finalVerifier + (hasBoost ? ' (1.5x Boost Applied)' : '')
         }]);
 
       if (logErr) {
