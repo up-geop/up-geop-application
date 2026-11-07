@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UP GEOP - Applicants Portal</title>
+  
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="geop.png" />
+  <meta name="theme-color" content="#C1272D" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Vis.js Network Graph for Survey Control Network -->
+  <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+</head>
+<body>
+
+  <!-- Full-Width Edge-to-Edge Banner (Biyahe Theme) -->
+  <header class="header">
+    <div class="header-inner">
+      <img src="AO BIYAHE LOGO.png" alt="Biyahe Logo" class="header-logo" style="width: 140px; border-radius: 8px; object-fit: contain;" />
+      <div style="text-align: left;">
+        <h1 style="color: #F4F1EB; margin-bottom: 2px;">GEOP Applicant Portal</h1>
+        <p style="color: var(--brand-mint); font-weight: 600; font-size: 0.95rem; letter-spacing: 0.5px;">Kasya pa, sakay na!</p>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- User Status Bar -->
+    <div id="userProfileBar" class="user-status-strip" style="display: none;">
+      <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+        <span style="font-size: 0.85rem;">Signed in: <strong id="userEmailText" style="color: var(--brand-forest);"></strong></span>
+        <span id="roleBadgeHeader" class="badge">Applicant</span>
+      </div>
+      <div style="display: flex; gap: 16px; align-items: center;">
+        <div id="darkModeToggleBtn" style="cursor: pointer; font-size: 1.2rem; user-select: none;" title="Toggle Dark Mode">🌙</div>
+        <div id="notificationBellBtn" style="position: relative; cursor: pointer; font-size: 1.2rem;" title="Notifications">
+          🔔<span id="notifBadge" style="display: none; position: absolute; top: -6px; right: -8px; background: #C1272D; color: white; border-radius: 50%; padding: 2px 6px; font-size: 0.65rem; font-weight: 700;">0</span>
+        </div>
+        <button id="logoutBtn" class="btn btn-secondary" style="min-height: 36px; padding: 4px 12px; font-size: 0.8rem;">Sign Out</button>
+      </div>
+    </div>
+
+    <!-- Login Authentication Section -->
+    <div id="authSection" class="card" style="text-align: center; padding: 40px 20px;">
+      <h2 style="font-family: var(--font-display); margin-bottom: 8px;">Sakay na sa Biyahe!</h2>
+      <p class="subtext" style="max-width: 400px; margin: 0 auto 20px;">
+        Hop on with your <strong>@up.edu.ph</strong> mail to track your UP GEOP applicant journey.
+      </p>
+      <button id="loginGoogleBtn" class="btn btn-checkin" style="min-height: 42px; padding: 6px 18px;">Sign in with UP Mail</button>
+    </div>
+
+    <!-- Applicant Onboarding Section -->
+    <div id="onboardingSection" class="card" style="display: none; text-align: center; max-width: 440px; margin: 0 auto;">
+      <h2 style="font-family: var(--font-display); margin-bottom: 6px;">Set Up Your Wayfarer Pass</h2>
+      <p class="subtext">Pakilala ka muna! Enter your details to start your applicant journey.</p>
+      <form id="onboardingForm" style="display: flex; flex-direction: column; gap: 14px; text-align: left;">
+        <div>
+          <label style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 4px;">Full Name</label>
+          <input type="text" id="onboardFullName" required style="width: 100%;" placeholder="e.g. Sandra de Buhangin" />
+        </div>
+        <div>
+          <label style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 4px;">Preferred Nickname</label>
+          <input type="text" id="onboardNickname" required style="width: 100%;" placeholder="e.g. Sandy" />
+        </div>
+        <button type="submit" class="btn btn-checkin" style="margin-top: 8px;">Save Profile</button>
+      </form>
+    </div>
+
+    <!-- Member & RAComm Management Dashboard -->
+    <div id="memberDashboardContent" style="display: none;">
+      <nav id="racommTabNav" class="tab-nav">
+        <button class="tab-btn active" data-tab="member-hub-view">Verification Hub</button>
+        <button class="tab-btn" data-tab="racomm-roster">Applicant Roster</button>
+        <button class="tab-btn racomm-only-tab" data-tab="racomm-buddy-groups" style="display: none;">Buddy Groups</button>
+        <button class="tab-btn" data-tab="racomm-buddy-tasks">Buddy Tasks</button>
+        <button class="tab-btn racomm-only-tab" data-tab="racomm-settings" style="display: none;">Settings & Controls</button>
+        <button class="tab-btn" data-tab="tab-schedule">Schedule & Announcements</button>
+        <button class="tab-btn" data-tab="tab-leaderboard">Leaderboard</button>
+      </nav>
+
+      <!-- Member Verification Hub View -->
+      <div id="member-hub-view" class="tab-content active">
+        <section class="card">
+          <div class="card-header">
+            <div>
+              <h2>Member Verification</h2>
+              <p class="subtext">Verify applicant tasks or record time-in and time-out logs.</p>
+            </div>
+            <span class="badge" style="background: var(--brand-forest); color: white;">Member</span>
+          </div>
+          <button id="manualValidateBtn" class="btn btn-checkin" style="min-height: 40px; padding: 6px 16px;">Validate 6-Character Code</button>
+        </section>
+      </div>
+
+      <!-- RAComm & Member: Roster View -->
+      <div id="racomm-roster" class="tab-content">
+        <section class="card">
+          <div class="card-header">
+            <div>
+              <h2>Applicant Roster</h2>
+              <p class="subtext">Track applicant completion metrics and manage grade records.</p>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="searchApplicantInput" placeholder="Filter by name..." style="min-height: 36px; padding: 4px 10px; font-size: 0.82rem;" />
+              <button id="adminExportCsvBtn" class="btn btn-checkin" style="min-height: 36px; padding: 4px 10px; font-size: 0.82rem;">CSV</button>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Applicant</th>
+                  <th>Buddy Group</th>
+                  <th>Signatories</th>
+                  <th>Tambay</th>
+                  <th>Progress</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="applicantRosterTbody"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <!-- RAComm: Buddy Groups Board -->
+      <div id="racomm-buddy-groups" class="tab-content">
+        <section class="card">
+          <div class="card-header">
+            <div>
+              <h2>Buddy Group Dashboard</h2>
+              <p class="subtext">Organize applicants and resident members across active buddy groups.</p>
+            </div>
+            <button id="refreshBuddyGroupsBtn" class="btn btn-secondary" style="min-height: 36px; padding: 4px 10px; font-size: 0.8rem;">Refresh</button>
+          </div>
+
+          <div style="display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap;">
+            <input type="text" id="newGroupNameInputDashboard" placeholder="Create new group (e.g. Group 5)" style="flex: 1; min-width: 200px;" />
+            <button id="createGroupDashboardBtn" class="btn btn-checkin">Add Group</button>
+          </div>
+
+          <div id="buddyGroupsBoard" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;"></div>
+        </section>
+      </div>
+
+      <!-- RAComm & Member: Buddy Tasks Manager -->
+      <div id="racomm-buddy-tasks" class="tab-content">
+        
+        <!-- Creation Tools (Hidden for regular members) -->
+        <section class="card" id="officerBuddyTaskControls" style="display: none;">
+          <div class="card-header">
+            <div>
+              <h2>Assign Buddy Tasks</h2>
+              <p class="subtext">Assign required milestone tasks to applicants.</p>
+            </div>
+            <span class="badge" style="background: var(--brand-forest); color: #fff;">Officer Only</span>
+          </div>
+
+          <form id="createBuddyTaskForm" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; background: var(--surface-subtle); padding: 16px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+            <div>
+              <label style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 4px;">Task Title</label>
+              <input type="text" id="buddyTaskTitleInput" required placeholder="e.g. Group Photo at Sunken Garden" style="width: 100%;" />
+            </div>
+            <div>
+              <label style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 4px;">Description / Instructions</label>
+              <textarea id="buddyTaskDescInput" rows="2" placeholder="e.g. Take a group selfie with your assigned resident members." style="width: 100%;"></textarea>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px;">
+              <div>
+                <label style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 4px;">Target Audience</label>
+                <select id="buddyTaskTargetGroupSelect" style="width: 100%;">
+                  <option value="ALL">All Applicants (Universal)</option>
+                </select>
+              </div>
+              <div>
+                <label style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 4px;">Official Deadline</label>
+                <input type="datetime-local" id="buddyTaskDeadlineInput" required style="width: 100%;" />
+              </div>
+            </div>
+            <button type="submit" class="btn btn-checkin" style="align-self: flex-start; margin-top: 4px;">Publish Buddy Task</button>
+          </form>
+        </section>
+
+        <!-- Task List (Visible to all members) -->
+        <section class="card">
+          <div class="card-header" style="margin-bottom: 12px;">
+            <div>
+              <h3 style="font-family: var(--font-display); color: var(--brand-forest); margin-bottom: 4px;">Active Buddy Tasks</h3>
+              <p class="subtext">Track the buddy tasks assigned to your group.</p>
+            </div>
+          </div>
+          <div id="racommBuddyTasksList" style="display: flex; flex-direction: column; gap: 10px;"></div>
+        </section>
+      </div>
+
+      <!-- RAComm: Global Settings & Policies -->
+      <div id="racomm-settings" class="tab-content">
+        <section class="card">
+          <h2>Global Settings</h2>
+          <div class="settings-tiles-grid">
+            <div class="setting-tile">
+              <strong>Multiplier: <span id="currentMultiplierText">1.0x</span></strong>
+              <div style="margin-top: 8px; display: flex; gap: 6px;">
+                <button id="set1xBtn" class="btn btn-secondary" style="min-height: 36px; padding: 4px 8px; font-size: 0.78rem;">1.0x</button>
+                <button id="set2xBtn" class="btn btn-secondary" style="min-height: 36px; padding: 4px 8px; font-size: 0.78rem;">2.0x</button>
+              </div>
+            </div>
+            <div class="setting-tile">
+              <strong>Daily Cap (3 hrs): <span id="currentCapText">Active</span></strong>
+              <div style="margin-top: 8px; display: flex; gap: 6px;">
+                <button id="enableCapBtn" class="btn btn-secondary" style="min-height: 36px; padding: 4px 8px; font-size: 0.78rem;">Enable</button>
+                <button id="disableCapBtn" class="btn btn-secondary" style="min-height: 36px; padding: 4px 8px; font-size: 0.78rem;">Disable</button>
+              </div>
+            </div>
+            <div class="setting-tile">
+              <strong>Sig Limit (4/Mem): <span id="currentSigLimitText">Active</span></strong>
+              <div style="margin-top: 8px; display: flex; gap: 6px;">
+                <button id="enableSigLimitBtn" class="btn btn-secondary" style="min-height: 36px; padding: 4px 8px; font-size: 0.78rem;">Enable</button>
+                <button id="disableSigLimitBtn" class="btn btn-secondary" style="min-height: 36px; padding: 4px 8px; font-size: 0.78rem;">Disable</button>
+              </div>
+            </div>
+          </div>
+
+          <h2>Manage Event Schedules</h2>
+          <p class="subtext" style="margin-bottom: 12px;">Update dates and times for official events (e.g., postponements) to keep Google Calendar links accurate.</p>
+          <div id="racommEventScheduleManager" style="display: flex; flex-direction: column; gap: 6px;"></div>
+        </section>
+      </div>
+    </div>
+
+    <!-- Applicant Dashboard -->
+    <div id="applicantDashboardContent" style="display: none;">
+      <nav id="applicantTabNav" class="tab-nav">
+        <button class="tab-btn active" data-tab="tab-overview">Overview</button>
+        <button class="tab-btn" data-tab="tab-signatories">Signatories</button>
+        <button class="tab-btn" data-tab="tab-tambay">Tambay & Events</button>
+        <button class="tab-btn" data-tab="tab-perks">Shop</button>
+        <button class="tab-btn" data-tab="tab-schedule">Schedule</button>
+        <button class="tab-btn" data-tab="tab-leaderboard">Leaderboard</button>
+      </nav>
+
+      <div id="tab-overview" class="tab-content active">
+        <div class="overview-layout-grid">
+          <div class="overview-main-col">
+            <!-- Unified Overview Hero Card -->
+            <section class="card overview-hero-card">
+              <div class="overview-hero-profile">
+                <img id="userAvatarHero" src="geop.png" referrerpolicy="no-referrer" alt="Avatar" class="overview-avatar" />
+                <div>
+                  <h2 id="userGreetingHeading" class="overview-title">Welcome!</h2>
+                  <p class="subtext">Buddy Group: <strong id="buddyGroupName" class="text-brand">Unassigned</strong></p>
+                </div>
+              </div>
+              <div class="overview-hero-stats">
+                <div class="hero-stat-cell">
+                  <span class="stat-cell-label">Signatories</span>
+                  <span class="stat-cell-val"><span id="overviewSigText">0/21</span></span>
+                </div>
+                <div class="hero-stat-cell">
+                  <span class="stat-cell-label">Tambay Hours</span>
+                  <span class="stat-cell-val"><span id="overviewTambayText">0.0</span></span>
+                </div>
+              </div>
+            </section>
+
+            <!-- Recruitment Milestone Progress -->
+            <section class="card" id="applicantProgressSection">
+              <div class="card-header">
+                <div>
+                  <h2 style="margin-bottom: 2px;">Recruitment Standing</h2>
+                  <p class="subtext">Milestone progress across the 7 official requirements</p>
+                </div>
+                <span id="progressBarLabel" class="badge" style="background: var(--surface-subtle); border-color: var(--border-medium); font-weight: 700;">0%</span>
+              </div>
+              <div style="background: var(--surface-subtle); height: 14px; border-radius: var(--radius-sm); overflow: hidden; border: 1px solid var(--border-subtle);">
+                <div id="progressBar" style="background: linear-gradient(90deg, #FBB03B, #C1272D); height: 100%; width: 0%; border-radius: var(--radius-sm); transition: width 0.4s ease;"></div>
+              </div>
+
+              <!-- Topographical Elevation Profile (Theodolite HUD) -->
+              <div id="topoElevationWrapper" class="topo-elevation-card">
+                <div class="topo-hud-telemetry">
+                  <span>DATUM: <strong style="color: var(--text-heading);">BM-GEOP-00</strong> (ORIGIN)</span>
+                  <span id="topoDatumElevText">ELEVATION: <strong style="color: var(--brand-forest);">0.0%</strong> / 100.0%</span>
+                  <span>TARGET: <strong class="topo-summit-target">SUMMIT</strong></span>
+                </div>
+                <div class="topo-svg-wrap">
+                  <svg id="topoElevationSvg" class="topo-svg" viewBox="0 0 600 70" preserveAspectRatio="none">
+                    <defs>
+                      <linearGradient id="topoGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" stop-color="rgba(193, 39, 45, 0.45)" />
+                        <stop offset="100%" stop-color="rgba(251, 176, 59, 0.05)" />
+                      </linearGradient>
+                    </defs>
+                    <!-- Background terrain contours -->
+                    <path d="M 0 65 Q 100 55, 200 48 T 400 32 T 550 16 L 600 8 L 600 70 L 0 70 Z" fill="rgba(0,0,0,0.06)" />
+                    <!-- Dynamic filled progress terrain -->
+                    <path id="topoProgressFill" d="M 0 65 L 0 70 Z" fill="url(#topoGradient)" />
+                    <!-- Terrain outline -->
+                    <path d="M 0 65 Q 100 55, 200 48 T 400 32 T 550 16 L 600 8" fill="none" stroke="var(--border-medium)" stroke-width="2" stroke-dasharray="3,3" />
+                    <!-- Dynamic elevation laser datum line -->
+                    <line id="topoLaserLine" x1="0" y1="0" x2="0" y2="70" stroke="#fbb03b" stroke-width="2" stroke-dasharray="2,2" style="opacity: 0.85;" />
+                    <!-- Summit Peak Station Flag -->
+                    <circle cx="595" cy="10" r="4" fill="#C1272D" stroke="#fff" stroke-width="1.5" />
+                  </svg>
+                </div>
+              </div>
+            </section>
+
+            <!-- Survey Control Network Widget -->
+            <section class="card" style="padding: 0; overflow: hidden; margin-bottom: 24px;">
+              <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--border-subtle); background: var(--surface);">
+                <div>
+                  <h2 style="font-family: var(--font-display); color: var(--brand-forest); margin: 0; font-size: 1.3rem;">Signatory Control Network</h2>
+                  <p class="subtext" style="margin-top: 2px; font-size: 0.78rem;">Triangulated map of verified resident benchmarks</p>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span id="networkStatusBadge" class="badge" style="background: var(--brand-forest); color: white; font-weight: 700; padding: 4px 10px; border-radius: 12px; font-size: 0.75rem;">0 / 23 Nodes</span>
+                  <button type="button" id="toggleNetworkCollapseBtn" class="btn btn-secondary" style="min-height: 32px; padding: 4px 10px; font-size: 0.75rem;">Collapse</button>
+                </div>
+              </div>
+              <!-- Vis.js Canvas Container with Theodolite HUD & touch fencing -->
+              <div id="networkMapWrapper" style="position: relative;">
+                <div id="theodoliteHudBar" class="theodolite-hud-bar">
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="theodolite-reticle-icon">⌖</span>
+                    <span>SIGHTING: <strong id="theodoliteTargetName" class="theodolite-hud-station">READY (HOVER A NODE)</strong></span>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 12px;">
+                    <span>BEARING: <strong id="theodoliteBearingText" class="theodolite-hud-bearing">000° 00' 00"</strong></span>
+                    <span>DIST: <strong id="theodoliteDistText" class="theodolite-dist">0.0m</strong></span>
+                  </div>
+                </div>
+                <div id="surveyNetworkMap" style="height: 380px; width: 100%; background: var(--surface-subtle); z-index: 1; touch-action: pan-y;"></div>
+                <div id="networkTouchHint" style="position: absolute; bottom: 8px; right: 10px; z-index: 2; background: rgba(17,17,17,0.75); color: #fff; font-size: 0.75rem; padding: 3px 8px; border-radius: var(--radius-sm); pointer-events: none;">
+                  Tap & drag nodes
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div class="overview-side-col">
+            <!-- Active Buddy Tasks Widget on Applicant Overview -->
+            <section class="card">
+              <div class="card-header">
+                <div>
+                  <h2>Assigned Buddy Tasks</h2>
+                  <p class="subtext">Deadlines extend by +2 days when their Shop Goal is funded!</p>
+                </div>
+                <span id="buddyTaskSummaryBadge" class="badge">0 / 0 Done</span>
+              </div>
+              <div id="applicantOverviewBuddyTasks" style="display: flex; flex-direction: column; gap: 10px;"></div>
+            </section>
+
+            <section class="card">
+              <div class="card-header">
+                <h2>Buddy Group Members</h2>
+                <span class="badge" id="buddyCountBadge">0 Members</span>
+              </div>
+              <ul class="task-list" id="buddyList"></ul>
+            </section>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-signatories" class="tab-content">
+        <div id="signatoryList"></div>
+      </div>
+
+      <div id="tab-tambay" class="tab-content">
+        <div id="activeTambayBanner" class="card" style="display: none; background: var(--brand-mint-subtle); border-color: var(--brand-mint);">
+          <span style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase;">Active Session</span>
+          <h3 id="liveTimerDisplay" style="font-family: var(--font-mono); font-size: 1.6rem; color: var(--brand-forest);">00h 00m 00s</h3>
+          <small id="timeInMemberBadge" style="color: #633c00; font-weight: 700; font-size: 0.8rem;">Verified</small>
+        </div>
+
+        <section class="card">
+          <div class="card-header">
+            <h2>Tambay Hours</h2>
+            <span class="badge" id="tambayBadge">0 / 24 hrs</span>
+          </div>
+          <button id="showQrBtn" class="btn btn-checkin">Generate Code</button>
+
+          <div id="qrDisplayContainer" style="display: none; text-align: center; margin-top: 16px; padding: 16px; background: var(--surface-subtle); border-radius: var(--radius-sm);">
+            <div id="qrcodeCanvas" style="display: flex; flex-direction: column; align-items: center; margin-bottom: 12px;"></div>
+            <div style="font-family: var(--font-mono); font-size: 1.6rem; font-weight: 700; letter-spacing: 4px; color: var(--brand-forest);" id="applicantShortCodeText">------</div>
+            <button type="button" class="copy-btn btn btn-secondary" data-copy-target="applicantShortCodeText" style="min-height: 36px; padding: 4px 10px; margin-top: 8px;">Copy Code</button>
+            <div style="margin-top: 12px;"><button id="closeQrBtn" class="btn btn-secondary" style="min-height: 36px;">Close</button></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-header">
+            <h2>Org Events & Bondings</h2>
+            <span class="badge" id="eventBadge">0 / 5 Attended (0%)</span>
+          </div>
+          <ul class="task-list" id="eventList"></ul>
+        </section>
+      </div>
+
+      <!-- Shop / Perks Tab -->
+      <div id="tab-perks" class="tab-content">
+        <!-- Dynamic Buddy Task Extension Pots -->
+        <section class="card" style="background: var(--surface-subtle);">
+          <div class="card-header">
+            <div>
+              <span class="badge" style="background: var(--brand-clay); color: #fff; margin-bottom: 4px;">Buddy Task Extensions (Crowdfunded)</span>
+              <h2>Deadline Extensions (+2 Days)</h2>
+              <p class="subtext">Contribute AC for specific tasks. Reach the target to unlock the extension! You can withdraw your AC if the goal isn't met yet.</p>
+            </div>
+            <span class="badge" style="font-size: 0.85rem; font-weight: 700;">Balance: <strong id="userCurrencyTextPot">--</strong> AC</span>
+          </div>
+
+          <!-- Container for dynamic task pots -->
+          <div id="dynamicPotsContainer" style="display: flex; flex-direction: column; gap: 16px;"></div>
+        </section>
+
+        <!-- Individual Perks Grid -->
+        <section class="card">
+          <div class="card-header">
+            <div>
+              <h2>Journey Boosters</h2>
+              <p class="subtext">Use your hard-earned AppCoins for tambayan boosts and signatory swaps.</p>
+            </div>
+            <span class="badge">Balance: <strong id="userCurrencyText" style="margin-left: 4px;">0</strong> AC</span>
+          </div>
+
+          <div class="perk-tiles-grid">
+            <!-- Tambay Multiplier Boost -->
+            <div class="perk-tile">
+              <div>
+                <span class="badge" style="background: var(--surface); color: var(--brand-forest); margin-bottom: 6px;">Session Boost</span>
+                <h3 style="font-size: 1.05rem; margin-bottom: 4px;">1.5× Tambay Multiplier</h3>
+                <p class="subtext">Multiplies the hours credited on your very next tambay session by 1.5×.</p>
+              </div>
+              <button id="buyTambayBoostBtn" class="btn btn-checkin" style="margin-top: 14px;">Activate (40 AC)</button>
+            </div>
+
+            <!-- Random Trait Swap -->
+            <div class="perk-tile">
+              <div>
+                <span class="badge" style="background: var(--surface); margin-bottom: 6px;">Signatory Lifeline</span>
+                <h3 style="font-size: 1.05rem; margin-bottom: 4px;">Random Trait Swap</h3>
+                <p class="subtext">Rerolls an uncompleted resident member signatory trait into a new unique trait from the pool.</p>
+              </div>
+              <button id="openRandomSwapModalBtn" class="btn btn-checkin" style="margin-top: 14px;">Swap Random (30 AC)</button>
+            </div>
+
+            <!-- Specific Trait Selection -->
+            <div class="perk-tile">
+              <div>
+                <span class="badge" style="background: var(--surface); margin-bottom: 6px;">Signatory Lifeline</span>
+                <h3 style="font-size: 1.05rem; margin-bottom: 4px;">Specific Trait Selection</h3>
+                <p class="subtext">Choose the exact unique signatory trait you prefer from the full available pool.</p>
+              </div>
+              <button id="openSpecificSwapModalBtn" class="btn btn-checkin" style="margin-top: 14px;">Choose Trait (50 AC)</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ==============================================
+         UNIVERSAL SHARED TABS
+         ============================================== -->
+
+    <!-- Schedule & Announcements Tab -->
+    <div id="tab-schedule" class="tab-content" style="display: none;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 10px; margin-bottom: 18px;">
+        <div>
+          <h2 style="font-family: var(--font-display); font-size: 1.4rem; color: var(--text-heading); margin-bottom: 2px;">Schedule & Announcements</h2>
+          <p class="subtext">Important updates from RAComm and your weekly When2Meet availability matrix.</p>
+        </div>
+        <span id="racommPostBadge" class="badge" style="display: none; background: var(--brand-forest); color: white;">Officer</span>
+      </div>
+
+      <!-- Post Announcement Form for RAComm / Leaders -->
+      <div id="racommAnnouncementForm" style="display: none; background: var(--surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 16px; margin-bottom: 20px;">
+        <h3 style="font-size: 0.95rem; font-weight: 700; color: var(--text-heading); margin-bottom: 8px;">Post New Announcement</h3>
+        <input type="text" id="announcementTitleInput" placeholder="Title (e.g. Apps-Mems Bonding 2, General Assembly)" style="width: 100%; margin-bottom: 8px;" />
+        <textarea id="announcementContentInput" placeholder="Details, venue, call time, and reminders..." rows="3" style="width: 100%; margin-bottom: 10px;"></textarea>
+        <button id="postAnnouncementBtn" class="btn btn-checkin">Publish Announcement</button>
+      </div>
+
+      <!-- Announcements Feed -->
+      <div id="announcementsList" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 32px;"></div>
+
+      <!-- When2Meet Section -->
+      <div style="background: var(--surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 14px;">
+          <div>
+            <h3 style="font-family: var(--font-display); font-size: 1.2rem; color: var(--text-heading); margin: 0 0 2px 0;">When2Meet Availability</h3>
+            <p class="subtext" style="margin: 0;">Click slots to mark your free time with the buddy group.</p>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <label for="when2meetStartDateInput" class="subtext" style="font-size: 0.8rem; margin: 0;">Week of:</label>
+            <input type="date" id="when2meetStartDateInput" style="min-height: 36px; padding: 4px 10px;" />
+          </div>
+        </div>
+        <div class="table-responsive" style="max-height: 480px;">
+          <table>
+            <thead>
+              <tr id="when2meetHeaderRow">
+                <th>Time</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th>
+              </tr>
+            </thead>
+            <tbody id="availabilityGridTbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Leaderboard Tab -->
+    <div id="tab-leaderboard" class="tab-content" style="display: none;">
+      <!-- Top Tambayers Widget -->
+      <section class="card">
+        <div class="card-header">
+          <div>
+            <h2>Tambay Spotlight</h2>
+            <p class="subtext">Mga pinakamalupet tumambay.</p>
+          </div>
+          <span class="badge" style="background: var(--brand-forest); color: white;">Applicants</span>
+        </div>
+        <ul class="task-list" id="topTambayersList"></ul>
+      </section>
+
+      <!-- Buddy Group Rankings Widget -->
+      <section class="card">
+        <div class="card-header">
+          <div>
+            <h2>Buddy Group Rankings</h2>
+            <p class="subtext">Ranked by highest average completion percentage across all assigned applicants.</p>
+          </div>
+          <button id="refreshLeaderboardBtn" class="btn btn-secondary" style="min-height: 32px; padding: 4px 10px;">Refresh</button>
+        </div>
+        <div id="leaderboardContainer" style="display: flex; flex-direction: column; gap: 10px; margin-top: 12px;"></div>
+      </section>
+    </div>
+
+    <!-- Manual Code Verification Modal -->
+    <div id="manualCodeModal" class="modal-backdrop" role="dialog" aria-modal="true" style="display: none;">
+      <div class="modal-box">
+        <h3 style="margin-bottom: 8px;">Check In Verification Pass</h3>
+        <p class="subtext">Enter your kasama's 6-character verification code to confirm their task.</p>
+        <input type="text" id="manualCodeInput" maxlength="6" style="width: 100%; text-align: center; font-family: var(--font-mono); font-size: 1.4rem; font-weight: 700; letter-spacing: 4px; text-transform: uppercase; margin-bottom: 14px;" />
+        <div style="display: flex; gap: 8px;">
+          <button id="submitManualCodeBtn" class="btn btn-checkin" style="flex: 1;">Verify Pass</button>
+          <button id="cancelManualCodeBtn" class="btn btn-secondary" style="flex: 1;">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Trait Swap Modal -->
+    <div id="swapTraitModal" class="modal-backdrop" role="dialog" aria-modal="true" style="display: none;">
+      <div class="modal-box">
+        <h3 id="swapModalTitle">Swap Signatory Trait</h3>
+        <p class="subtext" id="swapModalSubtext" style="margin-bottom: 12px;">Select the pending signatory you want to change.</p>
+
+        <div style="margin: 12px 0;">
+          <label style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 4px;">Target Signatory Task:</label>
+          <select id="swapTargetSigSelect" style="width: 100%; margin-bottom: 12px;"></select>
+
+          <div id="specificTraitContainer" style="display: none;">
+            <label style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 4px;">Choose New Trait:</label>
+            <select id="swapNewTraitSelect" style="width: 100%; margin-bottom: 12px;"></select>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 8px;">
+          <button id="confirmSwapBtn" class="btn btn-checkin" style="flex: 1;">Confirm Swap</button>
+          <button id="cancelSwapBtn" class="btn btn-secondary" style="flex: 1;">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mobile-Optimized Applicant Inspection Modal -->
+    <div id="adminInspectionModal" class="modal-backdrop" role="dialog" aria-modal="true" style="display: none;">
+      <div class="modal-dialog">
+        <div class="modal-header-bar">
+          <div>
+            <h2 id="inspectApplicantName" style="font-family: var(--font-display); color: var(--brand-forest); font-size: 1.2rem; margin-bottom: 2px;">Applicant Details</h2>
+            <small id="inspectApplicantEmail" class="subtext">ID: ------</small>
+          </div>
+          <button id="closeInspectModalBtn" class="btn btn-secondary" style="padding: 4px 10px; font-size: 1.1rem; line-height: 1;">&times;</button>
+        </div>
+
+        <div class="modal-scrollable-body">
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted);">Assigned Buddy Group:</label>
+            <div style="display: flex; gap: 8px;">
+              <select id="inspectBuddyGroupSelect" style="flex: 1; min-height: 38px;"></select>
+              <button id="saveAssignedGroupBtn" class="btn btn-checkin" style="min-height: 38px; padding: 4px 14px; font-size: 0.8rem; display: none;">Save</button>
+            </div>
+          </div>
+
+          <div id="inspectPanelsWrapper" class="modal-inner-grid"></div>
+
+          <div style="padding: 12px; background: var(--surface-subtle); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+            <h3 style="margin-bottom: 8px; color: var(--brand-forest); font-size: 0.95rem;">Signatory Tasks Check-off</h3>
+            <div id="inspectSignatoriesList" style="display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto;"></div>
+          </div>
+
+          <div style="padding: 12px; background: var(--surface-subtle); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+            <h3 style="margin-bottom: 8px; color: var(--brand-forest); font-size: 0.95rem;">Tambay Session Logs</h3>
+            <div id="inspectTambayLogsList" style="display: flex; flex-direction: column; gap: 4px; max-height: 120px; overflow-y: auto;"></div>
+          </div>
+        </div>
+
+        <div class="modal-actions-bar" id="adminInspectionActionsBar" style="display: none; flex-direction: column; gap: 10px;">
+          <div style="display: flex; gap: 8px; width: 100%;">
+            <button id="adminAddHoursBtn" class="btn btn-secondary" style="flex: 1; min-height: 38px; font-size: 0.8rem;">Adjust Hours</button>
+            <button id="adminEditTokensBtn" class="btn btn-secondary" style="flex: 1; min-height: 38px; font-size: 0.8rem;">Set Tokens</button>
+            <button id="adminExportPdfBtn" class="btn btn-checkin" style="flex: 1; min-height: 38px; font-size: 0.8rem;">Export PDF</button>
+          </div>
+
+          <!-- Collapsible Protected Danger Zone -->
+          <details style="width: 100%; border-top: 1px solid var(--border-subtle); padding-top: 8px;">
+            <summary style="font-size: 0.75rem; color: var(--text-muted); cursor: pointer; user-select: none;">Danger Zone</summary>
+            <div style="margin-top: 8px; padding: 10px; background: #fff1f0; border: 1px solid #ffccc7; border-radius: var(--radius-sm); display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+              <span style="font-size: 0.75rem; color: #a8071a;">Permanently delete applicant and all records.</span>
+              <button id="adminDeleteApplicantBtn" class="btn" style="min-height: 34px; padding: 4px 12px; font-size: 0.75rem; background: var(--brand-forest); color: #fff; white-space: nowrap;">Delete Profile</button>
+            </div>
+          </details>
+        </div>
+      </div>
+    </div>
+
+    <div id="toastContainer"></div>
+  </main>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

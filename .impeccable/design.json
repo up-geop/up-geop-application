@@ -1,0 +1,139 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-07T01:02:00Z",
+  "title": "Design System: UP GEOP Applicant Portal",
+  "extensions": {
+    "colorMeta": {
+      "primary": {
+        "role": "primary",
+        "displayName": "Jeepney Crimson",
+        "canonical": "#C1272D",
+        "tonalRamp": ["#F8D7DA", "#E67D82", "#C1272D", "#A02025", "#6B1419"]
+      },
+      "secondary": {
+        "role": "secondary",
+        "displayName": "Star Gold",
+        "canonical": "#FBB03B",
+        "tonalRamp": ["#FFF7EB", "#FDD48F", "#FBB03B", "#D68B18", "#8F590A"]
+      },
+      "neutral-bg": {
+        "role": "neutral",
+        "displayName": "Manila Parchment",
+        "canonical": "#F4F1EB",
+        "tonalRamp": ["#FFFFFF", "#FAF8F5", "#F4F1EB", "#EBE5DA", "#DCD4C5"]
+      },
+      "neutral-dark": {
+        "role": "neutral",
+        "displayName": "Charcoal Asphalt",
+        "canonical": "#2B2B2B",
+        "tonalRamp": ["#666666", "#444444", "#2B2B2B", "#1E1E1E", "#111111"]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Hero portal title, milestone percentage figures, and timer readouts in Fraunces serif."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section headers and modal titles in Fraunces serif."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Standard task and instruction text in Figtree sans-serif."
+      }
+    },
+    "shadows": [
+      {
+        "name": "ambient-card",
+        "value": "0 2px 8px rgba(0, 0, 0, 0.03)",
+        "purpose": "Resting grounding for cards on parchment canvas."
+      },
+      {
+        "name": "modal-elevation",
+        "value": "0 10px 30px rgba(0, 0, 0, 0.15)",
+        "purpose": "Elevated modal dialogs and overlay boxes."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-standard",
+        "value": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "purpose": "Default transition timing for button hover and tab activation."
+      }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "900px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Checkin Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "High-priority action button for check-ins, validation, and task completion.",
+      "html": "<button class=\"btn btn-checkin\">Validate Code</button>",
+      "css": ".btn-checkin { background: #C1272D; color: #ffffff; border: none; border-radius: 8px; padding: 8px 16px; font-weight: 600; cursor: pointer; transition: background 0.2s ease; } .btn-checkin:hover { background: #A02025; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Muted action button for filters, cancellation, and copy actions.",
+      "html": "<button class=\"btn btn-secondary\">Copy Code</button>",
+      "css": ".btn-secondary { background: #EBE5DA; color: #111111; border: 1px solid #C4B9A3; border-radius: 8px; padding: 8px 16px; font-weight: 600; cursor: pointer; } .btn-secondary:hover { background: #DCD4C5; }"
+    },
+    {
+      "name": "Signpost Tab",
+      "kind": "nav",
+      "refersTo": "tab-btn",
+      "description": "Navigation tab button in horizontally scrollable top bar.",
+      "html": "<button class=\"tab-btn active\">Overview</button>",
+      "css": ".tab-btn { background: #EBE5DA; border: 1px solid #C4B9A3; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600; color: #111111; } .tab-btn.active { background: #C1272D; color: #ffffff; border-color: #C1272D; }"
+    },
+    {
+      "name": "Enamel Badge",
+      "kind": "chip",
+      "refersTo": "badge",
+      "description": "Pill tag for role designation, progress counters, and status tags.",
+      "html": "<span class=\"badge\">Applicant</span>",
+      "css": ".badge { background: #EBE5DA; color: #111111; padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; border: 1px solid #C4B9A3; display: inline-block; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Geodetic Wayfarer",
+    "overview": "The UP GEOP Applicant Portal marries the meticulous record-keeping of a geodetic surveyor's field notebook with the communal, vibrant energy of Filipino commuter culture (Biyahe — 'Kasya pa, sakay na!'). Rather than treating applicant evaluation as an intimidating corporate pipeline, the system visualizes progress as a shared transit route and an unfolding survey control network.",
+    "keyCharacteristics": [
+      "Tactile Paper Surfaces",
+      "Enamel Transit Signage",
+      "Geodetic Precision",
+      "Outdoor Legibility"
+    ],
+    "rules": [
+      {
+        "name": "The Signpost Rule",
+        "body": "Crimson (#C1272D) is reserved exclusively for active waypoints and primary actions; it must never coat passive background cards.",
+        "section": "colors"
+      },
+      {
+        "name": "The Border-Before-Blur Rule",
+        "body": "Surfaces are flat at rest; depth and section separation rely on 1px solid structural borders and subtle tone rather than heavy multi-layer blur shadows.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do preserve the warm Manila paper canvas (#F4F1EB) as the primary background for all public views.",
+      "Do maintain a minimum touch target size of 44×44px for primary mobile interaction buttons.",
+      "Do use Fraunces serif font for major headings, progress percentages, and numeric counters.",
+      "Do provide alphanumeric text fallbacks alongside all visual network graphs and QR codes."
+    ],
+    "donts": [
+      "Don't introduce cold blue-gray tech gradients, glassmorphism, or sterile generic corporate SaaS styles.",
+      "Don't use Jeepney Crimson for decorative background fills or inactive list rows; preserve it for active waypoints and actions.",
+      "Don't hide verification progress behind ambiguous icons; always pair visual icons with explicit numeric progress.",
+      "Don't use unreadable novelty or handwriting display fonts that compromise rapid mobile validation in outdoor sunlight."
+    ]
+  }
+}
