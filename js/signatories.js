@@ -438,7 +438,7 @@ export async function renderSignatoriesTab(container) {
       <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${task.id}" ${btnDisabledAttr} style="width: 100%; min-height: 38px;">
         ${isUnlocked ? 'Generate Verification Code' : 'Unlock After All Committees'}
       </button>
-    ` : `<div class="sig-endorsement-stamp">Signed by kasama <strong>${task.signed_by || pes.fullName}</strong></div>`;
+    ` : `<div class="sig-endorsement-stamp">Signed by <strong>${task.signed_by || pes.fullName}</strong></div>`;
 
     const searchBlob = `${pes.title} ${pes.fullName} ${pes.email} ${task.signed_by || ''} PES`.replace(/"/g, '');
 
@@ -488,7 +488,7 @@ export async function renderSignatoriesTab(container) {
         <button class="btn btn-checkin trigger-sig-code-btn" data-sig-id="${vpTask.id}" ${btnDisabledAttr} style="width: 100%; min-height: 38px;">
           ${membersDone ? 'Generate Verification Code' : 'Complete Member Tasks to Unlock'}
         </button>
-      ` : `<div class="sig-endorsement-stamp">Signed by kasama <strong>${vpTask.signed_by || comm.vp}</strong></div>`;
+      ` : `<div class="sig-endorsement-stamp">Signed by <strong>${vpTask.signed_by || comm.vp}</strong></div>`;
 
       const vpSearchBlob = `${comm.name} ${comm.vp} ${comm.vpTitle} ${comm.vpEmail} VP`.replace(/"/g, '');
 
