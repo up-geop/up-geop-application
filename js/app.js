@@ -1276,14 +1276,21 @@ function renderGradeBreakdownUI(breakdown) {
     { label: 'Consti Quiz', val: breakdown.constiPoints, max: 10 },
     { label: 'Buddy Tasks', val: breakdown.buddyTaskPoints, max: 10 }
   ];
+  if (breakdown.bonusPoints > 0) {
+    items.push({ label: 'Bonus', val: breakdown.bonusPoints, max: null });
+  }
 
   container.innerHTML = items.map(item => {
-    const isFull = item.val >= item.max;
+    const isFull = item.max == null || item.val >= item.max;
+    const formattedVal = Number(item.val).toFixed(1).replace(/\.0$/, '');
+    const suffix = item.max != null
+      ? `<span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 400;">/ ${item.max}%</span>`
+      : '';
     return `
       <div style="background: var(--surface-subtle); border: 1px solid ${isFull ? 'var(--brand-mint)' : 'var(--border-subtle)'}; border-radius: var(--radius-sm); padding: 6px 10px; display: flex; flex-direction: column; justify-content: space-between;">
         <span style="font-size: 0.7rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase;">${item.label}</span>
         <strong style="font-family: var(--font-mono); font-size: 0.9rem; color: ${isFull ? 'var(--brand-forest)' : 'var(--text-heading)'};">
-          ${Number(item.val).toFixed(1).replace(/\.0$/, '')} <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 400;">/ ${item.max}%</span>
+          ${item.max == null ? `+${formattedVal}%` : formattedVal} ${suffix}
         </strong>
       </div>
     `;
@@ -1936,10 +1943,11 @@ async function renderDashboard() {
     const ogtPoints = parseFloat(profile?.grade_ogt) || 0;
     const constiPoints = parseFloat(profile?.grade_consti_quiz) || 0;
     const buddyTaskPoints = parseFloat(profile?.grade_buddy_tasks) || 0;
+    const bonusPoints = parseFloat(profile?.grade_bonus) || 0;
 
     const totalPercent = Math.min(
       100,
-      Math.round(eventPoints + sigPoints + tambayPoints + interviewPoints + ogtPoints + constiPoints + buddyTaskPoints)
+      Math.round(eventPoints + sigPoints + tambayPoints + interviewPoints + ogtPoints + constiPoints + buddyTaskPoints + bonusPoints)
     );
 
     const bar = document.getElementById('progressBar');
@@ -1971,7 +1979,8 @@ async function renderDashboard() {
       interviewPoints,
       ogtPoints,
       constiPoints,
-      buddyTaskPoints
+      buddyTaskPoints,
+      bonusPoints
     });
 
     const sigText = document.getElementById('overviewSigText');
@@ -2305,6 +2314,10 @@ async function openInspection(appId) {
             <span>Buddy (10%):</span>
             <input type="number" id="gradeBuddyInput" min="0" max="10" step="0.01" value="${p.grade_buddy_tasks || 0}" style="width: 100%; padding: 4px; font-size: 0.8rem;" ${!isRAComm ? 'disabled' : ''} />
           </label>
+          <label style="display: flex; flex-direction: column; gap: 2px; grid-column: span 2;">
+            <span>Bonus / Incentive (+%):</span>
+            <input type="number" id="gradeBonusInput" min="0" max="100" step="0.5" value="${p.grade_bonus || 0}" style="width: 100%; padding: 4px; font-size: 0.8rem;" ${!isRAComm ? 'disabled' : ''} />
+          </label>
         </div>
         ${isRAComm ? `<button class="btn btn-checkin" id="saveManualGradesBtn" style="margin-top: 10px; width: 100%; min-height: 34px; font-size: 0.8rem;">Save Evaluation Scores</button>` : ''}
       </div>
@@ -2357,7 +2370,8 @@ async function openInspection(appId) {
           interview: document.getElementById('gradeInterviewInput').value,
           ogt: document.getElementById('gradeOgtInput').value,
           constiQuiz: document.getElementById('gradeConstiInput').value,
-          buddyTasks: document.getElementById('gradeBuddyInput').value
+          buddyTasks: document.getElementById('gradeBuddyInput').value,
+          bonus: document.getElementById('gradeBonusInput').value
         };
         if (await adminUpdateApplicantGrades(inspectedApplicantId, grades)) {
           showToast('Evaluation scores saved.', 'success');
@@ -2953,10 +2967,10 @@ if (!window.__appInitialized) {
     /* CSV Export Handler */
     document.getElementById('adminExportCsvBtn')?.addEventListener('click', async () => {
       const applicants = await getAllApplicantsProgress();
-      let csv = "Name,Nickname,Buddy Group,Signatories,Tambay Hrs,Interview,OGT,Consti,Buddy Tasks,Total %\n";
+      let csv = "Name,Nickname,Buddy Group,Signatories,Tambay Hrs,Interview,OGT,Consti,Buddy Tasks,Bonus,Total %\n";
       
       applicants.forEach(a => {
-        csv += `"${a.fullName}","${a.nickname}","${a.buddyGroup}","='${a.completedSigs}/${a.totalSigs}'",${a.tambayHours},${a.gradeInterview},${a.gradeOgt},${a.gradeConsti},${a.gradeBuddy},${a.overallPercent}%\n`;
+        csv += `"${a.fullName}","${a.nickname}","${a.buddyGroup}","='${a.completedSigs}/${a.totalSigs}'",${a.tambayHours},${a.gradeInterview},${a.gradeOgt},${a.gradeConsti},${a.gradeBuddy},${a.gradeBonus},${a.overallPercent}%\n`;
       });
 
       const link = document.createElement("a");
@@ -3376,7 +3390,7 @@ if (!window.__appInitialized) {
             <h2>UP GEOP Applicant Summary</h2>
             <p><strong>Full Name:</strong> ${p.full_name} (${p.nickname})</p>
             <p><strong>Buddy Family:</strong> ${p.buddy_group_name}</p>
-            <p><strong>Evaluation Grades:</strong> Interview: ${p.grade_interview || 0}/15 | OGT: ${p.grade_ogt || 0}/20 | Consti: ${p.grade_consti_quiz || 0}/10 | Buddy: ${p.grade_buddy_tasks || 0}/10</p>
+            <p><strong>Evaluation Grades:</strong> Interview: ${p.grade_interview || 0}/15 | OGT: ${p.grade_ogt || 0}/20 | Consti: ${p.grade_consti_quiz || 0}/10 | Buddy: ${p.grade_buddy_tasks || 0}/10 | Bonus: +${p.grade_bonus || 0}%</p>
             <h3>Signatories</h3>
             <table>
               <thead><tr><th>Committee</th><th>Assigned Trait Requirement</th><th>Status</th><th>Signed By</th></tr></thead>
