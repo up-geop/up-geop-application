@@ -1202,7 +1202,8 @@ export async function adminUpdateApplicantGrades(applicantId, grades) {
       grade_interview: parseFloat(grades.interview) || 0,
       grade_ogt: parseFloat(grades.ogt) || 0,
       grade_consti_quiz: parseFloat(grades.constiQuiz) || 0,
-      grade_buddy_tasks: parseFloat(grades.buddyTasks) || 0
+      grade_buddy_tasks: parseFloat(grades.buddyTasks) || 0,
+      grade_bonus: parseFloat(grades.bonus) || 0
     })
     .eq('id', applicantId);
 
@@ -1260,7 +1261,8 @@ export async function getAllApplicantsProgress() {
       (parseFloat(p.grade_interview) || 0) +
       (parseFloat(p.grade_ogt) || 0) +
       (parseFloat(p.grade_consti_quiz) || 0) +
-      (parseFloat(p.grade_buddy_tasks) || 0);
+      (parseFloat(p.grade_buddy_tasks) || 0) +
+      (parseFloat(p.grade_bonus) || 0);
 
     const overallPercent = Math.min(100, Math.round(automatedScore + manualScore));
     const activeTimeIn = activeSessionMap.get(p.id) || null;
@@ -1281,7 +1283,8 @@ export async function getAllApplicantsProgress() {
       gradeInterview: p.grade_interview || 0,
       gradeOgt: p.grade_ogt || 0,
       gradeConsti: p.grade_consti_quiz || 0,
-      gradeBuddy: p.grade_buddy_tasks || 0
+      gradeBuddy: p.grade_buddy_tasks || 0,
+      gradeBonus: p.grade_bonus || 0
     };
   });
 }
